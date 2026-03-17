@@ -26,7 +26,7 @@ from typing import Optional
 
 from engine.ux import ask_jidoka
 from engine.telemetry import log_event
-from engine.profile import get_skills_dir, get_config_dir
+from engine.profile import get_skills_dir, get_config_dir, get_dock_dir
 
 
 @dataclass
@@ -182,10 +182,16 @@ class PitCrew:
         - prompt.md: Actual LLM prompt for skill execution
         - SKILL.md: Documentation and usage guide
 
+        Sprint 4.5: Enforces Composability Protocol:
+        - Injects Developer Guide constraints
+        - Requires structured JSON output format
+        - Ensures chain composition compatibility
+
         The LLM prompt includes context from:
         - User's skill description
         - Existing routing.config format (for consistency)
         - Voice and pillar guidelines
+        - Developer Guide (Composability Protocol)
         """
         from engine.llm_client import call_llm
 
@@ -196,9 +202,16 @@ class PitCrew:
         routing_context = self._load_routing_context()
         voice_context = self._load_voice_context()
         pillar_context = self._load_pillar_context()
+        developer_guide = self._load_developer_guide()
 
-        # Build the generation prompt
-        prompt = f"""You are the Pit Crew, a sub-system of The Autonomaton that generates new skill capabilities.
+        # Build the generation prompt with composability constraints
+        prompt = f"""You are an Autonomaton building Autonomatons. You are the Pit Crew, a sub-system that generates new skill capabilities.
+
+You must STRICTLY adhere to the principles in the Developer Guide below. Every skill you generate is a composable node in a larger pipeline. Ensure your generated prompt.md forces its output into a structured, composable format (JSON) so that downstream Autonomatons can chain off of this skill.
+
+=== DEVELOPER GUIDE (MANDATORY ADHERENCE) ===
+{developer_guide}
+=== END DEVELOPER GUIDE ===
 
 Generate a complete, functional skill based on this request:
 
@@ -227,22 +240,32 @@ REQUIREMENTS FOR config_yaml:
 - Must include triggers.intents for natural language patterns
 - Handler should be "skill_executor" with handler_args.skill_name set
 
-REQUIREMENTS FOR prompt_md:
-- Must include System Context explaining the skill's role
+REQUIREMENTS FOR prompt_md (COMPOSABILITY CRITICAL):
+- Must include System Context explaining the skill's role as a COMPOSABLE NODE
 - Must include clear Instructions for the LLM
 - Must include Voice Guidelines matching the profile
-- Must include Output Format specification
-- Should include relevant Examples
+- Must include MANDATORY Output Format section with this JSON schema:
+  {{"status": "success|failure", "data": {{}}, "chain_context": {{"can_chain": true, "output_type": "structured"}}}}
+- The prompt MUST instruct the LLM to return structured JSON (NOT plain text)
+- Should include relevant Examples showing the JSON output format
+- Must acknowledge that output will be logged to telemetry and may be consumed by downstream skills
 
 REQUIREMENTS FOR skill_md:
 - Must document the skill usage
 - Must list triggers and zone classification
+- Must explain that the skill outputs structured JSON for chain composition
 - Must explain dependencies and requirements
+
+COMPOSABILITY ENFORCEMENT:
+- The skill is a NODE in a chain, not an isolated script
+- Output must be parseable JSON that downstream skills can consume
+- The prompt.md MUST specify a structured output format section
+- Plain text responses are NOT acceptable - always return JSON
 
 Return ONLY valid JSON with the three keys. No markdown code blocks, no explanations.
 
 Example structure:
-{{"config_yaml": "name: ...\\nzone: yellow\\n...", "prompt_md": "# Title\\n\\n## System Context\\n...", "skill_md": "# Title\\n\\n## Description\\n..."}}
+{{"config_yaml": "name: ...\\nzone: yellow\\n...", "prompt_md": "# Title\\n\\n## System Context\\nYou are executing a composable skill...\\n\\n## Output Format\\nReturn JSON with status, data, chain_context...", "skill_md": "# Title\\n\\n## Description\\n..."}}
 """
 
         try:
@@ -341,6 +364,26 @@ Example structure:
         except Exception:
             pass
         return "Focus on the domain-specific context."
+
+    def _load_developer_guide(self) -> str:
+        """
+        Load the Autonomaton Developer Guide for LLM context.
+
+        Sprint 4.5: The Developer Guide defines the Composability Protocol
+        that all generated skills must adhere to.
+        """
+        try:
+            guide_path = get_dock_dir() / "system" / "autonomaton-developer-guide.md"
+            if guide_path.exists():
+                content = guide_path.read_text(encoding="utf-8")
+                # Return key sections for context (not the entire guide)
+                # Focus on: Output Contract, Composition Primitives, Anti-Patterns
+                lines = content.split('\n')
+                # Extract first 100 lines which cover the critical sections
+                return '\n'.join(lines[:100])
+        except Exception:
+            pass
+        return ""
 
     def _ensure_config_fields(self, config_yaml: str, skill_name: str, description: str, timestamp: str) -> str:
         """Ensure config.yaml has all required fields."""

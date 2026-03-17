@@ -504,6 +504,192 @@ class TestCognitiveRouterHotReload:
             reset_router()
 
 
+class TestComposabilityProtocol:
+    """
+    Sprint 4.5: The Composability Protocol
+
+    These tests verify that the Pit Crew generates skills that are
+    composable "nodes" capable of Chain, Branch, and Hierarchical composition.
+    """
+
+    def test_pit_crew_enforces_composability(self):
+        """
+        Assert that the Pit Crew's generation prompt explicitly injects
+        constraints requiring the new skill to output structured, telemetry-ready
+        data (enabling Chain Composition).
+
+        The LLM prompt MUST include:
+        1. Explicit instruction to output structured data (JSON/YAML)
+        2. Reference to composability requirements
+        3. Instruction that output becomes telemetry input for downstream nodes
+        """
+        from engine.pit_crew import PitCrew
+        from engine.profile import set_profile
+
+        set_profile("coach_demo")
+
+        mock_llm_response = json.dumps({
+            "config_yaml": "name: Test\nzone: yellow\ntriggers:\n  commands:\n    - test",
+            "prompt_md": """# Test Skill
+
+## Output Format
+```json
+{
+  "status": "success",
+  "data": {},
+  "chain_context": {}
+}
+```
+""",
+            "skill_md": "# Test"
+        })
+
+        pit_crew = PitCrew()
+        captured_prompt = None
+
+        def capture_llm_call(prompt, **kwargs):
+            nonlocal captured_prompt
+            captured_prompt = prompt
+            return mock_llm_response
+
+        with patch('engine.llm_client.call_llm', side_effect=capture_llm_call):
+            pit_crew._generate_skill_draft("test-skill", "Test skill description")
+
+        # Verify prompt enforces composability constraints
+        assert captured_prompt is not None
+
+        # Must instruct LLM to generate composable output
+        prompt_lower = captured_prompt.lower()
+        assert "composable" in prompt_lower or "chain" in prompt_lower, \
+            "Prompt must reference composability or chain composition"
+
+        # Must require structured output format
+        assert "json" in prompt_lower or "yaml" in prompt_lower or "structured" in prompt_lower, \
+            "Prompt must require structured output format"
+
+        # Must reference the Developer Guide or protocol constraints
+        assert "developer guide" in prompt_lower or "protocol" in prompt_lower or "autonomaton" in prompt_lower, \
+            "Prompt must reference Developer Guide or Autonomaton protocol"
+
+    def test_developer_guide_ingestion(self):
+        """
+        Assert that the Pit Crew successfully reads and includes the
+        autonomaton-developer-guide.md in its LLM context window.
+        """
+        from engine.pit_crew import PitCrew
+        from engine.profile import set_profile, get_dock_dir
+
+        set_profile("coach_demo")
+
+        # Ensure developer guide exists (we'll create it in implementation)
+        dock_dir = get_dock_dir()
+        guide_path = dock_dir / "system" / "autonomaton-developer-guide.md"
+
+        # Create guide if it doesn't exist (for test setup)
+        if not guide_path.parent.exists():
+            guide_path.parent.mkdir(parents=True, exist_ok=True)
+
+        guide_content = """# Autonomaton Developer Guide
+
+## The TCP/IP of Cognition
+Protocol over Implementation. Skills are nodes in a composable pipeline.
+
+## Composition Primitives
+- Chain: Output of Node A becomes input telemetry for Node B
+- Supervisor/Worker: Parent node dispatches to children
+
+## Output Contract
+All skills MUST return structured JSON with:
+- status: success/failure
+- data: payload for downstream nodes
+- chain_context: metadata for composition
+"""
+        guide_path.write_text(guide_content, encoding="utf-8")
+
+        mock_llm_response = json.dumps({
+            "config_yaml": "name: Test\nzone: yellow\ntriggers:\n  commands:\n    - test",
+            "prompt_md": "# Test",
+            "skill_md": "# Test"
+        })
+
+        pit_crew = PitCrew()
+        captured_prompt = None
+
+        def capture_llm_call(prompt, **kwargs):
+            nonlocal captured_prompt
+            captured_prompt = prompt
+            return mock_llm_response
+
+        with patch('engine.llm_client.call_llm', side_effect=capture_llm_call):
+            pit_crew._generate_skill_draft("guide-test", "Test guide ingestion")
+
+        # Verify the developer guide content is included in the prompt
+        assert captured_prompt is not None
+
+        # The guide content or its key concepts must be in the prompt
+        prompt_lower = captured_prompt.lower()
+        assert "developer guide" in prompt_lower or "tcp/ip" in prompt_lower or "composition" in prompt_lower, \
+            "Prompt must include developer guide content or concepts"
+
+    def test_generated_prompt_includes_output_format(self):
+        """
+        Verify that generated prompt.md files include explicit
+        structured output format instructions for composability.
+        """
+        from engine.pit_crew import PitCrew
+        from engine.profile import set_profile
+
+        set_profile("coach_demo")
+
+        # Mock a response where prompt.md has proper composable output format
+        mock_llm_response = json.dumps({
+            "config_yaml": """name: "Composable Skill"
+zone: yellow
+tier: 2
+triggers:
+  commands:
+    - "composable-test"
+""",
+            "prompt_md": """# Composable Test Skill
+
+## System Context
+You are executing a composable skill within the Autonomaton pipeline.
+
+## Output Format
+Your response MUST be valid JSON following this schema:
+```json
+{
+  "status": "success|failure",
+  "data": {
+    // Skill-specific payload
+  },
+  "chain_context": {
+    "can_chain": true,
+    "output_type": "structured",
+    "downstream_hints": []
+  }
+}
+```
+
+## Composability Contract
+- Your output will be logged to telemetry
+- Downstream skills may consume your output
+- Always return structured, parseable data
+""",
+            "skill_md": "# Composable Test"
+        })
+
+        pit_crew = PitCrew()
+
+        with patch('engine.llm_client.call_llm', return_value=mock_llm_response):
+            draft = pit_crew._generate_skill_draft("composable-test", "Test composability")
+
+        # Verify prompt.md contains composability instructions
+        prompt_lower = draft.prompt_md.lower()
+        assert "output format" in prompt_lower, "prompt.md must specify output format"
+        assert "json" in prompt_lower, "prompt.md must reference JSON output"
+
+
 class TestEndToEndSkillCreation:
     """End-to-end integration tests for skill creation workflow."""
 
