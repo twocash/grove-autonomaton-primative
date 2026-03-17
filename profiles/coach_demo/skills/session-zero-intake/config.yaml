@@ -1,0 +1,57 @@
+# Session Zero Intake Skill Configuration
+# Sprint 1.5: Guided Socratic intake for seeding the Cortex
+
+name: session-zero-intake
+version: 1.0.0
+description: >
+  Guided Socratic interview to seed entities, business context,
+  and voice profiles before normal operation begins. This is the
+  Cortex's first act of learning.
+
+# Governance
+zone: yellow  # Will write to entities/ and update dock/
+tier: 2       # Supervised - requires one-thumb approval
+
+# Trigger keywords for cognitive router
+triggers:
+  - "session zero"
+  - "run session zero"
+  - "start session zero"
+  - "intake"
+  - "onboarding"
+
+# LLM configuration (Sprint 2)
+llm:
+  tier: 2           # Sonnet-class model
+  temperature: 0.7  # Conversational but focused
+  max_tokens: 2048
+
+# Outputs produced by this skill
+outputs:
+  - type: entities
+    path: entities/
+    description: "Player, parent, and venue profiles"
+  - type: dock
+    path: dock/
+    description: "Business context and strategic documents"
+  - type: config
+    path: config/voice.yaml
+    description: "Voice and tone calibration"
+
+# Interview phases
+phases:
+  1_identity:
+    name: "Identity & Role"
+    description: "Who are you? What do you do?"
+  2_relationships:
+    name: "Key Relationships"
+    description: "Who are the important people in your work?"
+  3_workflows:
+    name: "Daily Workflows"
+    description: "What does a typical day/week look like?"
+  4_friction:
+    name: "Friction Points"
+    description: "What frustrates you? Where do you lose time?"
+  5_voice:
+    name: "Voice Calibration"
+    description: "How do you communicate? What's your style?"

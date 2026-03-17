@@ -196,6 +196,20 @@ def display_result(context, verbose: bool) -> None:
         else:
             print(f"\n  [PIT CREW] {context.result.get('message')}\n")
 
+    elif data_type == "session_zero":
+        # Session Zero intake - display the Socratic prompt
+        print(f"\n  [SESSION ZERO] Cortex Intake Interview")
+        print("=" * 55)
+        prompt_content = data.get("prompt_content", "")
+        if prompt_content:
+            # Display the prompt (Sprint 2: send to LLM instead)
+            print(prompt_content)
+        else:
+            print("  Error: No prompt content available")
+        print("=" * 55)
+        if data.get("note"):
+            print(f"\n  Note: {data.get('note')}\n")
+
     else:
         # Generic display
         if context.executed:

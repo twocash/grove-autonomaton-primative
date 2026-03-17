@@ -312,3 +312,70 @@ class TestDispatcherIntegration:
         data = context.result.get("data", {})
         assert data.get("type") == "queue_status", \
             f"Expected type 'queue_status', got '{data.get('type')}'"
+
+
+class TestSessionZeroDispatcher:
+    """Tests for Session Zero skill dispatch (Sprint 1.5)."""
+
+    def test_session_zero_traverses_pipeline(self):
+        """
+        'session zero' must traverse all 5 pipeline stages.
+
+        Yellow zone requires Jidoka approval before execution.
+        """
+        from engine.pipeline import run_pipeline
+
+        # Mock approval for yellow zone
+        with patch('engine.pipeline.confirm_yellow_zone', return_value=True):
+            context = run_pipeline(raw_input="session zero", source="test")
+
+        # All stages must be populated
+        assert context.telemetry_event is not None, \
+            "Stage 1 (Telemetry) not executed"
+        assert context.intent == "session_zero", \
+            f"Stage 2 should classify as session_zero, got '{context.intent}'"
+        assert context.zone == "yellow", \
+            f"Session zero should be yellow zone, got '{context.zone}'"
+        assert context.result is not None, \
+            "Stage 5 (Execution) not executed"
+
+    def test_session_zero_returns_prompt_content(self):
+        """
+        Session zero dispatcher should return the Socratic prompt content.
+
+        Until Sprint 2 (LLM client), the handler reads prompt.md and
+        returns its contents as proof of wiring.
+        """
+        from engine.pipeline import run_pipeline
+
+        with patch('engine.pipeline.confirm_yellow_zone', return_value=True):
+            context = run_pipeline(raw_input="session zero", source="test")
+
+        data = context.result.get("data", {})
+        assert data.get("type") == "session_zero", \
+            f"Expected type 'session_zero', got '{data.get('type')}'"
+
+        # Should contain the prompt content
+        assert "prompt_content" in data, \
+            "Session zero should return prompt_content"
+        assert len(data.get("prompt_content", "")) > 0, \
+            "Prompt content should not be empty"
+
+    def test_session_zero_requires_yellow_zone_approval(self):
+        """
+        Session zero must halt for Jidoka approval (yellow zone).
+
+        If user rejects, execution should be cancelled.
+        """
+        from engine.pipeline import run_pipeline
+
+        # User rejects the yellow zone prompt
+        with patch('engine.pipeline.confirm_yellow_zone', return_value=False):
+            context = run_pipeline(raw_input="session zero", source="test")
+
+        assert context.approved is False, \
+            "Should not be approved when user rejects"
+        assert context.executed is False, \
+            "Should not execute when rejected"
+        assert context.result.get("status") == "cancelled", \
+            f"Status should be 'cancelled', got '{context.result.get('status')}'"

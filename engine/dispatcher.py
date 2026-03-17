@@ -54,6 +54,7 @@ class Dispatcher:
             "status_display": self._handle_status_display,
             "content_engine": self._handle_content_engine,
             "pit_crew": self._handle_pit_crew,
+            "session_zero_handler": self._handle_session_zero,
         }
 
     def dispatch(
@@ -263,6 +264,61 @@ class Dispatcher:
             success=False,
             message=f"Unknown pit crew action: {action}",
             data={"type": "error", "error": "unknown_action"}
+        )
+
+    def _handle_session_zero(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Handle Session Zero intake skill.
+
+        Yellow Zone - requires approval before execution.
+        Until Sprint 2 (LLM client), this handler reads the prompt.md
+        from the skill directory and returns its contents as proof of wiring.
+        """
+        from engine.profile import get_skills_dir
+
+        skill_name = routing_result.handler_args.get("skill_name", "session-zero-intake")
+        skill_path = get_skills_dir() / skill_name
+        prompt_path = skill_path / "prompt.md"
+
+        if not prompt_path.exists():
+            return DispatchResult(
+                success=False,
+                message=f"Skill prompt not found: {prompt_path}",
+                data={
+                    "type": "session_zero",
+                    "error": "prompt_not_found",
+                    "skill_path": str(skill_path)
+                }
+            )
+
+        # Read the prompt template
+        try:
+            prompt_content = prompt_path.read_text(encoding="utf-8")
+        except Exception as e:
+            return DispatchResult(
+                success=False,
+                message=f"Failed to read prompt: {e}",
+                data={
+                    "type": "session_zero",
+                    "error": "read_failed"
+                }
+            )
+
+        # Return the prompt content
+        # Sprint 2: This will be sent to the LLM client for interactive session
+        return DispatchResult(
+            success=True,
+            message="Session Zero intake ready",
+            data={
+                "type": "session_zero",
+                "skill_name": skill_name,
+                "prompt_content": prompt_content,
+                "note": "Sprint 2 will integrate LLM client for interactive session"
+            }
         )
 
 

@@ -216,6 +216,65 @@ class TestRouterHandlerMapping:
             f"Expected display_type='dock', got '{result.handler_args}'"
 
 
+class TestSessionZeroIntake:
+    """Tests for Session Zero intake skill routing (Sprint 1.5)."""
+
+    def test_router_classifies_session_zero(self):
+        """
+        Input "session zero" must return session_zero intent.
+
+        Session Zero is the Cortex's first act of learning - a guided
+        Socratic intake to seed entities, business context, and voice.
+        """
+        from engine.cognitive_router import classify_intent
+
+        result = classify_intent("session zero")
+
+        assert result.intent == "session_zero", \
+            f"Expected 'session_zero', got '{result.intent}'"
+        assert result.zone == "yellow", \
+            f"Session zero should be yellow zone (writes entities), got '{result.zone}'"
+        assert result.confidence >= 0.85, \
+            f"Exact match should have high confidence, got {result.confidence}"
+
+    def test_router_classifies_run_session_zero(self):
+        """
+        Input "run session zero" must also return session_zero intent.
+        """
+        from engine.cognitive_router import classify_intent
+
+        result = classify_intent("run session zero")
+
+        assert result.intent == "session_zero", \
+            f"Expected 'session_zero', got '{result.intent}'"
+        assert result.zone == "yellow", \
+            f"Session zero should be yellow zone, got '{result.zone}'"
+
+    def test_session_zero_maps_to_handler(self):
+        """
+        Session zero must map to session_zero_handler for dispatcher.
+        """
+        from engine.cognitive_router import classify_intent
+
+        result = classify_intent("session zero")
+
+        assert result.handler == "session_zero_handler", \
+            f"Expected 'session_zero_handler', got '{result.handler}'"
+
+    def test_session_zero_has_skill_path(self):
+        """
+        Session zero handler args should include skill_path for locating prompt.
+        """
+        from engine.cognitive_router import classify_intent
+
+        result = classify_intent("session zero")
+
+        assert result.handler_args is not None, \
+            "Handler args should not be None"
+        assert "skill_name" in result.handler_args, \
+            f"Handler args should include skill_name, got '{result.handler_args}'"
+
+
 class TestRouterReset:
     """Tests for router reset functionality (profile switching)."""
 
