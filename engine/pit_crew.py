@@ -9,11 +9,16 @@ CRITICAL: All skill generation requires explicit Red Zone approval
 before any files are written to the filesystem.
 
 Sprint 4: LLM-powered skill authoring with self-registration.
+Sprint 4.5: Composability Protocol enforcement.
+Sprint 4.75: Architectural Judge & Exhaust Board with Apex Upgrade.
+
 The Pit Crew is now an Autonomatonic sub-system that:
-1. Uses Tier 2 (Sonnet) to generate functional skill artifacts
-2. Displays generated code in Red Zone Jidoka for approval
-3. Self-registers new skills into routing.config
-4. Triggers hot reload for immediate invocation
+1. Uses Tier 3 (Opus/Apex) for maximum reasoning in skill generation
+2. Runs Architectural Judge for protocol compliance validation
+3. Updates Exhaust Board with telemetry unlock potentials
+4. Displays generated code + future potentials in Red Zone Jidoka
+5. Self-registers new skills into routing.config
+6. Triggers hot reload for immediate invocation
 """
 
 import re
@@ -39,6 +44,18 @@ class SkillDraft:
     config_yaml: str
     created_at: str = ""
     approved: bool = False
+
+
+@dataclass
+class JudgmentResult:
+    """
+    Result from the Architectural Judge.
+
+    Sprint 4.75: CI/CD-style quality gate for protocol compliance.
+    """
+    compliant: bool
+    violations: list = field(default_factory=list)
+    telemetry_exhaust_unlocks: list = field(default_factory=list)
 
 
 class PitCrew:
@@ -106,11 +123,37 @@ class PitCrew:
                 "approved": False
             }
 
-        # Generate boilerplate files in memory
+        # Generate boilerplate files in memory (Tier 3 - Apex)
         draft = self._generate_skill_draft(normalized_name, description)
 
-        # RED ZONE GOVERNANCE: Require explicit approval
-        approval_granted = self._request_red_zone_approval(draft)
+        # ARCHITECTURAL JUDGE: CI/CD quality gate (Tier 3 - Apex)
+        judgment = self._run_architectural_judgment(draft)
+
+        if not judgment.compliant:
+            # Halt and surface violations via Jidoka
+            compliance_rejected = self._surface_compliance_failure(draft, judgment)
+            log_event(
+                source="pit_crew_compliance_failed",
+                raw_transcript=f"Skill failed compliance: {normalized_name}",
+                zone_context="red",
+                inferred={
+                    "skill_name": normalized_name,
+                    "violations": judgment.violations,
+                    "action": "compliance_failed"
+                }
+            )
+            return {
+                "status": "compliance_failed",
+                "message": f"Skill '{normalized_name}' failed Architectural Judge compliance check.",
+                "violations": judgment.violations,
+                "approved": False
+            }
+
+        # Compliance passed - update Exhaust Board
+        self._update_exhaust_board(draft, judgment)
+
+        # RED ZONE GOVERNANCE: Require explicit approval (now with telemetry unlocks)
+        approval_granted = self._request_red_zone_approval(draft, judgment)
 
         if not approval_granted:
             # Log rejection
@@ -175,7 +218,7 @@ class PitCrew:
 
     def _generate_skill_draft(self, skill_name: str, description: str) -> SkillDraft:
         """
-        Generate skill files using LLM (Tier 2 - Sonnet).
+        Generate skill files using LLM (Tier 3 - Opus/Apex).
 
         Sprint 4: Uses LLM to create functional skill artifacts:
         - config.yaml: Valid YAML with triggers, zone, handler
@@ -186,6 +229,10 @@ class PitCrew:
         - Injects Developer Guide constraints
         - Requires structured JSON output format
         - Ensures chain composition compatibility
+
+        Sprint 4.75: Upgraded to Tier 3 (Opus/Apex) for maximum reasoning.
+        The Pit Crew writes the code that runs the system, so we need
+        apex intelligence for skill generation.
 
         The LLM prompt includes context from:
         - User's skill description
@@ -271,7 +318,7 @@ Example structure:
         try:
             response = call_llm(
                 prompt=prompt,
-                tier=2,  # Use Sonnet for quality skill generation
+                tier=3,  # Sprint 4.75: Use Opus/Apex for maximum reasoning
                 intent="pit_crew_skill_generation",
                 max_tokens=4000
             )
@@ -385,6 +432,184 @@ Example structure:
             pass
         return ""
 
+    def _run_architectural_judgment(self, draft: SkillDraft) -> JudgmentResult:
+        """
+        Run the Architectural Judge for protocol compliance validation.
+
+        Sprint 4.75: CI/CD-style quality gate that:
+        1. Reviews generated artifacts against Developer Guide
+        2. Returns compliance status with violations
+        3. Brainstorms telemetry exhaust unlocks for compliant skills
+
+        Uses Tier 3 (Opus/Apex) for maximum reasoning capability.
+        """
+        from engine.llm_client import call_llm
+
+        developer_guide = self._load_developer_guide()
+
+        prompt = f"""You are the Architectural Judge, a QA gate within the Autonomaton Pit Crew.
+
+Your task is to validate that a newly generated skill strictly adheres to the Autonomaton Protocol as defined in the Developer Guide.
+
+=== DEVELOPER GUIDE ===
+{developer_guide}
+=== END DEVELOPER GUIDE ===
+
+=== SKILL DRAFT TO VALIDATE ===
+
+config.yaml:
+{draft.config_yaml}
+
+prompt.md:
+{draft.prompt_md}
+
+=== END SKILL DRAFT ===
+
+VALIDATION CRITERIA:
+1. prompt.md MUST have an "Output Format" section with JSON schema
+2. The JSON output MUST include: status, data, chain_context
+3. prompt.md must acknowledge composability (output logged to telemetry, consumed by downstream)
+4. config.yaml must have valid zone, tier, triggers
+5. The skill must NOT bypass pipeline stages (no direct telemetry, no direct MCP calls)
+
+Return a JSON object with exactly these keys:
+- "compliant": boolean - true if ALL criteria pass, false if ANY fail
+- "violations": array of strings - specific violations found (empty if compliant)
+- "telemetry_exhaust_unlocks": array of 2-3 strings - IF compliant, describe specific ways the telemetry data emitted by this skill could be consumed by future Autonomatons or the Cortex. Be creative and specific.
+
+Return ONLY valid JSON. No markdown code blocks.
+
+Example for a compliant skill:
+{{"compliant": true, "violations": [], "telemetry_exhaust_unlocks": ["Cortex can track skill usage frequency for load balancing", "Chain with reporting-skill for weekly summaries", "Feed output to dashboard for real-time visualization"]}}
+
+Example for a non-compliant skill:
+{{"compliant": false, "violations": ["prompt.md missing Output Format section", "No chain_context in output schema"], "telemetry_exhaust_unlocks": []}}
+"""
+
+        try:
+            response = call_llm(
+                prompt=prompt,
+                tier=3,  # Apex for judgment
+                intent="architectural_judgment",
+                max_tokens=1500
+            )
+
+            result = json.loads(response)
+
+            return JudgmentResult(
+                compliant=result.get("compliant", False),
+                violations=result.get("violations", []),
+                telemetry_exhaust_unlocks=result.get("telemetry_exhaust_unlocks", [])
+            )
+
+        except json.JSONDecodeError as e:
+            log_event(
+                source="pit_crew_judge_error",
+                raw_transcript=f"Judge returned invalid JSON: {str(e)}",
+                zone_context="red",
+                inferred={"error": "judge_json_parse_failed"}
+            )
+            # Default to non-compliant on parse failure
+            return JudgmentResult(
+                compliant=False,
+                violations=["Architectural Judge failed to return valid JSON response"],
+                telemetry_exhaust_unlocks=[]
+            )
+
+        except Exception as e:
+            log_event(
+                source="pit_crew_judge_error",
+                raw_transcript=f"Judge failed: {str(e)}",
+                zone_context="red",
+                inferred={"error": str(e)}
+            )
+            return JudgmentResult(
+                compliant=False,
+                violations=[f"Architectural Judge error: {str(e)}"],
+                telemetry_exhaust_unlocks=[]
+            )
+
+    def _surface_compliance_failure(self, draft: SkillDraft, judgment: JudgmentResult) -> bool:
+        """
+        Surface compliance violations to the user via Jidoka.
+
+        Sprint 4.75: When the Architectural Judge rejects a skill,
+        we halt and show the violations before any files are written.
+        """
+        violations_list = "\n".join(f"  - {v}" for v in judgment.violations)
+
+        result = ask_jidoka(
+            context_message=(
+                f"COMPLIANCE FAILURE: Skill '{draft.name}' failed Architectural Judge validation.\n\n"
+                f"The generated skill violates the Autonomaton Protocol:\n\n"
+                f"VIOLATIONS:\n{violations_list}\n\n"
+                f"The skill cannot be deployed until these violations are resolved.\n"
+                f"Please refine the skill description or regenerate."
+            ),
+            options={
+                "1": "ACKNOWLEDGE: Abort this build",
+                "2": "ABORT: Cancel without action"
+            }
+        )
+
+        return result == "1"
+
+    def _update_exhaust_board(self, draft: SkillDraft, judgment: JudgmentResult) -> bool:
+        """
+        Update the Exhaust Board with telemetry unlock potentials.
+
+        Sprint 4.75: After a skill passes compliance, the Judge's
+        telemetry_exhaust_unlocks are appended to the global registry.
+        This serves as a strategic resource for the Cortex.
+        """
+        try:
+            exhaust_path = get_dock_dir() / "system" / "exhaust-board.md"
+
+            if not exhaust_path.exists():
+                # Initialize if missing
+                exhaust_path.parent.mkdir(parents=True, exist_ok=True)
+                exhaust_path.write_text("# Exhaust Board\n\n", encoding="utf-8")
+
+            # Format the new entry
+            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            unlocks_list = "\n".join(f"- {u}" for u in judgment.telemetry_exhaust_unlocks)
+
+            entry = f"""
+### {draft.name} - {timestamp}
+
+**Description:** {draft.description}
+
+**Telemetry Unlocks:**
+{unlocks_list}
+
+---
+"""
+
+            # Append to exhaust board
+            with open(exhaust_path, "a", encoding="utf-8") as f:
+                f.write(entry)
+
+            log_event(
+                source="pit_crew_exhaust_board",
+                raw_transcript=f"Updated exhaust board for skill: {draft.name}",
+                zone_context="green",
+                inferred={
+                    "skill_name": draft.name,
+                    "unlocks_count": len(judgment.telemetry_exhaust_unlocks)
+                }
+            )
+
+            return True
+
+        except Exception as e:
+            log_event(
+                source="pit_crew_exhaust_error",
+                raw_transcript=f"Failed to update exhaust board: {str(e)}",
+                zone_context="yellow",
+                inferred={"error": str(e)}
+            )
+            return False
+
     def _ensure_config_fields(self, config_yaml: str, skill_name: str, description: str, timestamp: str) -> str:
         """Ensure config.yaml has all required fields."""
         try:
@@ -410,11 +635,12 @@ Example structure:
             # Return original if parsing fails
             return config_yaml
 
-    def _request_red_zone_approval(self, draft: SkillDraft) -> bool:
+    def _request_red_zone_approval(self, draft: SkillDraft, judgment: Optional[JudgmentResult] = None) -> bool:
         """
         Request Red Zone approval via Jidoka.
 
         Sprint 4: Displays the actual generated code/config for review.
+        Sprint 4.75: Now includes telemetry unlocks from Architectural Judge.
 
         This is a CRITICAL governance gate. The system cannot modify
         its own capabilities without explicit user approval.
@@ -434,11 +660,23 @@ Example structure:
         if len(prompt_lines) > 20:
             prompt_summary += f"\n... [{len(prompt_lines) - 20} more lines]"
 
+        # Build telemetry unlocks section (Sprint 4.75)
+        telemetry_section = ""
+        if judgment and judgment.telemetry_exhaust_unlocks:
+            unlocks_list = "\n".join(f"  - {u}" for u in judgment.telemetry_exhaust_unlocks)
+            telemetry_section = f"""
+--- FUTURE POTENTIALS (Telemetry Unlocks) ---
+The Architectural Judge identified these automation opportunities:
+{unlocks_list}
+--- END FUTURE POTENTIALS ---
+"""
+
         # Build detailed preview with actual generated code
         preview = f"""
 ================================================================================
 SKILL: {draft.name}
 DESCRIPTION: {draft.description}
+COMPLIANCE: PASSED (Architectural Judge validated)
 ================================================================================
 
 --- GENERATED config.yaml ---
@@ -448,7 +686,7 @@ DESCRIPTION: {draft.description}
 --- GENERATED prompt.md (summary) ---
 {prompt_summary}
 --- END prompt.md ---
-
+{telemetry_section}
 ACTIONS UPON APPROVAL:
 1. Create skills/{draft.name}/ directory
 2. Write config.yaml (zone: {zone})
@@ -456,6 +694,7 @@ ACTIONS UPON APPROVAL:
 4. Write SKILL.md (documentation)
 5. Register in routing.config with triggers: {triggers}
 6. Hot reload CognitiveRouter for immediate invocation
+7. Update Exhaust Board with telemetry unlocks
 
 """
 

@@ -204,7 +204,7 @@ class TestPitCrewUpdatesRoutingConfig:
         original_config_path = get_config_dir() / "routing.config"
         original_content = original_config_path.read_text(encoding="utf-8")
 
-        mock_llm_response = json.dumps({
+        mock_skill_response = json.dumps({
             "config_yaml": """name: "Tournament Prep"
 description: "Prepare players for tournament"
 zone: yellow
@@ -218,10 +218,25 @@ triggers:
             "skill_md": "# Tournament Prep Doc"
         })
 
+        # Sprint 4.75: Mock Judge response (compliant)
+        mock_judge_response = json.dumps({
+            "compliant": True,
+            "violations": [],
+            "telemetry_exhaust_unlocks": ["Test unlock 1"]
+        })
+
         pit_crew = PitCrew()
+        call_count = [0]
+
+        def mock_llm(prompt, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_skill_response
+            else:
+                return mock_judge_response
 
         try:
-            with patch('engine.llm_client.call_llm', return_value=mock_llm_response):
+            with patch('engine.llm_client.call_llm', side_effect=mock_llm):
                 with patch('engine.pit_crew.ask_jidoka', return_value="1"):  # Approve
                     # Use a temp skills directory
                     with tempfile.TemporaryDirectory() as temp_dir:
@@ -260,7 +275,7 @@ triggers:
         original_config_path = get_config_dir() / "routing.config"
         original_content = original_config_path.read_text(encoding="utf-8")
 
-        mock_llm_response = json.dumps({
+        mock_skill_response = json.dumps({
             "config_yaml": """name: "Test Skill"
 description: "Test skill for validation"
 zone: yellow
@@ -274,10 +289,25 @@ triggers:
             "skill_md": "# Test Doc"
         })
 
+        # Sprint 4.75: Mock Judge response (compliant)
+        mock_judge_response = json.dumps({
+            "compliant": True,
+            "violations": [],
+            "telemetry_exhaust_unlocks": ["Test unlock"]
+        })
+
         pit_crew = PitCrew()
+        call_count = [0]
+
+        def mock_llm(prompt, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_skill_response
+            else:
+                return mock_judge_response
 
         try:
-            with patch('engine.llm_client.call_llm', return_value=mock_llm_response):
+            with patch('engine.llm_client.call_llm', side_effect=mock_llm):
                 with patch('engine.pit_crew.ask_jidoka', return_value="1"):
                     with tempfile.TemporaryDirectory() as temp_dir:
                         temp_skills = Path(temp_dir) / "skills"
@@ -322,7 +352,7 @@ class TestPitCrewRedZoneEnforced:
 
         set_profile("coach_demo")
 
-        mock_llm_response = json.dumps({
+        mock_skill_response = json.dumps({
             "config_yaml": """name: "Test Skill"
 description: "Test description"
 zone: yellow
@@ -335,15 +365,30 @@ triggers:
             "skill_md": "# Test Skill Doc"
         })
 
+        # Sprint 4.75: Mock Judge response (compliant)
+        mock_judge_response = json.dumps({
+            "compliant": True,
+            "violations": [],
+            "telemetry_exhaust_unlocks": ["Test unlock"]
+        })
+
         pit_crew = PitCrew()
         jidoka_context = None
+        call_count = [0]
+
+        def mock_llm(prompt, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_skill_response
+            else:
+                return mock_judge_response
 
         def capture_jidoka(context_message, options):
             nonlocal jidoka_context
             jidoka_context = context_message
             return "2"  # Reject to prevent file writes
 
-        with patch('engine.llm_client.call_llm', return_value=mock_llm_response):
+        with patch('engine.llm_client.call_llm', side_effect=mock_llm):
             with patch('engine.pit_crew.ask_jidoka', side_effect=capture_jidoka):
                 with tempfile.TemporaryDirectory() as temp_dir:
                     temp_skills = Path(temp_dir) / "skills"
@@ -371,15 +416,30 @@ triggers:
 
         set_profile("coach_demo")
 
-        mock_llm_response = json.dumps({
+        mock_skill_response = json.dumps({
             "config_yaml": "name: Test\nzone: yellow",
             "prompt_md": "# Test",
             "skill_md": "# Test"
         })
 
-        pit_crew = PitCrew()
+        # Sprint 4.75: Mock Judge response (compliant)
+        mock_judge_response = json.dumps({
+            "compliant": True,
+            "violations": [],
+            "telemetry_exhaust_unlocks": []
+        })
 
-        with patch('engine.llm_client.call_llm', return_value=mock_llm_response):
+        pit_crew = PitCrew()
+        call_count = [0]
+
+        def mock_llm(prompt, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_skill_response
+            else:
+                return mock_judge_response
+
+        with patch('engine.llm_client.call_llm', side_effect=mock_llm):
             with patch('engine.pit_crew.ask_jidoka', return_value="2"):  # Reject
                 with tempfile.TemporaryDirectory() as temp_dir:
                     temp_skills = Path(temp_dir) / "skills"
@@ -404,7 +464,7 @@ triggers:
         original_config_path = get_config_dir() / "routing.config"
         original_content = original_config_path.read_text(encoding="utf-8")
 
-        mock_llm_response = json.dumps({
+        mock_skill_response = json.dumps({
             "config_yaml": """name: "Approved Skill"
 description: "This skill was approved"
 zone: yellow
@@ -417,10 +477,25 @@ triggers:
             "skill_md": "# Approved Skill Doc"
         })
 
+        # Sprint 4.75: Mock Judge response (compliant)
+        mock_judge_response = json.dumps({
+            "compliant": True,
+            "violations": [],
+            "telemetry_exhaust_unlocks": ["Test unlock"]
+        })
+
         pit_crew = PitCrew()
+        call_count = [0]
+
+        def mock_llm(prompt, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_skill_response
+            else:
+                return mock_judge_response
 
         try:
-            with patch('engine.llm_client.call_llm', return_value=mock_llm_response):
+            with patch('engine.llm_client.call_llm', side_effect=mock_llm):
                 with patch('engine.pit_crew.ask_jidoka', return_value="1"):  # Approve
                     with tempfile.TemporaryDirectory() as temp_dir:
                         temp_skills = Path(temp_dir) / "skills"
@@ -690,6 +765,239 @@ Your response MUST be valid JSON following this schema:
         assert "json" in prompt_lower, "prompt.md must reference JSON output"
 
 
+class TestArchitecturalJudge:
+    """
+    Sprint 4.75: The Architectural Judge & Exhaust Board
+
+    These tests verify the CI/CD-style quality gate that validates
+    protocol compliance before Red Zone approval.
+    """
+
+    def test_architectural_judge_validates_compliance(self):
+        """
+        Mock the Judge LLM to return compliant: false with feedback,
+        and assert that the Pit Crew halts and raises a Jidoka error
+        rather than proceeding to approval.
+        """
+        from engine.pit_crew import PitCrew
+        from engine.profile import set_profile
+
+        set_profile("coach_demo")
+
+        # Mock skill generation LLM response
+        mock_skill_response = json.dumps({
+            "config_yaml": "name: Bad Skill\nzone: yellow",
+            "prompt_md": "# Bad Skill\n\nNo output format specified.",
+            "skill_md": "# Bad Skill"
+        })
+
+        # Mock Judge LLM response - NON-COMPLIANT
+        mock_judge_response = json.dumps({
+            "compliant": False,
+            "violations": [
+                "prompt.md missing mandatory Output Format section",
+                "No JSON schema for chain_context",
+                "Skill does not declare composability contract"
+            ],
+            "telemetry_exhaust_unlocks": []
+        })
+
+        pit_crew = PitCrew()
+        jidoka_called = False
+        jidoka_context = None
+
+        def capture_jidoka(context_message, options):
+            nonlocal jidoka_called, jidoka_context
+            jidoka_called = True
+            jidoka_context = context_message
+            return "2"  # Reject/abort
+
+        call_count = [0]
+
+        def mock_llm(prompt, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_skill_response  # First call: skill generation
+            else:
+                return mock_judge_response  # Second call: judge
+
+        with patch('engine.llm_client.call_llm', side_effect=mock_llm):
+            with patch('engine.pit_crew.ask_jidoka', side_effect=capture_jidoka):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_skills = Path(temp_dir) / "skills"
+                    temp_skills.mkdir()
+
+                    with patch('engine.pit_crew.get_skills_dir', return_value=temp_skills):
+                        result = pit_crew.propose_and_build_skill(
+                            "bad-skill",
+                            "A skill that violates protocol"
+                        )
+
+        # Verify the build was halted due to compliance failure
+        assert result["status"] in ["rejected", "compliance_failed"], \
+            f"Expected rejection due to compliance failure, got: {result['status']}"
+
+        # Verify Jidoka was called with violation information
+        assert jidoka_called, "Jidoka should be called to surface violations"
+        assert "violation" in jidoka_context.lower() or "compliant" in jidoka_context.lower(), \
+            "Jidoka context should mention violations"
+
+    def test_exhaust_board_updated(self):
+        """
+        Assert that a compliant skill results in the Judge's 'unlocks'
+        being appended to the global exhaust-board.md file.
+        """
+        from engine.pit_crew import PitCrew
+        from engine.profile import set_profile, get_dock_dir, get_config_dir
+
+        set_profile("coach_demo")
+
+        # Save original routing.config
+        original_config_path = get_config_dir() / "routing.config"
+        original_content = original_config_path.read_text(encoding="utf-8")
+
+        # Ensure exhaust-board.md exists
+        dock_dir = get_dock_dir()
+        exhaust_path = dock_dir / "system" / "exhaust-board.md"
+        if exhaust_path.exists():
+            original_exhaust = exhaust_path.read_text(encoding="utf-8")
+        else:
+            exhaust_path.parent.mkdir(parents=True, exist_ok=True)
+            original_exhaust = "# Exhaust Board\n\n"
+            exhaust_path.write_text(original_exhaust, encoding="utf-8")
+
+        # Mock skill generation LLM response
+        mock_skill_response = json.dumps({
+            "config_yaml": """name: "Good Skill"
+zone: yellow
+tier: 2
+triggers:
+  commands:
+    - good-skill
+""",
+            "prompt_md": """# Good Skill
+
+## System Context
+A composable skill node.
+
+## Output Format
+```json
+{
+  "status": "success",
+  "data": {},
+  "chain_context": {"can_chain": true}
+}
+```
+""",
+            "skill_md": "# Good Skill"
+        })
+
+        # Mock Judge LLM response - COMPLIANT with unlocks
+        mock_judge_response = json.dumps({
+            "compliant": True,
+            "violations": [],
+            "telemetry_exhaust_unlocks": [
+                "Cortex can monitor good-skill execution frequency for usage patterns",
+                "Chain with reporting-skill to auto-generate weekly summaries",
+                "Feed output to analytics dashboard for real-time metrics"
+            ]
+        })
+
+        pit_crew = PitCrew()
+        call_count = [0]
+
+        def mock_llm(prompt, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_skill_response
+            else:
+                return mock_judge_response
+
+        try:
+            with patch('engine.llm_client.call_llm', side_effect=mock_llm):
+                with patch('engine.pit_crew.ask_jidoka', return_value="1"):  # Approve
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        temp_skills = Path(temp_dir) / "skills"
+                        temp_skills.mkdir()
+
+                        with patch('engine.pit_crew.get_skills_dir', return_value=temp_skills):
+                            result = pit_crew.propose_and_build_skill(
+                                "good-skill",
+                                "A compliant skill"
+                            )
+
+            # Verify the skill was deployed
+            assert result["status"] == "deployed"
+
+            # Verify exhaust-board.md was updated
+            updated_exhaust = exhaust_path.read_text(encoding="utf-8")
+            assert "good-skill" in updated_exhaust.lower() or "cortex" in updated_exhaust.lower(), \
+                "Exhaust board should contain the skill's telemetry unlocks"
+            assert len(updated_exhaust) > len(original_exhaust), \
+                "Exhaust board should have grown with new entries"
+
+        finally:
+            # Restore original files
+            original_config_path.write_text(original_content, encoding="utf-8")
+            exhaust_path.write_text(original_exhaust, encoding="utf-8")
+
+    def test_red_zone_prompt_includes_telemetry_unlocks(self):
+        """
+        Verify that the Red Zone approval prompt includes the Judge's
+        telemetry unlocks so operators see future potential.
+        """
+        from engine.pit_crew import PitCrew
+        from engine.profile import set_profile
+
+        set_profile("coach_demo")
+
+        mock_skill_response = json.dumps({
+            "config_yaml": "name: Future Skill\nzone: yellow\ntriggers:\n  commands:\n    - future-skill",
+            "prompt_md": "# Future\n\n## Output Format\n```json\n{\"status\": \"success\"}\n```",
+            "skill_md": "# Future"
+        })
+
+        mock_judge_response = json.dumps({
+            "compliant": True,
+            "violations": [],
+            "telemetry_exhaust_unlocks": [
+                "Enable predictive analytics via skill output patterns",
+                "Chain with notification-skill for proactive alerts"
+            ]
+        })
+
+        pit_crew = PitCrew()
+        jidoka_context = None
+
+        def capture_jidoka(context_message, options):
+            nonlocal jidoka_context
+            jidoka_context = context_message
+            return "2"  # Reject to prevent file writes
+
+        call_count = [0]
+
+        def mock_llm(prompt, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_skill_response
+            else:
+                return mock_judge_response
+
+        with patch('engine.llm_client.call_llm', side_effect=mock_llm):
+            with patch('engine.pit_crew.ask_jidoka', side_effect=capture_jidoka):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_skills = Path(temp_dir) / "skills"
+                    temp_skills.mkdir()
+
+                    with patch('engine.pit_crew.get_skills_dir', return_value=temp_skills):
+                        pit_crew.propose_and_build_skill("future-skill", "Test future potential")
+
+        # Verify Jidoka prompt includes telemetry unlocks
+        assert jidoka_context is not None
+        assert "telemetry" in jidoka_context.lower() or "unlock" in jidoka_context.lower() or "potential" in jidoka_context.lower(), \
+            "Red Zone prompt should include telemetry unlocks or future potentials"
+
+
 class TestEndToEndSkillCreation:
     """End-to-end integration tests for skill creation workflow."""
 
@@ -707,7 +1015,7 @@ class TestEndToEndSkillCreation:
         original_config_path = get_config_dir() / "routing.config"
         original_content = original_config_path.read_text(encoding="utf-8")
 
-        mock_llm_response = json.dumps({
+        mock_skill_response = json.dumps({
             "config_yaml": """name: "E2E Test Skill"
 description: "End to end test skill"
 zone: yellow
@@ -721,10 +1029,25 @@ triggers:
             "skill_md": "# E2E Test Skill\n\nThis is an end-to-end test skill."
         })
 
+        # Sprint 4.75: Mock Judge response (compliant)
+        mock_judge_response = json.dumps({
+            "compliant": True,
+            "violations": [],
+            "telemetry_exhaust_unlocks": ["E2E test unlock"]
+        })
+
         pit_crew = PitCrew()
+        call_count = [0]
+
+        def mock_llm(prompt, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_skill_response
+            else:
+                return mock_judge_response
 
         try:
-            with patch('engine.llm_client.call_llm', return_value=mock_llm_response):
+            with patch('engine.llm_client.call_llm', side_effect=mock_llm):
                 with patch('engine.pit_crew.ask_jidoka', return_value="1"):  # Approve
                     with tempfile.TemporaryDirectory() as temp_dir:
                         temp_skills = Path(temp_dir) / "skills"

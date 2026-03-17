@@ -14,6 +14,7 @@ Every LLM call MUST log telemetry with:
 Tier Routing:
 - Tier 1: claude-3-haiku-20240307 (fast, cheap - for classification, extraction)
 - Tier 2: claude-3-5-sonnet-20241022 (quality - for content generation)
+- Tier 3: claude-3-opus-20240229 (apex - for Pit Crew skill generation, Architectural Judge)
 """
 
 import json
@@ -31,6 +32,7 @@ from engine.profile import get_telemetry_dir
 TIER_MODELS = {
     1: "claude-3-haiku-20240307",
     2: "claude-3-5-sonnet-20241022",
+    3: "claude-3-opus-20240229",  # Apex tier for Pit Crew and Architectural Judge
 }
 
 # Pricing per million tokens (as of 2024)
@@ -42,6 +44,10 @@ MODEL_PRICING = {
     "claude-3-5-sonnet-20241022": {
         "input": 3.0,    # $3.00 per million input tokens
         "output": 15.0,  # $15.00 per million output tokens
+    },
+    "claude-3-opus-20240229": {
+        "input": 15.0,   # $15.00 per million input tokens
+        "output": 75.0,  # $75.00 per million output tokens
     },
 }
 
