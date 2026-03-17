@@ -243,6 +243,9 @@ class InvariantPipeline:
 
         Reconstructs the RoutingResult from stored metadata and
         dispatches to the appropriate handler.
+
+        If dispatcher returns an MCP action, execute it through the
+        governed effector layer.
         """
         from engine.dispatcher import dispatch_action
         from engine.cognitive_router import RoutingResult
@@ -262,6 +265,19 @@ class InvariantPipeline:
         # Dispatch the action
         dispatch_result = dispatch_action(routing_result, self.context.raw_input)
 
+        # Check if dispatcher returned an MCP action to execute
+        data = dispatch_result.data or {}
+        if data.get("type") == "mcp_action" and dispatch_result.success:
+            # Wire MCP action and execute through governed effector layer
+            self.context.mcp_action = MCPAction(
+                server=data.get("server", ""),
+                capability=data.get("capability", ""),
+                payload=data.get("payload", {})
+            )
+            self._execute_mcp_action()
+            return
+
+        # Standard dispatcher result handling
         self.context.executed = dispatch_result.success
         self.context.result = {
             "status": "executed" if dispatch_result.success else "failed",

@@ -55,6 +55,8 @@ class Dispatcher:
             "content_engine": self._handle_content_engine,
             "pit_crew": self._handle_pit_crew,
             "session_zero_handler": self._handle_session_zero,
+            "mcp_calendar": self._handle_mcp_calendar,
+            "mcp_gmail": self._handle_mcp_gmail,
         }
 
     def dispatch(
@@ -320,6 +322,192 @@ class Dispatcher:
                 "note": "Sprint 2 will integrate LLM client for interactive session"
             }
         )
+
+    def _handle_mcp_calendar(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Handle calendar scheduling via MCP (Google Calendar).
+
+        Uses LLM (Tier 1) to extract scheduling parameters from raw input
+        and format them into a calendar API payload.
+
+        Yellow Zone - requires Jidoka approval at MCP execution layer.
+        """
+        import json
+        from engine.llm_client import call_llm
+
+        server = routing_result.handler_args.get("server", "google_calendar")
+        capability = routing_result.handler_args.get("capability", "create_event")
+
+        # Use LLM to extract calendar parameters from raw input
+        prompt = f"""Extract calendar event parameters from this request.
+Return JSON with these fields:
+- event_type: Type of event (lesson, practice, tournament, meeting)
+- participant: Name of person/group involved
+- date: Date in ISO format (YYYY-MM-DD)
+- time: Time in 24-hour format (HH:MM)
+- duration_minutes: Duration in minutes (default 60)
+- location: Location if mentioned (optional)
+
+Request: "{raw_input}"
+
+Return ONLY valid JSON, no explanations:"""
+
+        try:
+            response = call_llm(
+                prompt=prompt,
+                tier=1,  # Haiku for extraction
+                intent="mcp_payload_formatting"
+            )
+
+            payload = json.loads(response)
+
+            # Format for Google Calendar API
+            calendar_payload = self._format_calendar_payload(payload)
+
+            return DispatchResult(
+                success=True,
+                message=f"Ready to schedule: {payload.get('event_type', 'event')} with {payload.get('participant', 'unknown')}",
+                data={
+                    "type": "mcp_action",
+                    "server": server,
+                    "capability": capability,
+                    "payload": calendar_payload,
+                    "raw_extraction": payload
+                },
+                requires_approval=True,
+                approval_context=f"Schedule {payload.get('event_type', 'event')} for {payload.get('participant', 'unknown')} on {payload.get('date', '?')} at {payload.get('time', '?')}"
+            )
+
+        except json.JSONDecodeError:
+            return DispatchResult(
+                success=False,
+                message="Failed to parse calendar parameters",
+                data={"type": "mcp_action", "error": "parse_failed"}
+            )
+        except Exception as e:
+            return DispatchResult(
+                success=False,
+                message=f"Calendar extraction failed: {e}",
+                data={"type": "mcp_action", "error": str(e)}
+            )
+
+    def _format_calendar_payload(self, extracted: dict) -> dict:
+        """
+        Format extracted parameters into Google Calendar API payload.
+        """
+        from datetime import datetime, timedelta
+
+        # Build summary
+        event_type = extracted.get("event_type", "Event")
+        participant = extracted.get("participant", "")
+        summary = f"{event_type.title()} - {participant}" if participant else event_type.title()
+
+        # Parse date and time
+        date_str = extracted.get("date", datetime.now().strftime("%Y-%m-%d"))
+        time_str = extracted.get("time", "09:00")
+        duration = extracted.get("duration_minutes", 60)
+
+        # Build start/end datetime
+        try:
+            start_dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+            end_dt = start_dt + timedelta(minutes=duration)
+        except ValueError:
+            start_dt = datetime.now()
+            end_dt = start_dt + timedelta(hours=1)
+
+        payload = {
+            "summary": summary,
+            "start": {
+                "dateTime": start_dt.isoformat(),
+                "timeZone": "America/New_York"
+            },
+            "end": {
+                "dateTime": end_dt.isoformat(),
+                "timeZone": "America/New_York"
+            },
+            "participant": participant,
+            "event_type": event_type
+        }
+
+        # Add location if present
+        if extracted.get("location"):
+            payload["location"] = extracted["location"]
+
+        return payload
+
+    def _handle_mcp_gmail(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Handle email sending via MCP (Gmail).
+
+        Uses LLM (Tier 2) to draft email content from raw input
+        and format into Gmail API payload.
+
+        Yellow Zone - requires Jidoka approval at MCP execution layer.
+        """
+        import json
+        from engine.llm_client import call_llm
+
+        server = routing_result.handler_args.get("server", "gmail")
+        capability = routing_result.handler_args.get("capability", "send_email")
+
+        # Use LLM to extract and draft email from raw input
+        prompt = f"""Extract email parameters and draft the email content.
+Return JSON with these fields:
+- recipient: Name of the recipient (e.g., "Henderson Parent")
+- subject: Email subject line
+- body: Full email body text (professional, friendly tone)
+
+Request: "{raw_input}"
+
+Return ONLY valid JSON, no explanations:"""
+
+        try:
+            response = call_llm(
+                prompt=prompt,
+                tier=2,  # Sonnet for quality email drafting
+                intent="mcp_payload_formatting"
+            )
+
+            payload = json.loads(response)
+
+            return DispatchResult(
+                success=True,
+                message=f"Email ready to send: {payload.get('subject', 'No subject')}",
+                data={
+                    "type": "mcp_action",
+                    "server": server,
+                    "capability": capability,
+                    "payload": {
+                        "to": payload.get("recipient", ""),
+                        "subject": payload.get("subject", ""),
+                        "body": payload.get("body", "")
+                    },
+                    "raw_extraction": payload
+                },
+                requires_approval=True,
+                approval_context=f"Send email to {payload.get('recipient', 'unknown')}: {payload.get('subject', 'No subject')}"
+            )
+
+        except json.JSONDecodeError:
+            return DispatchResult(
+                success=False,
+                message="Failed to parse email parameters",
+                data={"type": "mcp_action", "error": "parse_failed"}
+            )
+        except Exception as e:
+            return DispatchResult(
+                success=False,
+                message=f"Email extraction failed: {e}",
+                data={"type": "mcp_action", "error": str(e)}
+            )
 
 
 # =========================================================================

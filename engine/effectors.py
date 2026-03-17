@@ -6,12 +6,18 @@ Model Context Protocol (MCP) servers. Every MCP action is strictly
 governed by Zone classification.
 
 CRITICAL: The most restrictive zone always wins.
+
+Sprint 3: Real Google API integration via google-api-python-client.
+OAuth tokens are stored in profiles/{profile}/config/auth/
 """
 
 import yaml
+import os
+import base64
 from pathlib import Path
 from typing import Optional, Any
 from dataclasses import dataclass
+from email.mime.text import MIMEText
 
 from engine.telemetry import log_event
 from engine.ux import ask_jidoka
@@ -121,6 +127,142 @@ class ConfigLoader:
         cls._zones_schema = None
         cls._config_dir = None
 
+
+# =========================================================================
+# Google API Service Management
+# =========================================================================
+
+# OAuth scopes required for each service
+GOOGLE_CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar']
+GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
+
+
+def get_auth_dir() -> Path:
+    """Get the auth directory for OAuth token storage."""
+    auth_dir = get_config_dir() / "auth"
+    auth_dir.mkdir(parents=True, exist_ok=True)
+    return auth_dir
+
+
+def get_google_calendar_service():
+    """
+    Get authenticated Google Calendar service.
+
+    Uses OAuth2 credentials stored in profiles/{profile}/config/auth/.
+    If no valid token exists, initiates OAuth flow.
+
+    Returns:
+        Google Calendar API service object or None if auth fails
+    """
+    try:
+        from google.oauth2.credentials import Credentials
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+    except ImportError:
+        # Google API libraries not installed
+        return None
+
+    token_path = get_auth_dir() / "calendar_token.json"
+    credentials_path = get_auth_dir() / "credentials.json"
+
+    creds = None
+
+    # Load existing token
+    if token_path.exists():
+        creds = Credentials.from_authorized_user_file(str(token_path), GOOGLE_CALENDAR_SCOPES)
+
+    # Refresh or get new token
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+            except Exception:
+                creds = None
+
+        if not creds:
+            if not credentials_path.exists():
+                # No credentials file - cannot authenticate
+                return None
+
+            flow = InstalledAppFlow.from_client_secrets_file(
+                str(credentials_path), GOOGLE_CALENDAR_SCOPES
+            )
+
+            # Use console flow for headless environments
+            if is_headless_environment():
+                creds = flow.run_console()
+            else:
+                creds = flow.run_local_server(port=0)
+
+        # Save the token
+        with open(token_path, 'w') as token_file:
+            token_file.write(creds.to_json())
+
+    return build('calendar', 'v3', credentials=creds)
+
+
+def get_gmail_service():
+    """
+    Get authenticated Gmail service.
+
+    Uses OAuth2 credentials stored in profiles/{profile}/config/auth/.
+    If no valid token exists, initiates OAuth flow.
+
+    Returns:
+        Gmail API service object or None if auth fails
+    """
+    try:
+        from google.oauth2.credentials import Credentials
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+    except ImportError:
+        # Google API libraries not installed
+        return None
+
+    token_path = get_auth_dir() / "gmail_token.json"
+    credentials_path = get_auth_dir() / "credentials.json"
+
+    creds = None
+
+    # Load existing token
+    if token_path.exists():
+        creds = Credentials.from_authorized_user_file(str(token_path), GMAIL_SCOPES)
+
+    # Refresh or get new token
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+            except Exception:
+                creds = None
+
+        if not creds:
+            if not credentials_path.exists():
+                # No credentials file - cannot authenticate
+                return None
+
+            flow = InstalledAppFlow.from_client_secrets_file(
+                str(credentials_path), GMAIL_SCOPES
+            )
+
+            # Use console flow for headless environments
+            if is_headless_environment():
+                creds = flow.run_console()
+            else:
+                creds = flow.run_local_server(port=0)
+
+        # Save the token
+        with open(token_path, 'w') as token_file:
+            token_file.write(creds.to_json())
+
+    return build('gmail', 'v1', credentials=creds)
+
+
+# =========================================================================
+# Zone Computation
+# =========================================================================
 
 def compute_effective_zone(server_zone: str, domain_zone: str) -> str:
     """
@@ -321,7 +463,8 @@ class MCPClient:
         """
         Execute a capability on the MCP server.
 
-        Sprint 2: Stub implementation returns mock success.
+        Sprint 3: Real Google API integration for supported servers.
+        Falls back to stub for unsupported capabilities.
         """
         if not self.connected:
             return {
@@ -337,7 +480,13 @@ class MCPClient:
                 "error": f"Capability '{capability}' not supported by {self.server}"
             }
 
-        # Sprint 2: Return stub success
+        # Route to appropriate API implementation
+        if self.server == "google_calendar":
+            return self._execute_calendar(capability, payload)
+        elif self.server == "gmail":
+            return self._execute_gmail(capability, payload)
+
+        # Fallback to stub for unimplemented servers
         return {
             "success": True,
             "stub": True,
@@ -346,6 +495,227 @@ class MCPClient:
             "payload": payload,
             "message": f"[STUB] Would execute {capability} on {self.server}"
         }
+
+    def _execute_calendar(self, capability: str, payload: dict) -> dict:
+        """
+        Execute Google Calendar API operations.
+        """
+        service = get_google_calendar_service()
+
+        if service is None:
+            # Fall back to stub if API not available
+            return {
+                "success": True,
+                "stub": True,
+                "message": f"[STUB - No Google API] Would execute {capability}",
+                "payload": payload
+            }
+
+        try:
+            if capability == "create_event":
+                # Build event from payload
+                event = {
+                    'summary': payload.get('summary', 'Untitled Event'),
+                    'start': payload.get('start', {}),
+                    'end': payload.get('end', {}),
+                }
+                if payload.get('location'):
+                    event['location'] = payload['location']
+                if payload.get('description'):
+                    event['description'] = payload['description']
+
+                result = service.events().insert(
+                    calendarId='primary',
+                    body=event
+                ).execute()
+
+                return {
+                    "success": True,
+                    "server": self.server,
+                    "capability": capability,
+                    "event_id": result.get('id'),
+                    "html_link": result.get('htmlLink'),
+                    "message": f"Created event: {result.get('summary')}"
+                }
+
+            elif capability == "list_events":
+                # List upcoming events
+                from datetime import datetime
+                now = datetime.utcnow().isoformat() + 'Z'
+                max_results = payload.get('max_results', 10)
+
+                result = service.events().list(
+                    calendarId='primary',
+                    timeMin=now,
+                    maxResults=max_results,
+                    singleEvents=True,
+                    orderBy='startTime'
+                ).execute()
+
+                events = result.get('items', [])
+                return {
+                    "success": True,
+                    "server": self.server,
+                    "capability": capability,
+                    "events": events,
+                    "count": len(events),
+                    "message": f"Retrieved {len(events)} events"
+                }
+
+            elif capability == "delete_event":
+                event_id = payload.get('event_id')
+                if not event_id:
+                    return {"success": False, "error": "Missing event_id"}
+
+                service.events().delete(
+                    calendarId='primary',
+                    eventId=event_id
+                ).execute()
+
+                return {
+                    "success": True,
+                    "server": self.server,
+                    "capability": capability,
+                    "event_id": event_id,
+                    "message": f"Deleted event: {event_id}"
+                }
+
+            elif capability == "update_event":
+                event_id = payload.get('event_id')
+                if not event_id:
+                    return {"success": False, "error": "Missing event_id"}
+
+                # Get existing event
+                event = service.events().get(
+                    calendarId='primary',
+                    eventId=event_id
+                ).execute()
+
+                # Update fields from payload
+                for key in ['summary', 'location', 'description', 'start', 'end']:
+                    if key in payload:
+                        event[key] = payload[key]
+
+                result = service.events().update(
+                    calendarId='primary',
+                    eventId=event_id,
+                    body=event
+                ).execute()
+
+                return {
+                    "success": True,
+                    "server": self.server,
+                    "capability": capability,
+                    "event_id": event_id,
+                    "message": f"Updated event: {result.get('summary')}"
+                }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "server": self.server,
+                "capability": capability,
+                "error": str(e)
+            }
+
+        return {"success": False, "error": f"Unknown capability: {capability}"}
+
+    def _execute_gmail(self, capability: str, payload: dict) -> dict:
+        """
+        Execute Gmail API operations.
+        """
+        service = get_gmail_service()
+
+        if service is None:
+            # Fall back to stub if API not available
+            return {
+                "success": True,
+                "stub": True,
+                "message": f"[STUB - No Google API] Would execute {capability}",
+                "payload": payload
+            }
+
+        try:
+            if capability == "send_email":
+                # Build email message
+                to = payload.get('to', '')
+                subject = payload.get('subject', '')
+                body = payload.get('body', '')
+
+                message = MIMEText(body)
+                message['to'] = to
+                message['subject'] = subject
+
+                raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+                send_message = {'raw': raw}
+
+                result = service.users().messages().send(
+                    userId='me',
+                    body=send_message
+                ).execute()
+
+                return {
+                    "success": True,
+                    "server": self.server,
+                    "capability": capability,
+                    "message_id": result.get('id'),
+                    "thread_id": result.get('threadId'),
+                    "message": f"Sent email: {subject}"
+                }
+
+            elif capability == "draft_email":
+                # Create email draft
+                to = payload.get('to', '')
+                subject = payload.get('subject', '')
+                body = payload.get('body', '')
+
+                message = MIMEText(body)
+                message['to'] = to
+                message['subject'] = subject
+
+                raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+                draft_body = {'message': {'raw': raw}}
+
+                result = service.users().drafts().create(
+                    userId='me',
+                    body=draft_body
+                ).execute()
+
+                return {
+                    "success": True,
+                    "server": self.server,
+                    "capability": capability,
+                    "draft_id": result.get('id'),
+                    "message": f"Created draft: {subject}"
+                }
+
+            elif capability == "list_threads":
+                max_results = payload.get('max_results', 10)
+
+                result = service.users().threads().list(
+                    userId='me',
+                    maxResults=max_results
+                ).execute()
+
+                threads = result.get('threads', [])
+                return {
+                    "success": True,
+                    "server": self.server,
+                    "capability": capability,
+                    "threads": threads,
+                    "count": len(threads),
+                    "message": f"Retrieved {len(threads)} threads"
+                }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "server": self.server,
+                "capability": capability,
+                "error": str(e)
+            }
+
+        return {"success": False, "error": f"Unknown capability: {capability}"}
 
     def disconnect(self) -> None:
         """Disconnect from the MCP server."""
