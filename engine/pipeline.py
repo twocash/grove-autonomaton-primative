@@ -1,0 +1,312 @@
+"""
+pipeline.py - The Invariant Pipeline
+
+Every interaction MUST traverse these five stages in sequence.
+Code that bypasses these stages to execute directly is FORBIDDEN.
+
+Stages:
+    1. Telemetry   - Log the raw input as structured data
+    2. Recognition - Parse intent, entities, and domain
+    3. Compilation - Query dock, draft proposed actions
+    4. Approval    - Apply governance checks (zone-based)
+    5. Execution   - Carry out action if approval is met
+"""
+
+from dataclasses import dataclass, field
+from typing import Optional, Any
+
+from engine.telemetry import log_event
+from engine.ux import confirm_yellow_zone
+
+
+@dataclass
+class MCPAction:
+    """
+    Defines an MCP action to be executed in Stage 5.
+    """
+    server: str
+    capability: str
+    payload: dict
+
+
+@dataclass
+class PipelineContext:
+    """
+    Carries state through all pipeline stages.
+    Each stage reads from and writes to this context.
+    """
+    # Stage 1: Telemetry
+    raw_input: str = ""
+    source: str = "operator_session"
+    telemetry_event: dict = field(default_factory=dict)
+
+    # Stage 2: Recognition
+    intent: Optional[str] = None
+    entities: dict = field(default_factory=dict)
+    domain: Optional[str] = None
+
+    # Stage 3: Compilation
+    proposed_action: Optional[str] = None
+    dock_context: list = field(default_factory=list)
+    mcp_action: Optional[MCPAction] = None  # External capability to invoke
+
+    # Stage 4: Approval
+    zone: str = "green"
+    approved: bool = False
+
+    # Stage 5: Execution
+    result: Any = None
+    executed: bool = False
+    mcp_result: Any = None  # Result from MCP execution
+
+
+class InvariantPipeline:
+    """
+    The five-stage pipeline that all interactions must traverse.
+    Bypass is architecturally forbidden.
+    """
+
+    def __init__(self):
+        self.context: Optional[PipelineContext] = None
+
+    def run(self, raw_input: str, source: str = "operator_session", zone: str = "green") -> PipelineContext:
+        """
+        Execute the full invariant pipeline.
+
+        Args:
+            raw_input: The user's raw input string
+            source: Origin identifier for telemetry
+            zone: Zone classification (green/yellow/red)
+
+        Returns:
+            PipelineContext with all stages populated
+        """
+        self.context = PipelineContext(
+            raw_input=raw_input,
+            source=source,
+            zone=zone
+        )
+
+        # Execute stages in strict sequence
+        self._run_telemetry()
+        self._run_recognition()
+        self._run_compilation()
+        self._run_approval()
+        self._run_execution()
+
+        return self.context
+
+    def _run_telemetry(self) -> None:
+        """
+        Stage 1: Telemetry
+        Log the raw input before any processing.
+        """
+        self.context.telemetry_event = log_event(
+            source=self.context.source,
+            raw_transcript=self.context.raw_input,
+            zone_context=self.context.zone,
+            inferred={}
+        )
+
+    def _run_recognition(self) -> None:
+        """
+        Stage 2: Recognition
+        Parse intent, entities, and domain from input.
+
+        Sprint 1: Pass-through stub.
+        Future: LLM-powered intent classification.
+        """
+        # Stub: No recognition yet - preserve existing values if set
+        if self.context.intent is None:
+            self.context.intent = "unknown"
+        if not self.context.entities:
+            self.context.entities = {}
+        if self.context.domain is None:
+            self.context.domain = "general"
+
+    def _run_compilation(self) -> None:
+        """
+        Stage 3: Compilation
+        Query the dock (RAG) and draft proposed actions.
+
+        The dock provides strategic context from local knowledge files.
+        This context informs the proposed action sent to Approval.
+        """
+        # Import here to avoid circular dependency at module load
+        from engine.dock import query_dock
+
+        # Query the dock with the raw transcript
+        # Future: Use parsed intent/entities for more targeted retrieval
+        query = self.context.raw_input
+        if self.context.intent and self.context.intent != "unknown":
+            query = f"{self.context.intent}: {self.context.raw_input}"
+
+        dock_context = query_dock(query, top_k=2)
+        self.context.dock_context = [dock_context]
+
+        # Compose the proposed action with dock context
+        self.context.proposed_action = (
+            f"[ACTION] Process: {self.context.raw_input}\n\n"
+            f"[STRATEGIC CONTEXT]\n{dock_context}"
+        )
+
+    def _run_approval(self) -> None:
+        """
+        Stage 4: Approval
+        Apply governance checks based on zone classification.
+
+        Green zone: Auto-approve
+        Yellow zone: Require Jidoka confirmation
+        Red zone: Require explicit approval with context
+        """
+        if self.context.zone == "green":
+            # Green zone: Autonomous execution allowed
+            self.context.approved = True
+
+        elif self.context.zone == "yellow":
+            # Yellow zone: One-thumb approval required
+            self.context.approved = confirm_yellow_zone(
+                action_description=self.context.proposed_action or "Unknown action"
+            )
+
+        elif self.context.zone == "red":
+            # Red zone: Explicit approval with full context
+            # For Sprint 1, treat as yellow zone
+            self.context.approved = confirm_yellow_zone(
+                action_description=f"[RED ZONE] {self.context.proposed_action or 'Unknown action'}"
+            )
+
+        else:
+            # Unknown zone: Fail safe, require approval
+            self.context.approved = confirm_yellow_zone(
+                action_description=f"[UNKNOWN ZONE: {self.context.zone}] {self.context.proposed_action}"
+            )
+
+    def _run_execution(self) -> None:
+        """
+        Stage 5: Execution
+        Carry out the action if approval was granted.
+
+        Routes through MCP effectors if an external capability is required.
+        MCP actions have their own zone governance (most restrictive wins).
+        """
+        if not self.context.approved:
+            self.context.executed = False
+            self.context.result = {
+                "status": "cancelled",
+                "message": "Action not approved"
+            }
+            return
+
+        # Check if this requires an MCP action
+        if self.context.mcp_action is not None:
+            self._execute_mcp_action()
+        else:
+            # Local execution (no external capability needed)
+            self.context.executed = True
+            self.context.result = {
+                "status": "executed",
+                "message": f"Processed input: {self.context.raw_input[:50]}..."
+                           if len(self.context.raw_input) > 50
+                           else f"Processed input: {self.context.raw_input}"
+            }
+
+    def _execute_mcp_action(self) -> None:
+        """
+        Execute an MCP action through the effector layer.
+
+        The effector layer enforces its own zone governance:
+        - Compares domain zone with server/capability zone
+        - Most restrictive zone wins
+        - Yellow/Red zones trigger Jidoka approval
+        """
+        # Import here to avoid circular dependency
+        from engine.effectors import execute_mcp_action
+
+        action = self.context.mcp_action
+        domain = self.context.domain or "general"
+
+        # Execute through the governed effector layer
+        mcp_result = execute_mcp_action(
+            server=action.server,
+            capability=action.capability,
+            payload=action.payload,
+            domain=domain
+        )
+
+        # Store the MCP result
+        self.context.mcp_result = mcp_result
+
+        if mcp_result.success:
+            self.context.executed = True
+            self.context.result = {
+                "status": "executed",
+                "message": f"MCP action completed: {action.server}.{action.capability}",
+                "mcp_result": mcp_result.result
+            }
+        elif not mcp_result.approved:
+            # User rejected at the effector governance layer
+            self.context.executed = False
+            self.context.result = {
+                "status": "rejected",
+                "message": f"MCP action rejected by user: {action.server}.{action.capability}",
+                "zone": mcp_result.effective_zone
+            }
+        else:
+            # Execution failed after approval
+            self.context.executed = False
+            self.context.result = {
+                "status": "failed",
+                "message": f"MCP action failed: {mcp_result.error}",
+                "error": mcp_result.error
+            }
+
+
+# Module-level convenience functions
+def run_pipeline(raw_input: str, source: str = "operator_session", zone: str = "green") -> PipelineContext:
+    """
+    Execute the invariant pipeline on the given input.
+
+    This is the primary entry point for processing user interactions.
+    """
+    pipeline = InvariantPipeline()
+    return pipeline.run(raw_input, source, zone)
+
+
+def run_pipeline_with_mcp(
+    raw_input: str,
+    mcp_server: str,
+    mcp_capability: str,
+    mcp_payload: dict,
+    domain: str = "general",
+    source: str = "operator_session"
+) -> PipelineContext:
+    """
+    Execute the pipeline with a pre-defined MCP action.
+
+    This is useful for testing MCP governance or when the intent
+    and action are already known (e.g., from a skill or command).
+
+    The MCP action will go through full zone governance at execution time.
+    """
+    pipeline = InvariantPipeline()
+    pipeline.context = PipelineContext(
+        raw_input=raw_input,
+        source=source,
+        zone="green",  # Initial zone; MCP governance computes effective zone
+        domain=domain,
+        mcp_action=MCPAction(
+            server=mcp_server,
+            capability=mcp_capability,
+            payload=mcp_payload
+        )
+    )
+
+    # Execute stages in strict sequence
+    pipeline._run_telemetry()
+    pipeline._run_recognition()
+    pipeline._run_compilation()
+    pipeline._run_approval()
+    pipeline._run_execution()
+
+    return pipeline.context

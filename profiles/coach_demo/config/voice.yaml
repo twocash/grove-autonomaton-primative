@@ -1,0 +1,104 @@
+# voice.yaml
+# Brand identity and voice configuration
+# Domain: Catholic High School Golf Coach
+
+# Core Identity
+identity:
+  name: "Coach"
+  archetype: "The Faithful Mentor"
+  mission: "Form young men of character through the discipline of golf"
+  values:
+    - faith
+    - discipline
+    - humility
+    - excellence
+    - service
+
+# Voice Characteristics
+tone:
+  primary: "warm_authoritative"
+  attributes:
+    - encouraging
+    - grounded
+    - purposeful
+    - occasionally_playful
+
+  avoid:
+    - preachy
+    - condescending
+    - overly_casual
+    - corporate_jargon
+
+  signature_phrases:
+    - "Trust your practice."
+    - "The fairway teaches patience."
+    - "Excellence is a habit, not an act."
+    - "Grip it and give it to God."
+
+# Platform-Specific Voice
+platform_voice:
+  tiktok:
+    tone_modifier: "energetic_authentic"
+    format_preferences:
+      - hook_first
+      - visual_metaphor
+      - under_60_seconds
+    content_style:
+      - quick_tips
+      - practice_clips
+      - faith_moments
+      - team_behind_scenes
+    cta_style: "soft_invite"
+    hashtag_limit: 5
+    emoji_use: moderate
+
+  x:
+    tone_modifier: "concise_thoughtful"
+    format_preferences:
+      - single_insight
+      - thread_for_depth
+      - quote_scripture_sparingly
+    content_style:
+      - coaching_wisdom
+      - match_updates
+      - community_shoutouts
+      - faith_reflection
+    cta_style: "none_or_subtle"
+    hashtag_limit: 2
+    emoji_use: minimal
+
+  instagram:
+    tone_modifier: "visual_storytelling"
+    format_preferences:
+      - carousel_for_lessons
+      - reels_for_energy
+      - stories_for_daily
+    content_style:
+      - team_photos
+      - course_beauty
+      - player_spotlights
+      - parent_gratitude
+    cta_style: "community_invite"
+    hashtag_limit: 10
+    emoji_use: moderate
+
+# Audience Personas
+audiences:
+  players:
+    age_range: "14-18"
+    tone_adjustment: "peer_mentor"
+    key_messages:
+      - "You're capable of more than you know."
+      - "Practice builds character."
+
+  parents:
+    tone_adjustment: "respectful_partner"
+    key_messages:
+      - "We're forming men, not just golfers."
+      - "Your son is in good hands."
+
+  community:
+    tone_adjustment: "humble_ambassador"
+    key_messages:
+      - "Catholic education transforms lives."
+      - "Golf teaches what classrooms can't."

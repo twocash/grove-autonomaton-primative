@@ -1,0 +1,77 @@
+# pillars.yaml
+# Content pillars for The Coach Autonomaton
+# Domain: Catholic High School Golf Coach
+
+# Pillar Definitions
+pillars:
+  surrender:
+    name: "Surrender to the Swing"
+    description: "Trust the process, release control, let faith guide the follow-through"
+    themes:
+      - trust
+      - patience
+      - letting_go
+      - faith_in_practice
+    hashtags:
+      - "#SurrenderToTheSwing"
+      - "#TrustTheProcess"
+      - "#FaithOnTheFairway"
+    content_types:
+      - devotional_reflection
+      - practice_meditation
+      - post_round_prayer
+    scripture_anchors:
+      - "Proverbs 3:5-6"
+      - "Philippians 4:6-7"
+
+  swing_spiritual:
+    name: "The Spiritual Swing"
+    description: "Golf mechanics as metaphor for spiritual discipline"
+    themes:
+      - discipline
+      - repetition
+      - humility
+      - growth_mindset
+    hashtags:
+      - "#SpiritualSwing"
+      - "#GolfAndGrace"
+      - "#CoachWithPurpose"
+    content_types:
+      - technique_parable
+      - character_lesson
+      - virtue_drill
+    scripture_anchors:
+      - "Colossians 3:23"
+      - "1 Corinthians 9:24-27"
+
+  team_communion:
+    name: "Team as Communion"
+    description: "Building community through shared struggle and celebration"
+    themes:
+      - brotherhood
+      - accountability
+      - service
+      - celebration
+    hashtags:
+      - "#TeamCommunion"
+      - "#BrothersOnTheCourse"
+      - "#CatholicGolf"
+    content_types:
+      - team_highlight
+      - parent_appreciation
+      - tournament_recap
+    scripture_anchors:
+      - "Ecclesiastes 4:9-12"
+      - "Romans 12:4-5"
+
+# Content Calendar Defaults
+calendar:
+  weekly_cadence:
+    monday: surrender
+    wednesday: swing_spiritual
+    friday: team_communion
+
+  platform_priority:
+    - tiktok
+    - x
+    - instagram

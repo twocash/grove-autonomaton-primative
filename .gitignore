@@ -1,0 +1,27 @@
+# Environment secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Telemetry (local state - both legacy and profile-based)
+telemetry/*.jsonl
+profiles/*/telemetry/*.jsonl
+
+# Queue processed events tracking
+profiles/*/queue/.processed_events
+
+# Claude temp files
+tmpclaude-*
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
