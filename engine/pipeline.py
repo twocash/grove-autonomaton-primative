@@ -80,6 +80,10 @@ class InvariantPipeline:
 
         Returns:
             PipelineContext with all stages populated
+
+        Sprint 3.5: Exception Telemetry
+        All exceptions are caught, logged to telemetry, and returned
+        in the context. No ghost failures - every crash leaves a trail.
         """
         self.context = PipelineContext(
             raw_input=raw_input,
@@ -87,14 +91,58 @@ class InvariantPipeline:
             zone=zone
         )
 
-        # Execute stages in strict sequence
-        self._run_telemetry()
-        self._run_recognition()
-        self._run_compilation()
-        self._run_approval()
-        self._run_execution()
+        try:
+            # Execute stages in strict sequence
+            self._run_telemetry()
+            self._run_recognition()
+            self._run_compilation()
+            self._run_approval()
+            self._run_execution()
+
+        except Exception as e:
+            # Log failure to telemetry (Invariant #5: No ghost failures)
+            self._log_pipeline_failure(e)
+
+            # Set context to reflect failure state
+            self.context.executed = False
+            self.context.result = {
+                "status": "failed",
+                "message": f"Pipeline failure: {str(e)}",
+                "error_type": type(e).__name__
+            }
 
         return self.context
+
+    def _log_pipeline_failure(self, exception: Exception) -> None:
+        """
+        Log a pipeline failure to telemetry.
+
+        Sprint 3.5: No ghost failures - every crash leaves an audit trail.
+        """
+        log_event(
+            source="pipeline_failure",
+            raw_transcript=self.context.raw_input[:200] if self.context.raw_input else "",
+            zone_context=self.context.zone,
+            inferred={
+                "error": str(exception),
+                "error_type": type(exception).__name__,
+                "intent": self.context.intent,
+                "domain": self.context.domain,
+                "stage": self._get_current_stage()
+            }
+        )
+
+    def _get_current_stage(self) -> str:
+        """Determine which stage was active when failure occurred."""
+        if self.context.telemetry_event is None:
+            return "telemetry"
+        if self.context.intent is None:
+            return "recognition"
+        if self.context.proposed_action is None:
+            return "compilation"
+        if not hasattr(self.context, 'approved') or self.context.approved is None:
+            return "approval"
+        return "execution"
 
     def _run_telemetry(self) -> None:
         """
@@ -171,23 +219,36 @@ class InvariantPipeline:
         Stage 4: Approval
         Apply governance checks based on zone classification.
 
+        SPRINT 3.5: Unified Governance
+        For MCP handlers, compute effective zone by combining:
+        - Router zone (from intent classification)
+        - Domain zone (from zones.schema)
+        - Capability zone (from mcp.config)
+
+        The most restrictive zone wins.
+
         Green zone: Auto-approve
         Yellow zone: Require Jidoka confirmation
         Red zone: Require explicit approval with context
         """
-        if self.context.zone == "green":
+        # Compute effective zone for MCP actions
+        effective_zone = self._compute_effective_zone()
+
+        # Update context with effective zone
+        self.context.zone = effective_zone
+
+        if effective_zone == "green":
             # Green zone: Autonomous execution allowed
             self.context.approved = True
 
-        elif self.context.zone == "yellow":
+        elif effective_zone == "yellow":
             # Yellow zone: One-thumb approval required
             self.context.approved = confirm_yellow_zone(
                 action_description=self.context.proposed_action or "Unknown action"
             )
 
-        elif self.context.zone == "red":
+        elif effective_zone == "red":
             # Red zone: Explicit approval with full context
-            # For Sprint 1, treat as yellow zone
             self.context.approved = confirm_yellow_zone(
                 action_description=f"[RED ZONE] {self.context.proposed_action or 'Unknown action'}"
             )
@@ -195,8 +256,53 @@ class InvariantPipeline:
         else:
             # Unknown zone: Fail safe, require approval
             self.context.approved = confirm_yellow_zone(
-                action_description=f"[UNKNOWN ZONE: {self.context.zone}] {self.context.proposed_action}"
+                action_description=f"[UNKNOWN ZONE: {effective_zone}] {self.context.proposed_action}"
             )
+
+    def _compute_effective_zone(self) -> str:
+        """
+        Compute the effective zone for this action.
+
+        For MCP handlers (mcp_calendar, mcp_gmail), combines:
+        - Router zone (from intent)
+        - Domain zone (from zones.schema)
+        - Capability zone (from mcp.config)
+
+        The most restrictive zone always wins.
+        """
+        from engine.effectors import ConfigLoader, compute_effective_zone
+
+        router_zone = self.context.zone
+
+        # Check if this is an MCP handler
+        routing_info = self.context.entities.get("routing", {})
+        handler = routing_info.get("handler", "")
+        handler_args = routing_info.get("handler_args", {})
+
+        if not handler or not handler.startswith("mcp_"):
+            # Not an MCP handler, use router zone directly
+            return router_zone
+
+        # MCP handler: compute effective zone
+        server = handler_args.get("server", "")
+        capability = handler_args.get("capability", "")
+        domain = self.context.domain or "general"
+
+        if not server:
+            # No server info, use router zone
+            return router_zone
+
+        # Get zone from mcp.config (server/capability)
+        capability_zone = ConfigLoader.get_capability_zone(server, capability)
+
+        # Get zone from zones.schema (domain)
+        domain_zone = ConfigLoader.get_domain_zone(domain)
+
+        # Compute most restrictive: router vs capability vs domain
+        mcp_zone = compute_effective_zone(capability_zone, domain_zone)
+        effective_zone = compute_effective_zone(router_zone, mcp_zone)
+
+        return effective_zone
 
     def _run_execution(self) -> None:
         """

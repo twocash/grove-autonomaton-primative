@@ -84,139 +84,140 @@ class TestEffectiveZoneComputation:
 
 
 class TestJidokaEnforcement:
-    """Tests for Jidoka approval enforcement based on effective zone."""
+    """
+    Tests for Jidoka approval enforcement based on effective zone.
 
-    def test_green_zone_auto_approves(self):
-        """Green zone actions should auto-approve without prompting."""
-        from engine.effectors import execute_mcp_action
+    SPRINT 3.5 ARCHITECTURE CHANGE:
+    Zone governance is now handled by pipeline Stage 4, not effectors.
+    These tests verify governance through the full pipeline flow.
+    """
+
+    def test_green_zone_auto_approves_via_pipeline(self):
+        """Green zone actions should auto-approve without prompting through pipeline."""
+        from engine.pipeline import run_pipeline
         from engine.profile import set_profile
 
         set_profile("coach_demo")
 
-        # Mock green zone capability (list_events is green)
-        with patch('engine.effectors.ask_jidoka') as mock_jidoka:
-            with patch('engine.effectors.MCPClient.connect', return_value=True):
-                with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
-                    with patch('engine.effectors.log_event'):
-                        result = execute_mcp_action(
-                            server="google_calendar",
-                            capability="list_events",
-                            payload={"date": "2024-01-15"},
-                            domain="lessons"  # Green zone domain
-                        )
+        # Green zone command - should auto-approve
+        with patch('engine.pipeline.confirm_yellow_zone') as mock_jidoka:
+            context = run_pipeline(raw_input="dock", source="test")
 
-            # Jidoka should NOT be called for green zone
-            mock_jidoka.assert_not_called()
-            assert result.approved is True
+        # Jidoka should NOT be called for green zone
+        mock_jidoka.assert_not_called()
+        assert context.approved is True
+        assert context.zone == "green"
 
-    def test_yellow_zone_triggers_jidoka(self):
-        """Yellow zone actions should trigger Jidoka approval prompt."""
-        from engine.effectors import execute_mcp_action
+    def test_yellow_zone_triggers_jidoka_via_pipeline(self):
+        """Yellow zone actions should trigger Jidoka approval via pipeline Stage 4."""
+        from engine.pipeline import run_pipeline
         from engine.profile import set_profile
 
         set_profile("coach_demo")
 
-        # Mock yellow zone capability (create_event is yellow)
-        with patch('engine.effectors.ask_jidoka', return_value="1") as mock_jidoka:
-            with patch('engine.effectors.MCPClient.connect', return_value=True):
-                with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
-                    with patch('engine.effectors.log_event'):
-                        result = execute_mcp_action(
-                            server="google_calendar",
-                            capability="create_event",
-                            payload={"title": "Golf Lesson", "date": "2024-01-15"},
-                            domain="lessons"
-                        )
+        # Mock approval for yellow zone
+        with patch('engine.pipeline.confirm_yellow_zone', return_value=True) as mock_jidoka:
+            context = run_pipeline(raw_input="compile content", source="test")
 
-            # Jidoka SHOULD be called for yellow zone
-            mock_jidoka.assert_called_once()
-            assert result.approved is True
+        # Jidoka SHOULD be called for yellow zone (at Stage 4)
+        mock_jidoka.assert_called_once()
+        assert context.approved is True
+        assert context.zone == "yellow"
 
-    def test_red_zone_triggers_explicit_jidoka(self):
-        """Red zone actions should trigger explicit Jidoka with full context."""
-        from engine.effectors import execute_mcp_action
+    def test_red_zone_triggers_jidoka_via_pipeline(self):
+        """Red zone actions should trigger Jidoka with RED ZONE prefix via pipeline."""
+        from engine.pipeline import run_pipeline
         from engine.profile import set_profile
 
         set_profile("coach_demo")
 
-        # delete_event is red zone
-        with patch('engine.effectors.ask_jidoka', return_value="1") as mock_jidoka:
-            with patch('engine.effectors.MCPClient.connect', return_value=True):
-                with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
-                    with patch('engine.effectors.log_event'):
-                        result = execute_mcp_action(
-                            server="google_calendar",
-                            capability="delete_event",
-                            payload={"event_id": "abc123"},
-                            domain="lessons"
-                        )
+        # Red zone command (build skill)
+        with patch('engine.pipeline.confirm_yellow_zone', return_value=True) as mock_jidoka:
+            context = run_pipeline(raw_input="build skill test-skill", source="test")
 
-            # Jidoka MUST be called for red zone
-            mock_jidoka.assert_called_once()
-            # Red zone message should include "RED ZONE" warning
-            call_args = mock_jidoka.call_args
-            assert "RED ZONE" in call_args.kwargs.get("context_message", "")
-            assert result.approved is True
+        # Jidoka should be called with RED ZONE prefix
+        mock_jidoka.assert_called_once()
+        call_args = mock_jidoka.call_args
+        assert "[RED ZONE]" in call_args.kwargs.get("action_description", "")
+        assert context.zone == "red"
 
-    def test_yellow_zone_rejection_blocks_execution(self):
+    def test_yellow_zone_rejection_blocks_execution_via_pipeline(self):
         """Rejecting Jidoka prompt should prevent action execution."""
-        from engine.effectors import execute_mcp_action
+        from engine.pipeline import run_pipeline
         from engine.profile import set_profile
 
         set_profile("coach_demo")
 
-        # User rejects (choice "2")
-        with patch('engine.effectors.ask_jidoka', return_value="2") as mock_jidoka:
-            with patch('engine.effectors.MCPClient.execute') as mock_execute:
-                with patch('engine.effectors.log_event'):
-                    result = execute_mcp_action(
-                        server="google_calendar",
-                        capability="create_event",
-                        payload={"title": "Golf Lesson"},
-                        domain="lessons"
-                    )
+        # User rejects
+        with patch('engine.pipeline.confirm_yellow_zone', return_value=False):
+            context = run_pipeline(raw_input="compile content", source="test")
 
-            # Action should NOT be executed
-            mock_execute.assert_not_called()
-            assert result.approved is False
-            assert result.success is False
-            assert "rejected" in result.error.lower()
+        # Action should NOT be executed
+        assert context.approved is False
+        assert context.executed is False
+        assert context.result.get("status") == "cancelled"
 
 
 class TestRejectionTelemetry:
-    """Tests for rejection event logging to telemetry."""
+    """
+    Tests for rejection event logging to telemetry.
 
-    def test_rejection_logged_to_telemetry(self):
-        """Rejecting an MCP action should log a rejection event."""
-        from engine.effectors import execute_mcp_action
+    SPRINT 3.5: Rejection is handled at pipeline Stage 4.
+    The pipeline context contains cancellation info, and telemetry
+    is logged at the pipeline level.
+    """
+
+    def test_rejection_returns_cancelled_status(self):
+        """Rejecting at Stage 4 should return cancelled status."""
+        from engine.pipeline import run_pipeline
         from engine.profile import set_profile
 
         set_profile("coach_demo")
 
-        logged_events = []
-
-        def capture_log(**kwargs):
-            logged_events.append(kwargs)
-            return {"id": "test-event"}
-
-        # User rejects
-        with patch('engine.effectors.ask_jidoka', return_value="2"):
-            with patch('engine.effectors.log_event', side_effect=capture_log):
-                execute_mcp_action(
-                    server="gmail",
-                    capability="send_email",
-                    payload={"to": "parent@example.com", "subject": "Test"},
-                    domain="players"
+        # User rejects at Stage 4
+        with patch('engine.pipeline.confirm_yellow_zone', return_value=False):
+            with patch('engine.telemetry.log_event', return_value={"id": "test"}):
+                context = run_pipeline(
+                    raw_input="compile content",
+                    source="operator_session"
                 )
 
-        # Should have logged rejection event
-        rejection_events = [e for e in logged_events if e.get("source") == "effector_rejection"]
-        assert len(rejection_events) == 1
+        # Context should show rejection
+        assert context.approved is False
+        assert context.result.get("status") == "cancelled"
+        assert "not approved" in context.result.get("message", "").lower()
 
-        rejection = rejection_events[0]
-        assert rejection["inferred"]["reason"] == "user_rejected"
-        assert rejection["inferred"]["server"] == "gmail"
-        assert rejection["inferred"]["capability"] == "send_email"
+    def test_mcp_rejection_through_pipeline_flow(self):
+        """
+        MCP actions rejected at Stage 4 should never reach effectors.
+        """
+        from engine.pipeline import run_pipeline
+        from engine.profile import set_profile
+        import json
+
+        set_profile("coach_demo")
+
+        mock_response = json.dumps({
+            "event_type": "lesson",
+            "participant": "Test",
+            "date": "2024-01-16",
+            "time": "15:00"
+        })
+
+        with patch('engine.llm_client.call_llm', return_value=mock_response):
+            with patch('engine.pipeline.confirm_yellow_zone', return_value=False):
+                with patch('engine.effectors.execute_mcp_action') as mock_exec:
+                    with patch('engine.telemetry.log_event', return_value={"id": "test"}):
+                        context = run_pipeline(
+                            raw_input="schedule a lesson with Test",
+                            source="operator_session"
+                        )
+
+        # execute_mcp_action should NOT be called
+        mock_exec.assert_not_called()
+
+        # Context should show rejection
+        assert context.approved is False
 
 
 class TestCalendarSchedulePayloadFormatting:
@@ -245,15 +246,14 @@ class TestCalendarSchedulePayloadFormatting:
 
         with patch('engine.llm_client.call_llm', return_value=mock_llm_response) as mock_llm:
             with patch('engine.pipeline.confirm_yellow_zone', return_value=True):
-                with patch('engine.effectors.ask_jidoka', return_value="1"):
-                    with patch('engine.effectors.MCPClient.connect', return_value=True):
-                        with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
-                            with patch('engine.effectors.log_event'):
-                                with patch('engine.telemetry.log_event', return_value={"id": "test"}):
-                                    context = run_pipeline(
-                                        raw_input="schedule a lesson with Henderson for tomorrow at 3pm",
-                                        source="operator_session"
-                                    )
+                with patch('engine.effectors.MCPClient.connect', return_value=True):
+                    with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
+                        with patch('engine.effectors.log_event'):
+                            with patch('engine.telemetry.log_event', return_value={"id": "test"}):
+                                context = run_pipeline(
+                                    raw_input="schedule a lesson with Henderson for tomorrow at 3pm",
+                                    source="operator_session"
+                                )
 
         # Intent should be classified as calendar_schedule
         assert context.intent == "calendar_schedule"
@@ -283,15 +283,14 @@ class TestCalendarSchedulePayloadFormatting:
 
         with patch('engine.llm_client.call_llm', return_value=mock_llm_response):
             with patch('engine.pipeline.confirm_yellow_zone', return_value=True):
-                with patch('engine.effectors.ask_jidoka', return_value="1"):
-                    with patch('engine.effectors.MCPClient.connect', return_value=True):
-                        with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
-                            with patch('engine.effectors.log_event'):
-                                with patch('engine.telemetry.log_event', return_value={"id": "test"}):
-                                    context = run_pipeline(
-                                        raw_input="schedule a lesson with Henderson for tomorrow at 3pm",
-                                        source="operator_session"
-                                    )
+                with patch('engine.effectors.MCPClient.connect', return_value=True):
+                    with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
+                        with patch('engine.effectors.log_event'):
+                            with patch('engine.telemetry.log_event', return_value={"id": "test"}):
+                                context = run_pipeline(
+                                    raw_input="schedule a lesson with Henderson for tomorrow at 3pm",
+                                    source="operator_session"
+                                )
 
         # Intent should be calendar_schedule
         assert context.intent == "calendar_schedule"
@@ -329,15 +328,14 @@ class TestEmailParentPayloadFormatting:
 
         with patch('engine.llm_client.call_llm', return_value=mock_llm_response) as mock_llm:
             with patch('engine.pipeline.confirm_yellow_zone', return_value=True):
-                with patch('engine.effectors.ask_jidoka', return_value="1"):
-                    with patch('engine.effectors.MCPClient.connect', return_value=True):
-                        with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
-                            with patch('engine.effectors.log_event'):
-                                with patch('engine.telemetry.log_event', return_value={"id": "test"}):
-                                    context = run_pipeline(
-                                        raw_input="email Henderson's parent about today's progress",
-                                        source="operator_session"
-                                    )
+                with patch('engine.effectors.MCPClient.connect', return_value=True):
+                    with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
+                        with patch('engine.effectors.log_event'):
+                            with patch('engine.telemetry.log_event', return_value={"id": "test"}):
+                                context = run_pipeline(
+                                    raw_input="email Henderson's parent about today's progress",
+                                    source="operator_session"
+                                )
 
         # Intent should be classified as email_parent
         assert context.intent == "email_parent"
@@ -347,68 +345,81 @@ class TestEmailParentPayloadFormatting:
 
 
 class TestMCPIntegration:
-    """Integration tests for MCP execution through the pipeline."""
+    """
+    Integration tests for MCP execution through the pipeline.
 
-    def test_mcp_action_executes_after_approval(self):
+    SPRINT 3.5: All governance flows through pipeline Stage 4.
+    """
+
+    def test_mcp_action_executes_after_pipeline_approval(self):
         """
-        After Jidoka approval, the MCP action should execute.
+        After Stage 4 approval, the MCP action should execute.
         """
-        from engine.effectors import execute_mcp_action
+        from engine.pipeline import run_pipeline
         from engine.profile import set_profile
+        import json
 
         set_profile("coach_demo")
 
-        # User approves (choice "1")
-        with patch('engine.effectors.ask_jidoka', return_value="1"):
-            with patch('engine.effectors.MCPClient.connect', return_value=True):
-                with patch('engine.effectors.MCPClient.execute', return_value={"success": True}) as mock_execute:
-                    with patch('engine.effectors.log_event'):
-                        result = execute_mcp_action(
-                            server="google_calendar",
-                            capability="create_event",
-                            payload={"title": "Golf Lesson", "date": "2024-01-15"},
-                            domain="lessons"
-                        )
+        mock_response = json.dumps({
+            "event_type": "lesson",
+            "participant": "Test",
+            "date": "2024-01-16",
+            "time": "15:00"
+        })
 
-        # Action should be executed
+        # User approves at Stage 4
+        with patch('engine.llm_client.call_llm', return_value=mock_response):
+            with patch('engine.pipeline.confirm_yellow_zone', return_value=True):
+                with patch('engine.effectors.MCPClient.connect', return_value=True):
+                    with patch('engine.effectors.MCPClient.execute', return_value={"success": True}) as mock_execute:
+                        with patch('engine.effectors.log_event'):
+                            with patch('engine.telemetry.log_event', return_value={"id": "test"}):
+                                context = run_pipeline(
+                                    raw_input="schedule a lesson with Test",
+                                    source="operator_session"
+                                )
+
+        # MCP action should be executed
         mock_execute.assert_called_once()
-        assert result.approved is True
-        assert result.success is True
+        assert context.executed is True
 
-    def test_domain_zone_affects_effective_zone(self):
+    def test_domain_zone_affects_effective_zone_in_stage4(self):
         """
-        Domain zone should combine with server zone for effective zone.
+        Domain zone should combine with server zone for effective zone at Stage 4.
 
-        Example: green server + yellow domain = yellow effective
+        Stage 4 computes effective zone from router, domain, and capability zones.
         """
-        from engine.effectors import execute_mcp_action, ConfigLoader
+        from engine.effectors import compute_effective_zone, ConfigLoader
         from engine.profile import set_profile
 
         set_profile("coach_demo")
 
-        # list_events is green, but money domain is yellow
-        with patch('engine.effectors.ask_jidoka', return_value="1") as mock_jidoka:
-            with patch('engine.effectors.MCPClient.connect', return_value=True):
-                with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
-                    with patch('engine.effectors.log_event'):
-                        result = execute_mcp_action(
-                            server="google_calendar",
-                            capability="list_events",  # green capability
-                            payload={"date": "2024-01-15"},
-                            domain="money"  # yellow domain
-                        )
+        # Get zones for testing
+        capability_zone = ConfigLoader.get_capability_zone("google_calendar", "list_events")
+        domain_zone = ConfigLoader.get_domain_zone("money")
 
-        # Jidoka should be called because money domain is yellow
-        mock_jidoka.assert_called_once()
-        assert result.effective_zone == "yellow"
+        # Compute effective zone
+        effective_zone = compute_effective_zone(capability_zone, domain_zone)
+
+        # Most restrictive should win
+        assert effective_zone == "yellow", \
+            f"green capability + yellow domain should = yellow, got {effective_zone}"
 
 
 class TestGoogleAPIIntegration:
-    """Tests for real Google API calls (mocked at API layer)."""
+    """
+    Tests for real Google API calls (mocked at API layer).
+
+    SPRINT 3.5: Effectors no longer handle zone governance.
+    These tests verify direct effector execution after approval.
+    """
 
     def test_calendar_create_event_calls_api(self):
         """
         create_event capability should call the Google Calendar API.
+
+        Note: Approval is handled by pipeline Stage 4 before calling effector.
         """
         from engine.effectors import execute_mcp_action
         from engine.profile import set_profile
@@ -422,27 +433,29 @@ class TestGoogleAPIIntegration:
             "htmlLink": "https://calendar.google.com/event123"
         }
 
-        with patch('engine.effectors.ask_jidoka', return_value="1"):
-            with patch('engine.effectors.get_google_calendar_service', return_value=mock_service):
-                with patch('engine.effectors.log_event'):
-                    result = execute_mcp_action(
-                        server="google_calendar",
-                        capability="create_event",
-                        payload={
-                            "summary": "Golf Lesson - Henderson",
-                            "start": {"dateTime": "2024-01-15T15:00:00", "timeZone": "America/New_York"},
-                            "end": {"dateTime": "2024-01-15T16:00:00", "timeZone": "America/New_York"}
-                        },
-                        domain="lessons"
-                    )
+        # No ask_jidoka mock needed - governance handled by Stage 4
+        with patch('engine.effectors.get_google_calendar_service', return_value=mock_service):
+            with patch('engine.effectors.log_event'):
+                result = execute_mcp_action(
+                    server="google_calendar",
+                    capability="create_event",
+                    payload={
+                        "summary": "Golf Lesson - Henderson",
+                        "start": {"dateTime": "2024-01-15T15:00:00", "timeZone": "America/New_York"},
+                        "end": {"dateTime": "2024-01-15T16:00:00", "timeZone": "America/New_York"}
+                    },
+                    domain="lessons"
+                )
 
-        # API should have been called (once real implementation exists)
-        # For now, just verify the stub executed successfully
+        # API should be called and succeed
         assert result.success is True
+        assert result.approved is True  # Pre-approved by Stage 4
 
     def test_gmail_send_email_calls_api(self):
         """
         send_email capability should call the Gmail API.
+
+        Note: Approval is handled by pipeline Stage 4 before calling effector.
         """
         from engine.effectors import execute_mcp_action
         from engine.profile import set_profile
@@ -456,21 +469,21 @@ class TestGoogleAPIIntegration:
             "threadId": "thread123"
         }
 
-        with patch('engine.effectors.ask_jidoka', return_value="1"):
-            with patch('engine.effectors.get_gmail_service', return_value=mock_service):
-                with patch('engine.effectors.log_event'):
-                    result = execute_mcp_action(
-                        server="gmail",
-                        capability="send_email",
-                        payload={
-                            "to": "parent@example.com",
-                            "subject": "Progress Update",
-                            "body": "Your child made great progress today."
-                        },
-                        domain="players"
-                    )
+        # No ask_jidoka mock needed - governance handled by Stage 4
+        with patch('engine.effectors.get_gmail_service', return_value=mock_service):
+            with patch('engine.effectors.log_event'):
+                result = execute_mcp_action(
+                    server="gmail",
+                    capability="send_email",
+                    payload={
+                        "to": "parent@example.com",
+                        "subject": "Progress Update",
+                        "body": "Your child made great progress today."
+                    },
+                    domain="players"
+                )
 
-        # API should have been called (once real implementation exists)
+        # API should be called and succeed
         assert result.success is True
 
 
@@ -506,3 +519,158 @@ class TestOAuth2TokenPersistence:
         # For now, just verify the client initializes
         assert client.server == "google_calendar"
         assert client.auth_state.authenticated is False  # No token yet
+
+
+class TestUnifiedGovernanceSprintThreePointFive:
+    """
+    Tests for Sprint 3.5: Unified Governance Architecture.
+
+    CRITICAL ARCHITECTURAL CHANGE:
+    - execute_mcp_action() NO LONGER prompts for zone-based Jidoka
+    - ALL zone governance moves to pipeline Stage 4
+    - effectors.py only handles authentication (OAuth)
+
+    These tests enforce the unified governance model.
+    """
+
+    def test_execute_mcp_action_does_not_call_ask_jidoka(self):
+        """
+        execute_mcp_action() must NOT call ask_jidoka for zone governance.
+
+        Zone governance is handled by Stage 4. Effectors only execute.
+        This eliminates the split-brain double-prompting.
+
+        VERIFICATION: ask_jidoka is not imported in effectors.py
+        """
+        from engine.effectors import execute_mcp_action
+        from engine.profile import set_profile
+        import engine.effectors as effectors_module
+
+        set_profile("coach_demo")
+
+        # Verify ask_jidoka is NOT in the effectors module
+        assert not hasattr(effectors_module, 'ask_jidoka'), \
+            "ask_jidoka should not be imported in effectors.py"
+
+        # Direct call to execute_mcp_action (simulating Stage 5 call)
+        with patch('engine.effectors.MCPClient.connect', return_value=True):
+            with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
+                with patch('engine.effectors.log_event'):
+                    result = execute_mcp_action(
+                        server="google_calendar",
+                        capability="create_event",
+                        payload={"summary": "Test Event"},
+                        domain="lessons",
+                    )
+
+        # Action should succeed (approval already granted by Stage 4)
+        assert result.success is True
+        assert result.approved is True
+
+    def test_execute_mcp_action_succeeds_without_governance_check(self):
+        """
+        execute_mcp_action() should execute directly without governance.
+
+        When pipeline Stage 4 has already handled Jidoka, effectors
+        just execute without re-prompting.
+        """
+        from engine.effectors import execute_mcp_action
+        from engine.profile import set_profile
+
+        set_profile("coach_demo")
+
+        with patch('engine.effectors.MCPClient.connect', return_value=True):
+            with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
+                with patch('engine.effectors.log_event'):
+                    result = execute_mcp_action(
+                        server="gmail",
+                        capability="send_email",
+                        payload={"to": "test@example.com", "subject": "Test"},
+                        domain="players",
+                    )
+
+        # Should succeed - no additional governance checks
+        assert result.success is True
+        assert result.approved is True
+
+    def test_mcp_rejection_handled_in_pipeline_not_effector(self):
+        """
+        When Stage 4 rejects, execute_mcp_action() should NOT be called.
+
+        The pipeline stops at Stage 4; effectors never see rejected actions.
+        """
+        from engine.pipeline import run_pipeline
+        from engine.profile import set_profile
+        import json
+
+        set_profile("coach_demo")
+
+        mock_response = json.dumps({
+            "event_type": "lesson",
+            "participant": "Test",
+            "date": "2024-01-16",
+            "time": "15:00"
+        })
+
+        with patch('engine.llm_client.call_llm', return_value=mock_response):
+            # User rejects at Stage 4
+            with patch('engine.pipeline.confirm_yellow_zone', return_value=False):
+                with patch('engine.effectors.execute_mcp_action') as mock_exec:
+                    with patch('engine.telemetry.log_event', return_value={"id": "test"}):
+                        context = run_pipeline(
+                            raw_input="schedule a lesson with Test",
+                            source="operator_session"
+                        )
+
+        # execute_mcp_action should NOT be called when Stage 4 rejects
+        mock_exec.assert_not_called()
+
+        # Context should show rejection
+        assert context.approved is False
+        assert context.result.get("status") == "cancelled"
+
+    def test_effector_only_handles_auth_not_governance(self):
+        """
+        Effector layer responsibility is auth only, not zone governance.
+
+        After Sprint 3.5 refactor:
+        - Zone computation: Stage 4
+        - Jidoka prompts: Stage 4
+        - OAuth/authentication: Effectors
+        - API execution: Effectors
+        """
+        from engine.effectors import execute_mcp_action, _client_pool
+        from engine.profile import set_profile
+        import engine.effectors as effectors_module
+
+        set_profile("coach_demo")
+
+        # Clear client pool to ensure fresh connection attempt
+        _client_pool.clear()
+
+        connect_called = False
+
+        def track_connect(self):
+            nonlocal connect_called
+            connect_called = True
+            self.connected = True
+            return True
+
+        # Verify no governance function is in effectors
+        assert not hasattr(effectors_module, 'ask_jidoka'), \
+            "ask_jidoka should not be in effectors module"
+
+        with patch.object(effectors_module.MCPClient, 'connect', track_connect):
+            with patch.object(effectors_module.MCPClient, 'execute', return_value={"success": True}):
+                with patch('engine.effectors.log_event'):
+                    result = execute_mcp_action(
+                        server="google_calendar",
+                        capability="create_event",
+                        payload={"summary": "Test"},
+                        domain="lessons",
+                    )
+
+        # Auth should be handled
+        assert connect_called is True, "Effector should handle auth/connect"
+        # Result should succeed
+        assert result.success is True

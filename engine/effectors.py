@@ -20,8 +20,8 @@ from dataclasses import dataclass
 from email.mime.text import MIMEText
 
 from engine.telemetry import log_event
-from engine.ux import ask_jidoka
 from engine.profile import get_config_dir
+# Note: ask_jidoka removed in Sprint 3.5 - Zone governance now handled by pipeline Stage 4
 
 
 # Zone priority (higher = more restrictive)
@@ -741,105 +741,48 @@ def execute_mcp_action(
     domain: str
 ) -> MCPActionResult:
     """
-    Execute an MCP action with full zone governance.
+    Execute an MCP action (post-approval).
 
-    CRITICAL GOVERNANCE LOGIC:
-    1. Get the zone for the server+capability
-    2. Get the zone for the domain
-    3. The most restrictive zone wins
-    4. If Yellow or Red, trigger Jidoka for user approval
-    5. Log all outcomes to telemetry
+    CRITICAL ARCHITECTURAL CHANGE (Sprint 3.5):
+    - Zone governance moved to pipeline Stage 4
+    - This function only handles authentication and execution
+    - Approval is already granted by the pipeline before this is called
+
+    The effector layer responsibility is:
+    1. Authentication (OAuth token handling)
+    2. API execution
+    3. Execution telemetry
+
+    Zone computation and Jidoka prompts are handled by Stage 4.
 
     Args:
         server: MCP server name (e.g., 'google_calendar', 'gmail')
         capability: The capability to invoke (e.g., 'create_event', 'send_email')
         payload: Data to pass to the capability
-        domain: The domain context (e.g., 'lessons', 'money')
+        domain: The domain context (for telemetry only)
 
     Returns:
         MCPActionResult with execution outcome
     """
-    # Step 1: Compute effective zone
+    # Compute effective zone for telemetry (NOT for governance)
     server_zone = ConfigLoader.get_capability_zone(server, capability)
     domain_zone = ConfigLoader.get_domain_zone(domain)
     effective_zone = compute_effective_zone(server_zone, domain_zone)
 
-    # Log the governance decision
+    # Log the execution attempt (governance already handled by Stage 4)
     log_event(
-        source="effector_governance",
+        source="effector_execution_start",
         raw_transcript=f"MCP action: {server}.{capability}",
         zone_context=effective_zone,
         inferred={
             "server": server,
             "capability": capability,
             "domain": domain,
-            "server_zone": server_zone,
-            "domain_zone": domain_zone,
             "effective_zone": effective_zone
         }
     )
 
-    # Step 2: Zone-based approval
-    approved = False
-    action_description = format_action_description(server, capability, payload)
-
-    if effective_zone == "green":
-        # Green zone: Auto-approve
-        approved = True
-
-    elif effective_zone == "yellow":
-        # Yellow zone: One-thumb Jidoka approval
-        result = ask_jidoka(
-            context_message=f"YELLOW ZONE - External Action Requires Approval:\n\n{action_description}",
-            options={
-                "1": "Approve and execute",
-                "2": "Reject and cancel"
-            }
-        )
-        approved = (result == "1")
-
-    elif effective_zone == "red":
-        # Red zone: Explicit approval with full context
-        result = ask_jidoka(
-            context_message=(
-                f"RED ZONE - High-Stakes Action Requires Explicit Approval:\n\n"
-                f"{action_description}\n\n"
-                f"Server: {server}\n"
-                f"Capability: {capability}\n"
-                f"Domain: {domain}\n"
-                f"Payload: {payload}"
-            ),
-            options={
-                "1": "I understand the risks - APPROVE",
-                "2": "REJECT and cancel"
-            }
-        )
-        approved = (result == "1")
-
-    # Step 3: Handle rejection
-    if not approved:
-        log_event(
-            source="effector_rejection",
-            raw_transcript=f"User rejected MCP action: {server}.{capability}",
-            zone_context=effective_zone,
-            inferred={
-                "server": server,
-                "capability": capability,
-                "domain": domain,
-                "reason": "user_rejected"
-            }
-        )
-        return MCPActionResult(
-            success=False,
-            server=server,
-            capability=capability,
-            payload=payload,
-            effective_zone=effective_zone,
-            approved=False,
-            error="Action rejected by user"
-        )
-
-    # Step 4: Execute the action
+    # Step 1: Connect to MCP server (handles OAuth if needed)
     client = get_mcp_client(server)
     if not client.connected:
         if not client.connect():
@@ -855,13 +798,36 @@ def execute_mcp_action(
                 capability=capability,
                 payload=payload,
                 effective_zone=effective_zone,
-                approved=True,
+                approved=True,  # Approval was handled by pipeline
                 error=f"Failed to connect to {server}"
             )
 
-    execution_result = client.execute(capability, payload)
+    # Step 2: Execute the action
+    try:
+        execution_result = client.execute(capability, payload)
+    except Exception as e:
+        # Log execution failure
+        log_event(
+            source="effector_error",
+            raw_transcript=f"MCP execution failed: {server}.{capability}",
+            zone_context=effective_zone,
+            inferred={
+                "server": server,
+                "capability": capability,
+                "error": str(e)
+            }
+        )
+        return MCPActionResult(
+            success=False,
+            server=server,
+            capability=capability,
+            payload=payload,
+            effective_zone=effective_zone,
+            approved=True,
+            error=str(e)
+        )
 
-    # Step 5: Log execution outcome
+    # Step 3: Log execution outcome
     log_event(
         source="effector_execution",
         raw_transcript=f"Executed MCP action: {server}.{capability}",
@@ -881,7 +847,7 @@ def execute_mcp_action(
         capability=capability,
         payload=payload,
         effective_zone=effective_zone,
-        approved=True,
+        approved=True,  # Approval was handled by pipeline Stage 4
         result=execution_result,
         error=execution_result.get("error")
     )

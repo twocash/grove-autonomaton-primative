@@ -379,3 +379,212 @@ class TestSessionZeroDispatcher:
             "Should not execute when rejected"
         assert context.result.get("status") == "cancelled", \
             f"Status should be 'cancelled', got '{context.result.get('status')}'"
+
+
+class TestExceptionTelemetry:
+    """
+    Tests for Sprint 3.5: Exception Telemetry (No Ghost Failures).
+
+    Invariant #5 extended: If execution crashes (LLM timeout, API failure),
+    the exception MUST be caught, a failure event logged to telemetry,
+    and the line stops elegantly without silent failures.
+    """
+
+    def test_dock_failure_logged_to_telemetry(self):
+        """
+        Stage failures must be logged to telemetry.
+
+        No ghost failures - every crash leaves a trail.
+        """
+        from engine.pipeline import run_pipeline
+
+        logged_events = []
+
+        def capture_log(**kwargs):
+            logged_events.append(kwargs)
+            return {"id": "test-event"}
+
+        # Simulate dock failure during compilation stage
+        def dock_crash(*args, **kwargs):
+            raise RuntimeError("Dock service unavailable")
+
+        with patch('engine.telemetry.log_event', side_effect=capture_log):
+            with patch('engine.pipeline.log_event', side_effect=capture_log):
+                with patch('engine.dock.query_dock', side_effect=dock_crash):
+                    # Pipeline should catch and log, not crash
+                    context = run_pipeline(raw_input="dock", source="test")
+
+        # Should have logged a failure event
+        failure_events = [
+            e for e in logged_events
+            if e.get("source") == "pipeline_failure"
+        ]
+        assert len(failure_events) >= 1, "Pipeline failure must be logged"
+        assert context is not None, "Pipeline should return context even on failure"
+        assert context.result.get("status") == "failed"
+
+    def test_mcp_execution_failure_logged_to_telemetry(self):
+        """
+        MCP execution failures must be logged to telemetry.
+
+        If Calendar/Gmail API crashes, we must have an audit trail.
+        """
+        from engine.effectors import execute_mcp_action
+        from engine.profile import set_profile
+
+        set_profile("coach_demo")
+
+        logged_events = []
+
+        def capture_log(**kwargs):
+            logged_events.append(kwargs)
+            return {"id": "test-event"}
+
+        # Simulate API crash
+        def api_crash(*args, **kwargs):
+            raise ConnectionError("Google API unreachable")
+
+        with patch('engine.effectors.log_event', side_effect=capture_log):
+            with patch('engine.effectors.MCPClient.connect', return_value=True):
+                with patch('engine.effectors.MCPClient.execute', side_effect=api_crash):
+                    result = execute_mcp_action(
+                        server="google_calendar",
+                        capability="create_event",
+                        payload={"summary": "Test"},
+                        domain="lessons"
+                    )
+
+        # Should log error event
+        error_events = [
+            e for e in logged_events
+            if "error" in str(e.get("source", "")).lower()
+            or e.get("inferred", {}).get("success") is False
+        ]
+
+        assert result.success is False, "Should return failure result"
+        # Failure should be traceable in telemetry
+        assert len(error_events) >= 1 or result.error is not None, \
+            "Failure must be logged or returned in result"
+
+    def test_pipeline_graceful_degradation_on_exception(self):
+        """
+        Pipeline must return a valid context even when stages fail.
+
+        The line stops, but we get a structured failure, not a crash.
+        """
+        from engine.pipeline import run_pipeline
+
+        # Break the dock query to simulate Stage 3 failure
+        def dock_crash(*args, **kwargs):
+            raise IOError("Dock files corrupted")
+
+        with patch('engine.dock.query_dock', side_effect=dock_crash):
+            with patch('engine.pipeline.confirm_yellow_zone', return_value=True):
+                context = run_pipeline(raw_input="compile content", source="test")
+
+        # Even with Stage 3 failure, context should exist with failure info
+        assert context is not None, "Must return context even on failure"
+        # Either executed=False or result contains error info
+        if context.executed:
+            # If it somehow continued, result should indicate the issue
+            pass
+        else:
+            assert context.result is not None, "Failed execution should have result info"
+
+
+class TestEffectiveZoneComputationInStage4:
+    """
+    Tests for Sprint 3.5: Unified Governance at Stage 4.
+
+    Stage 4 MUST compute the effective zone by combining:
+    - Domain zone (from routing)
+    - Server zone (from mcp.config)
+    - Capability zone (from mcp.config)
+
+    The most restrictive zone wins, and Jidoka prompts ONCE.
+    """
+
+    def test_stage4_computes_effective_zone_for_mcp(self):
+        """
+        Stage 4 should compute effective zone for MCP actions.
+
+        This consolidates governance in one place.
+        """
+        from engine.pipeline import run_pipeline
+        from engine.profile import set_profile
+        import json
+
+        set_profile("coach_demo")
+
+        # Mock LLM for calendar handler
+        mock_response = json.dumps({
+            "event_type": "lesson",
+            "participant": "Test",
+            "date": "2024-01-16",
+            "time": "15:00"
+        })
+
+        with patch('engine.llm_client.call_llm', return_value=mock_response):
+            with patch('engine.pipeline.confirm_yellow_zone', return_value=True) as mock_jidoka:
+                with patch('engine.effectors.MCPClient.connect', return_value=True):
+                    with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
+                        with patch('engine.effectors.log_event'):
+                            with patch('engine.telemetry.log_event', return_value={"id": "test"}):
+                                context = run_pipeline(
+                                    raw_input="schedule a lesson with Test",
+                                    source="operator_session"
+                                )
+
+        # Jidoka should be called exactly ONCE (at Stage 4, not again at effector)
+        assert mock_jidoka.call_count == 1, \
+            f"Jidoka should be called once, not {mock_jidoka.call_count} times"
+
+        # Zone should be set correctly
+        assert context.zone in ["green", "yellow", "red"], \
+            f"Zone should be valid, got {context.zone}"
+
+    def test_mcp_execution_does_not_double_prompt(self):
+        """
+        When MCP action goes through pipeline, there should be NO double prompt.
+
+        Stage 4 handles approval, effectors just execute.
+        """
+        from engine.pipeline import run_pipeline
+        from engine.profile import set_profile
+        import engine.effectors as effectors_module
+        import json
+
+        set_profile("coach_demo")
+
+        mock_response = json.dumps({
+            "event_type": "lesson",
+            "participant": "Test",
+            "date": "2024-01-16",
+            "time": "15:00"
+        })
+
+        jidoka_call_count = 0
+
+        def count_jidoka(*args, **kwargs):
+            nonlocal jidoka_call_count
+            jidoka_call_count += 1
+            return True  # Approve
+
+        # Verify ask_jidoka is not in effectors module (Sprint 3.5 architectural change)
+        assert not hasattr(effectors_module, 'ask_jidoka'), \
+            "ask_jidoka should not be in effectors module after Sprint 3.5"
+
+        with patch('engine.llm_client.call_llm', return_value=mock_response):
+            with patch('engine.pipeline.confirm_yellow_zone', side_effect=count_jidoka):
+                with patch('engine.effectors.MCPClient.connect', return_value=True):
+                    with patch('engine.effectors.MCPClient.execute', return_value={"success": True}):
+                        with patch('engine.effectors.log_event'):
+                            with patch('engine.telemetry.log_event', return_value={"id": "test"}):
+                                context = run_pipeline(
+                                    raw_input="schedule a lesson with Test",
+                                    source="operator_session"
+                                )
+
+        # Total Jidoka prompts should be exactly 1 (at Stage 4 only)
+        assert jidoka_call_count == 1, \
+            f"User should only be prompted ONCE, got {jidoka_call_count} prompts (split-brain leak)"
