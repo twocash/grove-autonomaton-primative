@@ -113,16 +113,32 @@ class InvariantPipeline:
         Stage 2: Recognition
         Parse intent, entities, and domain from input.
 
-        Sprint 1: Pass-through stub.
+        Sprint 1: Tier 0 keyword-based classification via Cognitive Router.
         Future: LLM-powered intent classification.
+
+        CRITICAL: The router's zone classification overrides the caller's zone.
+        Unknown intents default to yellow zone per Digital Jidoka principle.
         """
-        # Stub: No recognition yet - preserve existing values if set
-        if self.context.intent is None:
-            self.context.intent = "unknown"
-        if not self.context.entities:
-            self.context.entities = {}
-        if self.context.domain is None:
-            self.context.domain = "general"
+        from engine.cognitive_router import classify_intent
+
+        # Classify intent using the cognitive router
+        routing_result = classify_intent(self.context.raw_input)
+
+        # Set context from routing result - router is authoritative
+        self.context.intent = routing_result.intent
+        self.context.domain = routing_result.domain
+        self.context.zone = routing_result.zone  # Override caller's zone
+
+        # Store routing metadata for Stage 5 dispatcher
+        self.context.entities = {
+            "routing": {
+                "tier": routing_result.tier,
+                "confidence": routing_result.confidence,
+                "handler": routing_result.handler,
+                "handler_args": routing_result.handler_args or {},
+                "extracted_args": routing_result.extracted_args or {}
+            }
+        }
 
     def _run_compilation(self) -> None:
         """
@@ -187,8 +203,10 @@ class InvariantPipeline:
         Stage 5: Execution
         Carry out the action if approval was granted.
 
-        Routes through MCP effectors if an external capability is required.
-        MCP actions have their own zone governance (most restrictive wins).
+        Routes through:
+        1. Dispatcher - for classified intents with handlers
+        2. MCP effectors - for external capabilities
+        3. Local execution - fallback for passthrough
         """
         if not self.context.approved:
             self.context.executed = False
@@ -198,18 +216,58 @@ class InvariantPipeline:
             }
             return
 
-        # Check if this requires an MCP action
-        if self.context.mcp_action is not None:
+        # Check for routing info from Stage 2
+        routing_info = self.context.entities.get("routing", {})
+        handler = routing_info.get("handler")
+
+        if handler:
+            # Use dispatcher for classified intents with handlers
+            self._execute_via_dispatcher(routing_info)
+        elif self.context.mcp_action is not None:
+            # MCP action path
             self._execute_mcp_action()
         else:
-            # Local execution (no external capability needed)
+            # Local execution (no handler, no MCP)
             self.context.executed = True
             self.context.result = {
                 "status": "executed",
                 "message": f"Processed input: {self.context.raw_input[:50]}..."
                            if len(self.context.raw_input) > 50
-                           else f"Processed input: {self.context.raw_input}"
+                           else f"Processed input: {self.context.raw_input}",
+                "data": {"type": "passthrough"}
             }
+
+    def _execute_via_dispatcher(self, routing_info: dict) -> None:
+        """
+        Execute action via the dispatcher.
+
+        Reconstructs the RoutingResult from stored metadata and
+        dispatches to the appropriate handler.
+        """
+        from engine.dispatcher import dispatch_action
+        from engine.cognitive_router import RoutingResult
+
+        # Reconstruct routing result from stored metadata
+        routing_result = RoutingResult(
+            intent=self.context.intent or "unknown",
+            domain=self.context.domain or "general",
+            zone=self.context.zone,
+            tier=routing_info.get("tier", 2),
+            confidence=routing_info.get("confidence", 0.0),
+            handler=routing_info.get("handler"),
+            handler_args=routing_info.get("handler_args", {}),
+            extracted_args=routing_info.get("extracted_args", {})
+        )
+
+        # Dispatch the action
+        dispatch_result = dispatch_action(routing_result, self.context.raw_input)
+
+        self.context.executed = dispatch_result.success
+        self.context.result = {
+            "status": "executed" if dispatch_result.success else "failed",
+            "message": dispatch_result.message,
+            "data": dispatch_result.data
+        }
 
     def _execute_mcp_action(self) -> None:
         """
