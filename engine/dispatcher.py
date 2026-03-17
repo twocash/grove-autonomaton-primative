@@ -57,6 +57,7 @@ class Dispatcher:
             "session_zero_handler": self._handle_session_zero,
             "mcp_calendar": self._handle_mcp_calendar,
             "mcp_gmail": self._handle_mcp_gmail,
+            "skill_executor": self._handle_skill_executor,
         }
 
     def dispatch(
@@ -438,6 +439,84 @@ Return ONLY valid JSON, no explanations:"""
             payload["location"] = extracted["location"]
 
         return payload
+
+    def _handle_skill_executor(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Handle execution of Pit Crew generated skills.
+
+        Sprint 4: Executes skills created by the Pit Crew.
+        Reads the prompt.md from the skill directory and
+        sends it to the LLM with the user's input.
+        """
+        from engine.llm_client import call_llm
+        from engine.profile import get_skills_dir
+
+        skill_name = routing_result.handler_args.get("skill_name", "")
+
+        if not skill_name:
+            return DispatchResult(
+                success=False,
+                message="No skill name specified",
+                data={"type": "skill_error", "error": "missing_skill_name"}
+            )
+
+        # Load the skill's prompt template
+        skill_dir = get_skills_dir() / skill_name
+        prompt_path = skill_dir / "prompt.md"
+
+        if not prompt_path.exists():
+            return DispatchResult(
+                success=False,
+                message=f"Skill prompt not found: {skill_name}",
+                data={"type": "skill_error", "error": "prompt_not_found", "skill_name": skill_name}
+            )
+
+        try:
+            prompt_template = prompt_path.read_text(encoding="utf-8")
+        except Exception as e:
+            return DispatchResult(
+                success=False,
+                message=f"Failed to read skill prompt: {e}",
+                data={"type": "skill_error", "error": "read_failed"}
+            )
+
+        # Build the execution prompt
+        execution_prompt = f"""{prompt_template}
+
+---
+
+USER REQUEST: {raw_input}
+
+Please execute the skill based on the above instructions and user request.
+"""
+
+        try:
+            response = call_llm(
+                prompt=execution_prompt,
+                tier=2,  # Use Sonnet for skill execution
+                intent=f"skill_execution:{skill_name}"
+            )
+
+            return DispatchResult(
+                success=True,
+                message=f"Skill '{skill_name}' executed successfully",
+                data={
+                    "type": "skill_execution",
+                    "skill_name": skill_name,
+                    "response": response
+                }
+            )
+
+        except Exception as e:
+            return DispatchResult(
+                success=False,
+                message=f"Skill execution failed: {e}",
+                data={"type": "skill_error", "error": str(e), "skill_name": skill_name}
+            )
 
     def _handle_mcp_gmail(
         self,

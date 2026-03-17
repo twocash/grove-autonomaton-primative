@@ -104,6 +104,22 @@ class CognitiveRouter:
         self._loaded = True
         return True
 
+    def reload_config(self) -> bool:
+        """
+        Reload routing.config (hot reload).
+
+        Sprint 4: Called by Pit Crew after skill registration
+        to make new skills immediately invocable.
+
+        Returns:
+            True if reload successful, False otherwise.
+        """
+        # Reset loaded state and reload
+        self._loaded = False
+        self.routes = {}
+        self.tiers = {}
+        return self.load_config()
+
     def classify(self, user_input: str) -> RoutingResult:
         """
         Classify user input and return routing result.
