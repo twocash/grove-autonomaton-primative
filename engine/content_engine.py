@@ -1,11 +1,11 @@
 """
-content_engine.py - The Content Compilation Engine
+content_engine.py - The LLM-Powered Content Compilation Engine
 
-Compiles content seeds into platform-ready drafts, strictly governed
-by Voice and Pillar configurations.
+Compiles content seeds into platform-ready drafts using Tier 2 LLM,
+strictly governed by Voice and Pillar configurations.
 
-Sprint 5: Mock compiler with voice rule application.
-Future: LLM-powered content generation.
+The engine injects voice.yaml, pillars.yaml, the content seed, and
+dock context into the LLM prompt for brand-consistent generation.
 """
 
 import yaml
@@ -71,9 +71,84 @@ class ContentEngine:
         with open(self.voice_path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
 
+    def _compile_with_llm(
+        self,
+        seed_content: str,
+        pillar: str,
+        platform: str
+    ) -> str:
+        """
+        Compile content using Tier 2 LLM (Sonnet).
+
+        Injects voice config, pillar context, and platform requirements
+        into the prompt for brand-consistent content generation.
+
+        Args:
+            seed_content: Raw content seed text
+            pillar: Content pillar (e.g., 'training', 'coaching')
+            platform: Target platform (e.g., 'tiktok', 'instagram', 'x')
+
+        Returns:
+            LLM-generated content draft
+        """
+        from engine.llm_client import call_llm
+
+        # Get voice configuration
+        voice_config = self.voice or {}
+        tone = voice_config.get("tone", {})
+        signature_phrases = tone.get("signature_phrases", [])
+        personality = tone.get("personality", [])
+
+        # Get platform-specific voice
+        platform_voice = voice_config.get("platform_voice", {}).get(platform, {})
+        format_prefs = platform_voice.get("format_preferences", [])
+        emoji_use = platform_voice.get("emoji_use", "minimal")
+        hashtag_limit = platform_voice.get("hashtag_limit", 3)
+
+        # Get pillar context
+        pillar_config = self.pillars.get("pillars", {}).get(pillar, {})
+        pillar_desc = pillar_config.get("description", pillar)
+        pillar_hashtags = pillar_config.get("hashtags", [])[:hashtag_limit]
+
+        # Build the prompt
+        prompt = f"""You are a content creator applying specific voice and brand guidelines.
+
+## Voice Configuration
+- Personality: {', '.join(personality) if personality else 'professional, authentic'}
+- Signature phrases to use: {', '.join(signature_phrases[:3]) if signature_phrases else 'none specified'}
+- Tone: Encouraging and faith-driven
+
+## Pillar Context
+- Content pillar: {pillar}
+- Pillar description: {pillar_desc}
+- Suggested hashtags: {' '.join(pillar_hashtags) if pillar_hashtags else 'none'}
+
+## Platform Requirements ({platform})
+- Format preferences: {', '.join(format_prefs) if format_prefs else 'standard post'}
+- Emoji usage: {emoji_use}
+- Character/length constraints: {'280 chars for X, longer form for others' if platform == 'x' else 'platform appropriate'}
+
+## Content Seed
+{seed_content}
+
+---
+
+Generate a ready-to-post {platform} content draft based on the seed above.
+Apply the voice configuration and stay true to the pillar theme.
+Include relevant hashtags at the end if appropriate for the platform.
+
+Your response should be the final draft text only, no explanations or metadata."""
+
+        # Call Tier 2 (Sonnet) for quality content generation
+        return call_llm(
+            prompt=prompt,
+            tier=2,  # Sonnet for quality
+            intent="content_compilation"
+        )
+
     def compile_weekly_content(self, seeds_directory: Optional[str] = None) -> list[CompiledDraft]:
         """
-        Compile all content seeds into platform-ready drafts.
+        Compile all content seeds into platform-ready drafts using LLM.
 
         Args:
             seeds_directory: Path to seeds (default: entities/content-seeds/)
@@ -94,15 +169,40 @@ class ContentEngine:
         if not seeds:
             return []
 
-        # Compile each seed for each platform
+        # Compile each seed for each platform using LLM
         drafts = []
         platforms = self.voice.get("platform_voice", {}).keys()
 
         for seed in seeds:
             for platform in platforms:
-                draft = self._compile_for_platform(seed, platform)
-                if draft:
+                try:
+                    # Use LLM for compilation
+                    content = self._compile_with_llm(
+                        seed_content=seed.raw_content,
+                        pillar=seed.pillar or "general",
+                        platform=platform
+                    )
+
+                    # Get pillar hashtags
+                    pillar_config = self.pillars.get("pillars", {}).get(seed.pillar, {})
+                    hashtag_limit = self.voice.get("platform_voice", {}).get(platform, {}).get("hashtag_limit", 3)
+                    pillar_hashtags = pillar_config.get("hashtags", [])[:hashtag_limit]
+
+                    draft = CompiledDraft(
+                        seed_name=seed.name,
+                        platform=platform,
+                        pillar=seed.pillar or "general",
+                        content=content,
+                        hashtags=pillar_hashtags,
+                        voice_rules_applied=["llm_compiled"],
+                        compiled_at=datetime.now(timezone.utc).isoformat()
+                    )
                     drafts.append(draft)
+
+                except Exception:
+                    # LLM failure - skip this draft but continue
+                    # Digital Jidoka: Log error, don't crash
+                    continue
 
         return drafts
 

@@ -1,8 +1,9 @@
 """
-cognitive_router.py - Tier 0 Intent Classification
+cognitive_router.py - Hybrid Intent Classification (Tier 0 + Tier 1)
 
-Implements keyword-based intent classification using routing.config.
-No LLM - pure pattern matching for Sprint 1.
+Implements two-tier intent classification:
+- Tier 0: Fast keyword-based matching from routing.config
+- Tier 1: LLM escalation for ambiguous input (confidence < 0.7)
 
 Architectural Invariants Enforced:
 - #2 Config Over Code: Domain logic loaded from routing.config YAML
@@ -37,18 +38,29 @@ class RoutingResult:
 
 class CognitiveRouter:
     """
-    Tier 0 keyword-based intent classifier.
+    Hybrid Tier 0/1 intent classifier.
 
-    Loads routing.config from the active profile and matches
-    user input against declared keyword patterns.
+    Tier 0 (Keyword Matching):
+    - Loads routing.config from the active profile
+    - Matches user input against declared keyword patterns
+    - Fast, no API calls
+
+    Tier 1 (LLM Escalation):
+    - Activated when Tier 0 confidence < 0.7
+    - Uses Haiku for cost efficiency
+    - Given list of valid intents to choose from
 
     Matching Strategy:
     1. Exact match on keywords (confidence: 1.0)
     2. Prefix match - input starts with keyword (confidence: 0.9)
     3. Contains match (confidence: 0.5)
+    4. LLM classification for low confidence inputs
 
     Unknown inputs default to yellow zone per Digital Jidoka principle.
     """
+
+    # Confidence threshold for LLM escalation
+    LLM_ESCALATION_THRESHOLD = 0.7
 
     # Default result for unknown intents - MUST be yellow zone
     DEFAULT_RESULT = RoutingResult(
@@ -141,8 +153,14 @@ class CognitiveRouter:
                     if best_match is None or confidence > best_match[2]:
                         best_match = (intent_name, route_config, confidence)
 
-        if best_match is None:
-            return self._create_default_result()
+        # If no match or low confidence, try LLM escalation
+        if best_match is None or best_match[2] < self.LLM_ESCALATION_THRESHOLD:
+            llm_result = self._escalate_to_llm(user_input)
+            if llm_result is not None:
+                return llm_result
+            # If LLM fails and we had no keyword match, return default
+            if best_match is None:
+                return self._create_default_result()
 
         intent_name, route_config, confidence = best_match
 
@@ -199,6 +217,82 @@ class CognitiveRouter:
                 extracted[name] = " ".join(parts[position:])
 
         return extracted
+
+    def _escalate_to_llm(self, user_input: str) -> Optional[RoutingResult]:
+        """
+        Escalate to Tier 1 LLM for intent classification.
+
+        Called when Tier 0 keyword matching has low confidence.
+
+        Args:
+            user_input: The ambiguous user input
+
+        Returns:
+            RoutingResult if LLM successfully classifies, None on failure
+        """
+        try:
+            from engine.llm_client import call_llm
+        except ImportError:
+            # LLM client not available
+            return None
+
+        # Build list of valid intents from config
+        valid_intents = list(self.routes.keys())
+        if not valid_intents:
+            return None
+
+        # Create classification prompt
+        intent_descriptions = []
+        for intent_name, route_config in self.routes.items():
+            desc = route_config.get("description", intent_name)
+            keywords = route_config.get("keywords", [])
+            keyword_str = ", ".join(keywords[:3]) if keywords else "none"
+            intent_descriptions.append(
+                f"- {intent_name}: {desc} (keywords: {keyword_str})"
+            )
+
+        prompt = f"""Classify this user input into one of the following intents.
+Return ONLY the intent name, nothing else.
+
+Valid intents:
+{chr(10).join(intent_descriptions)}
+
+If the input doesn't clearly match any intent, respond with "unknown".
+
+User input: "{user_input}"
+
+Intent:"""
+
+        try:
+            response = call_llm(
+                prompt=prompt,
+                tier=1,  # Use Haiku for speed/cost
+                intent="intent_classification"
+            )
+
+            # Parse response
+            classified_intent = response.strip().lower()
+
+            # Validate against declared intents
+            if classified_intent in valid_intents:
+                route_config = self.routes[classified_intent]
+                return RoutingResult(
+                    intent=classified_intent,
+                    domain=route_config.get("domain", "general"),
+                    zone=route_config.get("zone", "yellow"),
+                    tier=route_config.get("tier", 2),
+                    confidence=0.75,  # LLM classification confidence
+                    handler=route_config.get("handler"),
+                    handler_args=route_config.get("handler_args", {}),
+                    extracted_args={}
+                )
+
+            # LLM returned unknown or invalid intent
+            return None
+
+        except Exception:
+            # LLM call failed - fall back to default behavior
+            return None
 
 
 # =========================================================================

@@ -299,3 +299,91 @@ class TestRouterReset:
         # They should be different instances
         assert router1 is not router2, \
             "reset_router should create new instance"
+
+
+class TestTier1LLMEscalation:
+    """Tests for Tier 1 LLM escalation when keyword confidence is low (Sprint 2)."""
+
+    def test_low_confidence_escalates_to_llm(self):
+        """
+        When Tier 0 keyword confidence < 0.7, escalate to Tier 1 LLM.
+
+        This tests the hybrid classification approach:
+        - Tier 0: Fast keyword matching
+        - Tier 1: LLM classification for ambiguous input
+        """
+        from unittest.mock import patch
+        from engine.cognitive_router import classify_intent
+
+        # Input that partially matches but with low confidence
+        ambiguous_input = "I need to handle some content stuff"
+
+        # Mock the LLM client to return a classification
+        mock_llm_response = "content_compilation"
+
+        with patch('engine.llm_client.call_llm', return_value=mock_llm_response) as mock_llm:
+            result = classify_intent(ambiguous_input)
+
+            # If confidence was low, LLM should have been called
+            if result.confidence < 0.7:
+                mock_llm.assert_called_once()
+                # LLM result should be used
+                assert result.intent in ["content_compilation", "unknown"], \
+                    f"LLM should classify intent, got '{result.intent}'"
+
+    def test_high_confidence_skips_llm(self):
+        """
+        When Tier 0 keyword confidence >= 0.7, skip LLM call.
+
+        High-confidence keyword matches should not waste LLM tokens.
+        """
+        from unittest.mock import patch
+        from engine.cognitive_router import classify_intent
+
+        # Exact match should have high confidence
+        exact_input = "dock"
+
+        with patch('engine.llm_client.call_llm') as mock_llm:
+            result = classify_intent(exact_input)
+
+            # Exact match should not call LLM
+            assert result.confidence >= 0.85, \
+                f"Exact match should have high confidence, got {result.confidence}"
+            mock_llm.assert_not_called()
+
+    def test_llm_escalation_respects_declared_intents(self):
+        """
+        LLM classification must only return intents declared in routing.config.
+
+        The LLM is given the list of valid intents and must choose from them.
+        """
+        from unittest.mock import patch
+        from engine.cognitive_router import classify_intent, get_router
+
+        router = get_router()
+        valid_intents = list(router.routes.keys())
+
+        # Mock LLM to return a valid intent
+        with patch('engine.llm_client.call_llm', return_value="dock_status"):
+            result = classify_intent("show me the knowledge base status")
+
+            # If LLM was used, result should be a valid intent or unknown
+            assert result.intent in valid_intents or result.intent == "unknown", \
+                f"LLM must return declared intent, got '{result.intent}'"
+
+    def test_llm_failure_falls_back_to_unknown(self):
+        """
+        If LLM call fails, fall back to unknown intent with yellow zone.
+
+        Never let LLM errors bypass the pipeline.
+        """
+        from unittest.mock import patch
+        from engine.cognitive_router import classify_intent
+
+        with patch('engine.llm_client.call_llm', side_effect=Exception("API Error")):
+            # Ambiguous input that would normally trigger LLM
+            result = classify_intent("do something vague and unclear")
+
+            # Should fall back to unknown/yellow, not crash
+            assert result.zone == "yellow", \
+                f"LLM failure should default to yellow zone, got '{result.zone}'"

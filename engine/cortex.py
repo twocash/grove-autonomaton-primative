@@ -1,16 +1,19 @@
 """
-cortex.py - The Analytical Engine (Layer 3)
+cortex.py - The LLM-Powered Analytical Engine (Layer 3)
 
 The Cortex runs a "tail-pass" after each Operator interaction,
 extracting knowledge without slowing down the conversation.
 
-Functions:
-    - Entity extraction from transcripts
-    - Kaizen proposal generation
-    - Knowledge graph updates (future)
+Lens 1: Entity Extraction
+    - LLM-based NER using Tier 1 (Haiku)
+    - New entities marked with is_new=True trigger Jidoka validation
+    - Existing entities skip validation
 
-Sprint 4: Local mock implementations.
-Future: LLM-powered analysis.
+Lens 2: Content Seed Mining
+    - LLM identifies potential content moments
+    - Seeds saved to entities/content-seeds/
+
+Uses Tier 1 (Haiku) for speed/cost efficiency on every interaction.
 """
 
 import re
@@ -29,6 +32,42 @@ from engine.profile import (
 )
 
 
+def ask_entity_validation(
+    entity_name: str,
+    entity_type: str,
+    context: str
+) -> str:
+    """
+    Ask operator to validate a new entity (Jidoka).
+
+    This is a Digital Jidoka halt - the system stops and asks
+    the human operator to confirm before creating a new entity.
+
+    Args:
+        entity_name: The extracted entity name
+        entity_type: The inferred entity type
+        context: Surrounding context from transcript
+
+    Returns:
+        User choice: "1" (approve), "2" (reject), "3" (edit)
+    """
+    print(f"\n  [JIDOKA] New entity detected: {entity_name}")
+    print(f"  Type: {entity_type}")
+    print(f"  Context: ...{context}...")
+    print()
+    print("  Options:")
+    print("    1. Approve - Create entity profile")
+    print("    2. Reject - This is not a real entity")
+    print("    3. Skip - Decide later")
+    print()
+
+    try:
+        choice = input("  Choice [1/2/3]: ").strip()
+        return choice if choice in ("1", "2", "3") else "3"
+    except (KeyboardInterrupt, EOFError):
+        return "3"
+
+
 @dataclass
 class ExtractedEntity:
     """An entity extracted from a transcript."""
@@ -37,6 +76,7 @@ class ExtractedEntity:
     source_event_id: str
     confidence: float = 0.5
     context: str = ""
+    is_new: bool = False  # New entities trigger Jidoka validation
 
 
 @dataclass
@@ -216,6 +256,110 @@ class Cortex:
 
         return entities
 
+    def _extract_entities_llm(self, event: dict) -> list[ExtractedEntity]:
+        """
+        Extract entities using Tier 1 LLM (Haiku).
+
+        Lens 1: Named Entity Recognition that understands context
+        and distinguishes real names from action words.
+
+        Args:
+            event: Telemetry event with raw_transcript
+
+        Returns:
+            List of extracted entities with is_new flag
+        """
+        try:
+            from engine.llm_client import call_llm
+        except ImportError:
+            return []
+
+        transcript = event.get("raw_transcript", "")
+        event_id = event.get("id", "unknown")
+
+        if not transcript.strip():
+            return []
+
+        # Build extraction prompt
+        prompt = f"""Extract named entities from this transcript.
+Return JSON with an "entities" array. Each entity should have:
+- name: The full name (e.g., "Marcus Henderson")
+- type: One of: player, parent, client, venue
+- is_new: true if this appears to be a new person/place, false if existing
+
+IMPORTANT:
+- Only extract real person or place names
+- Do NOT extract action words like "Generate", "Create", "Update", etc.
+- Do NOT extract common nouns or verbs
+- Focus on proper nouns that are actual names
+
+Transcript: "{transcript}"
+
+Return ONLY valid JSON, no explanations:"""
+
+        try:
+            response = call_llm(
+                prompt=prompt,
+                tier=1,  # Haiku for speed/cost
+                intent="cortex_extraction"
+            )
+
+            # Parse JSON response
+            data = json.loads(response)
+            entities_data = data.get("entities", [])
+
+            entities = []
+            for e in entities_data:
+                name = e.get("name", "").strip()
+                if not name:
+                    continue
+
+                entities.append(ExtractedEntity(
+                    name=name,
+                    entity_type=e.get("type", "player"),
+                    source_event_id=event_id,
+                    confidence=0.8,  # LLM extraction confidence
+                    context=transcript[:100],
+                    is_new=e.get("is_new", True)
+                ))
+
+            return entities
+
+        except json.JSONDecodeError:
+            # Malformed response - return empty list
+            return []
+        except Exception:
+            # LLM failure - return empty list
+            return []
+
+    def _validate_new_entity(self, entity: ExtractedEntity) -> bool:
+        """
+        Validate a new entity with Jidoka approval.
+
+        Only called for entities with is_new=True.
+
+        Args:
+            entity: The entity to validate
+
+        Returns:
+            True if approved, False if rejected/skipped
+        """
+        result = ask_entity_validation(
+            entity_name=entity.name,
+            entity_type=entity.entity_type,
+            context=entity.context
+        )
+
+        if result == "1":
+            # Approved - create the profile
+            return self._create_entity_profile(entity)
+        elif result == "2":
+            # Rejected - do nothing
+            return False
+        else:
+            # Skipped - defer for later
+            return False
+
     def _create_entity_profile(self, entity: ExtractedEntity) -> bool:
         """
         Create a Markdown profile for an extracted entity.
@@ -351,6 +495,117 @@ _Auto-generated by Cortex. Review and enrich this profile._
             yaml.dump(pending, f, default_flow_style=False, sort_keys=False)
 
         return True
+
+    # =========================================================================
+    # Lens 2: Content Seed Mining
+    # =========================================================================
+
+    def _mine_content_seeds(self, event: dict) -> list[dict]:
+        """
+        Mine content seeds using Tier 1 LLM (Haiku).
+
+        Lens 2: Identifies moments worth sharing from transcripts.
+        Seeds are saved for later compilation by the Content Engine.
+
+        Args:
+            event: Telemetry event with raw_transcript
+
+        Returns:
+            List of content seed dictionaries
+        """
+        try:
+            from engine.llm_client import call_llm
+        except ImportError:
+            return []
+
+        transcript = event.get("raw_transcript", "")
+        event_id = event.get("id", "unknown")
+
+        if not transcript.strip():
+            return []
+
+        # Build content mining prompt
+        prompt = f"""Analyze this transcript for content-worthy moments.
+Return JSON with a "content_seeds" array. Each seed should have:
+- title: Short catchy title for the content
+- content: The core message or insight
+- pillar: One of: training, coaching, community, surrender
+- suggested_platforms: Array of platforms (tiktok, instagram, x)
+
+Look for:
+- Moments of progress or breakthrough
+- Coaching insights or wisdom
+- Community building opportunities
+- Stories of perseverance
+
+Transcript: "{transcript}"
+
+Return ONLY valid JSON with 0-3 content seeds, no explanations:"""
+
+        try:
+            response = call_llm(
+                prompt=prompt,
+                tier=1,  # Haiku for speed/cost
+                intent="cortex_extraction"
+            )
+
+            # Parse JSON response
+            data = json.loads(response)
+            seeds = data.get("content_seeds", [])
+
+            # Save each seed
+            for seed in seeds:
+                self._save_content_seed(seed, event_id)
+
+            return seeds
+
+        except json.JSONDecodeError:
+            return []
+        except Exception:
+            return []
+
+    def _save_content_seed(self, seed: dict, event_id: str) -> bool:
+        """
+        Save a content seed to entities/content-seeds/.
+
+        Args:
+            seed: Content seed dictionary with title, content, pillar
+            event_id: Source event ID for tracing
+
+        Returns:
+            True if saved successfully
+        """
+        entities_dir = get_entities_dir()
+        seeds_dir = entities_dir / "content-seeds"
+        seeds_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate filename from title
+        title = seed.get("title", "untitled")
+        filename = re.sub(r'[^\w\s-]', '', title).strip().replace(' ', '-').lower()
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
+        filepath = seeds_dir / f"{timestamp}-{filename}.md"
+
+        content = f"""# {seed.get('title', 'Untitled')}
+
+**Pillar:** {seed.get('pillar', 'general')}
+**Mined:** {datetime.now(timezone.utc).isoformat()}
+**Source Event:** {event_id[:8]}...
+
+## Content
+{seed.get('content', '')}
+
+## Suggested Platforms
+{', '.join(seed.get('suggested_platforms', []))}
+
+---
+_Auto-generated by Cortex Lens 2. Review before compilation._
+"""
+
+        try:
+            filepath.write_text(content, encoding="utf-8")
+            return True
+        except Exception:
+            return False
 
 
 # =========================================================================
