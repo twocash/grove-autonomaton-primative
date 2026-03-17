@@ -1,0 +1,6 @@
+anthropic
+pyyaml
+pytest
+pytest-asyncio
+google-api-python-client
+google-auth-oauthlib

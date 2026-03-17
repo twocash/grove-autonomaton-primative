@@ -69,7 +69,7 @@ class InvariantPipeline:
     def __init__(self):
         self.context: Optional[PipelineContext] = None
 
-    def run(self, raw_input: str, source: str = "operator_session", zone: str = "green") -> PipelineContext:
+    def run(self, raw_input: str, source: str = "operator_session", zone: str = "yellow") -> PipelineContext:
         """
         Execute the full invariant pipeline.
 
@@ -263,7 +263,7 @@ class InvariantPipeline:
 
 
 # Module-level convenience functions
-def run_pipeline(raw_input: str, source: str = "operator_session", zone: str = "green") -> PipelineContext:
+def run_pipeline(raw_input: str, source: str = "operator_session", zone: str = "yellow") -> PipelineContext:
     """
     Execute the invariant pipeline on the given input.
 
