@@ -4,6 +4,10 @@ test_cortex.py - Tests for LLM-Powered Cortex Analysis
 These tests ensure the Cortex uses LLM for entity extraction and
 content seed mining, with Jidoka validation for new entities.
 
+Sprint 6 (ADR-001): Entity extraction now uses ratchet_classify pattern:
+- Deterministic layer (regex) runs first
+- LLM layer routes through pipeline if confidence < threshold
+
 TDD: Write tests first, then implement to pass.
 """
 
@@ -16,23 +20,46 @@ import json
 class TestCortexLens1EntityExtraction:
     """Tests for Lens 1: LLM-based entity extraction."""
 
-    def test_entity_extraction_uses_llm(self):
+    def test_entity_extraction_uses_ratchet_pattern(self):
         """
-        Entity extraction must use LLM (Tier 1/Haiku) instead of regex.
+        Entity extraction must use ratchet_classify pattern (Sprint 6 - ADR-001).
 
-        The LLM should return structured NER data.
+        The ratchet pattern:
+        1. Tries deterministic (regex) first
+        2. Falls back to LLM via pipeline if confidence < threshold
         """
-        from engine.cortex import Cortex
+        from engine.cortex import Cortex, ExtractedEntity
+        from engine.ratchet import RatchetResult
 
-        # Mock LLM response with structured entity data
-        mock_llm_response = json.dumps({
-            "entities": [
-                {"name": "Marcus Henderson", "type": "player", "is_new": True},
-                {"name": "Sarah Henderson", "type": "parent", "is_new": True}
-            ]
-        })
+        # Mock ratchet_classify to return LLM-extracted entities
+        mock_entities = [
+            ExtractedEntity(
+                name="Marcus Henderson",
+                entity_type="player",
+                source_event_id="test-event-123",
+                confidence=0.8,
+                context="Marcus Henderson had a great lesson",
+                is_new=True
+            ),
+            ExtractedEntity(
+                name="Sarah Henderson",
+                entity_type="parent",
+                source_event_id="test-event-123",
+                confidence=0.8,
+                context="Sarah Henderson was impressed",
+                is_new=True
+            )
+        ]
 
-        with patch('engine.llm_client.call_llm', return_value=mock_llm_response) as mock_llm:
+        mock_result = RatchetResult(
+            result=mock_entities,
+            source="deterministic",  # or "pipeline" for LLM
+            confidence=0.7,
+            latency_ms=50,
+            label="entity_extraction"
+        )
+
+        with patch('engine.ratchet.ratchet_classify', return_value=mock_result):
             cortex = Cortex()
 
             event = {
@@ -41,10 +68,7 @@ class TestCortexLens1EntityExtraction:
                 "source": "operator_session"
             }
 
-            entities = cortex._extract_entities_llm(event)
-
-            # LLM should have been called
-            mock_llm.assert_called_once()
+            entities = cortex._extract_entities(event)
 
             # Should return extracted entities
             assert len(entities) == 2
@@ -57,15 +81,30 @@ class TestCortexLens1EntityExtraction:
 
         This triggers Jidoka validation before persistence.
         """
-        from engine.cortex import Cortex
+        from engine.cortex import Cortex, ExtractedEntity
+        from engine.ratchet import RatchetResult
 
-        mock_llm_response = json.dumps({
-            "entities": [
-                {"name": "New Player", "type": "player", "is_new": True}
-            ]
-        })
+        # Use deterministic source to return already-parsed entities
+        mock_entities = [
+            ExtractedEntity(
+                name="New Player",
+                entity_type="player",
+                source_event_id="test-event",
+                confidence=0.8,
+                context="New Player joined the team",
+                is_new=True
+            )
+        ]
 
-        with patch('engine.llm_client.call_llm', return_value=mock_llm_response):
+        mock_result = RatchetResult(
+            result=mock_entities,
+            source="deterministic",  # Deterministic returns parsed entities
+            confidence=0.8,
+            latency_ms=100,
+            label="entity_extraction"
+        )
+
+        with patch('engine.ratchet.ratchet_classify', return_value=mock_result):
             cortex = Cortex()
 
             event = {
@@ -74,7 +113,7 @@ class TestCortexLens1EntityExtraction:
                 "source": "operator_session"
             }
 
-            entities = cortex._extract_entities_llm(event)
+            entities = cortex._extract_entities(event)
 
             assert len(entities) == 1
             assert entities[0].is_new is True, \
@@ -87,13 +126,27 @@ class TestCortexLens1EntityExtraction:
         The system should halt and ask the operator to confirm
         before creating a new entity profile.
         """
-        from engine.cortex import Cortex
+        from engine.cortex import Cortex, ExtractedEntity
+        from engine.ratchet import RatchetResult
 
-        mock_llm_response = json.dumps({
-            "entities": [
-                {"name": "Unknown Person", "type": "player", "is_new": True}
-            ]
-        })
+        mock_entities = [
+            ExtractedEntity(
+                name="Unknown Person",
+                entity_type="player",
+                source_event_id="test-event",
+                confidence=0.8,
+                context="Unknown Person mentioned",
+                is_new=True
+            )
+        ]
+
+        mock_result = RatchetResult(
+            result=mock_entities,
+            source="pipeline",
+            confidence=0.8,
+            latency_ms=100,
+            label="entity_extraction"
+        )
 
         jidoka_called = []
 
@@ -101,7 +154,7 @@ class TestCortexLens1EntityExtraction:
             jidoka_called.append(kwargs)
             return "1"  # Approve
 
-        with patch('engine.llm_client.call_llm', return_value=mock_llm_response):
+        with patch('engine.ratchet.ratchet_classify', return_value=mock_result):
             with patch('engine.cortex.ask_entity_validation', side_effect=mock_jidoka) as mock_ask:
                 cortex = Cortex()
 
@@ -111,7 +164,7 @@ class TestCortexLens1EntityExtraction:
                     "source": "operator_session"
                 }
 
-                entities = cortex._extract_entities_llm(event)
+                entities = cortex._extract_entities(event)
 
                 # Should call validation for new entities
                 if entities and entities[0].is_new:
@@ -125,15 +178,29 @@ class TestCortexLens1EntityExtraction:
 
         Only new entities need operator confirmation.
         """
-        from engine.cortex import Cortex
+        from engine.cortex import Cortex, ExtractedEntity
+        from engine.ratchet import RatchetResult
 
-        mock_llm_response = json.dumps({
-            "entities": [
-                {"name": "Known Player", "type": "player", "is_new": False}
-            ]
-        })
+        mock_entities = [
+            ExtractedEntity(
+                name="Known Player",
+                entity_type="player",
+                source_event_id="test-event",
+                confidence=0.8,
+                context="Known Player mentioned",
+                is_new=False  # Existing entity
+            )
+        ]
 
-        with patch('engine.llm_client.call_llm', return_value=mock_llm_response):
+        mock_result = RatchetResult(
+            result=mock_entities,
+            source="deterministic",  # Deterministic returns parsed entities
+            confidence=0.8,
+            latency_ms=100,
+            label="entity_extraction"
+        )
+
+        with patch('engine.ratchet.ratchet_classify', return_value=mock_result):
             with patch('engine.cortex.ask_entity_validation') as mock_ask:
                 cortex = Cortex()
 
@@ -143,13 +210,12 @@ class TestCortexLens1EntityExtraction:
                     "source": "operator_session"
                 }
 
-                entities = cortex._extract_entities_llm(event)
+                entities = cortex._extract_entities(event)
 
                 # Existing entity should not trigger validation
-                if entities and not entities[0].is_new:
-                    # validate_new_entity should not be called
-                    pass
-                # mock_ask should not have been called for existing entities
+                assert len(entities) == 1
+                assert entities[0].is_new is False
+                # validate_new_entity should not be called for existing entities
 
 
 class TestCortexLens2ContentSeedMining:
@@ -229,30 +295,41 @@ class TestCortexLens2ContentSeedMining:
 class TestCortexLLMTier:
     """Tests for correct LLM tier usage in Cortex."""
 
-    def test_entity_extraction_uses_tier_1(self):
+    def test_entity_extraction_routes_to_tier_1(self):
         """
-        Entity extraction should use Tier 1 (Haiku) for speed/cost.
+        Entity extraction should route to ratchet_entity_extract (Tier 1).
 
-        Cortex runs on every interaction, so it must be cheap.
+        Sprint 6 (ADR-001): Entity extraction uses ratchet_classify pattern.
+        The interpret_route 'ratchet_entity_extract' is configured as Tier 1
+        in routing.config.
         """
-        from engine.cortex import Cortex
+        from engine.cortex import Cortex, ExtractedEntity
+        from engine.ratchet import RatchetResult, RatchetConfig
 
-        captured_kwargs = []
+        captured_configs = []
 
-        def capture_llm_call(prompt, **kwargs):
-            captured_kwargs.append(kwargs)
-            return json.dumps({"entities": []})
+        def capture_ratchet(input_text, config, context=None):
+            captured_configs.append(config)
+            return RatchetResult(
+                result=[],
+                source="deterministic",
+                confidence=0.8,
+                latency_ms=10,
+                label=config.label
+            )
 
-        with patch('engine.llm_client.call_llm', side_effect=capture_llm_call):
+        with patch('engine.ratchet.ratchet_classify', side_effect=capture_ratchet):
             cortex = Cortex()
-            cortex._extract_entities_llm({
+            cortex._extract_entities({
                 "id": "test",
                 "raw_transcript": "Test",
                 "source": "operator_session"
             })
 
-        assert captured_kwargs[0].get("tier") == 1, \
-            f"Entity extraction should use Tier 1, got {captured_kwargs[0].get('tier')}"
+        assert len(captured_configs) == 1
+        assert captured_configs[0].interpret_route == "ratchet_entity_extract", \
+            f"Entity extraction should use ratchet_entity_extract route"
+        assert captured_configs[0].label == "entity_extraction"
 
     def test_content_mining_uses_tier_1(self):
         """
@@ -281,40 +358,68 @@ class TestCortexLLMTier:
 class TestCortexTelemetry:
     """Tests for Cortex telemetry logging."""
 
-    def test_logs_extraction_intent(self):
+    def test_ratchet_classify_logs_to_telemetry(self):
         """
-        LLM calls should be logged with cortex_extraction intent.
+        Entity extraction via ratchet_classify logs through the pipeline.
+
+        Sprint 6 (ADR-001): Ratchet pattern ensures all classification
+        goes through the invariant pipeline, which logs to telemetry.
         """
-        from engine.cortex import Cortex
+        from engine.cortex import Cortex, ExtractedEntity
+        from engine.ratchet import RatchetResult
 
-        captured_kwargs = []
+        # When ratchet_classify routes through pipeline, telemetry is logged
+        # by the pipeline's Stage 1 (TELEMETRY). We verify the ratchet
+        # is called with proper label for telemetry categorization.
+        mock_result = RatchetResult(
+            result=[],
+            source="deterministic",
+            confidence=0.8,
+            latency_ms=10,
+            label="entity_extraction"
+        )
 
-        def capture_llm_call(prompt, **kwargs):
-            captured_kwargs.append(kwargs)
-            return json.dumps({"entities": []})
+        captured_configs = []
 
-        with patch('engine.llm_client.call_llm', side_effect=capture_llm_call):
+        def capture_ratchet(input_text, config, context=None):
+            captured_configs.append(config)
+            return mock_result
+
+        with patch('engine.ratchet.ratchet_classify', side_effect=capture_ratchet):
             cortex = Cortex()
-            cortex._extract_entities_llm({
+            cortex._extract_entities({
                 "id": "test",
                 "raw_transcript": "Test",
                 "source": "operator_session"
             })
 
-        assert captured_kwargs[0].get("intent") == "cortex_extraction", \
-            f"Should log with cortex_extraction intent, got {captured_kwargs[0].get('intent')}"
+        assert len(captured_configs) == 1
+        assert captured_configs[0].label == "entity_extraction", \
+            "Ratchet should be called with entity_extraction label for telemetry"
 
 
 class TestCortexErrorHandling:
     """Tests for error handling in Cortex."""
 
-    def test_llm_failure_returns_empty_entities(self):
+    def test_ratchet_failure_returns_empty_entities(self):
         """
-        If LLM fails, return empty list rather than crashing.
+        If ratchet_classify fails, return empty list rather than crashing.
+
+        Sprint 6 (ADR-001): Ratchet returns source="none" on failure.
         """
         from engine.cortex import Cortex
+        from engine.ratchet import RatchetResult
 
-        with patch('engine.llm_client.call_llm', side_effect=Exception("API Error")):
+        # Simulate ratchet failure (source="none", result=None)
+        mock_result = RatchetResult(
+            result=None,
+            source="none",
+            confidence=0.0,
+            latency_ms=0,
+            label="entity_extraction"
+        )
+
+        with patch('engine.ratchet.ratchet_classify', return_value=mock_result):
             cortex = Cortex()
 
             event = {
@@ -324,30 +429,31 @@ class TestCortexErrorHandling:
             }
 
             # Should not raise
-            entities = cortex._extract_entities_llm(event)
+            entities = cortex._extract_entities(event)
 
-            assert entities == [], "Should return empty list on error"
+            assert entities == [], "Should return empty list on ratchet failure"
 
-    def test_malformed_llm_response_handled(self):
+    def test_ratchet_exception_returns_empty_entities(self):
         """
-        Malformed LLM responses should be handled gracefully.
+        If ratchet_classify raises exception, return empty list gracefully.
         """
         from engine.cortex import Cortex
 
-        # Not valid JSON
-        with patch('engine.llm_client.call_llm', return_value="not json"):
-            cortex = Cortex()
+        with patch('engine.ratchet.ratchet_classify', side_effect=Exception("Pipeline Error")):
+            with patch('engine.telemetry.log_event'):  # Suppress telemetry in test
+                cortex = Cortex()
 
-            event = {
-                "id": "test",
-                "raw_transcript": "Test",
-                "source": "operator_session"
-            }
+                event = {
+                    "id": "test",
+                    "raw_transcript": "Test",
+                    "source": "operator_session"
+                }
 
-            # Should not raise
-            entities = cortex._extract_entities_llm(event)
+                # Should not raise
+                entities = cortex._extract_entities(event)
 
-            assert isinstance(entities, list), "Should return list even on parse error"
+                assert isinstance(entities, list), "Should return list even on exception"
+                assert entities == [], "Should return empty list on exception"
 
 
 class TestCortexNoGarbageEntities:
@@ -357,16 +463,22 @@ class TestCortexNoGarbageEntities:
         """
         Action words like 'Generate', 'Create', 'Update' must not become entities.
 
-        The LLM should understand context and only extract real names.
+        Sprint 6 (ADR-001): Entity extraction via ratchet_classify ensures
+        proper classification. The LLM should understand context.
         """
         from engine.cortex import Cortex
+        from engine.ratchet import RatchetResult
 
-        # LLM should correctly identify that "Generate" is not a name
-        mock_llm_response = json.dumps({
-            "entities": []  # No entities - "Generate" is not a name
-        })
+        # Ratchet returns empty list - "Generate" is not a name
+        mock_result = RatchetResult(
+            result=[],  # No entities extracted
+            source="pipeline",
+            confidence=0.9,
+            latency_ms=50,
+            label="entity_extraction"
+        )
 
-        with patch('engine.llm_client.call_llm', return_value=mock_llm_response):
+        with patch('engine.ratchet.ratchet_classify', return_value=mock_result):
             cortex = Cortex()
 
             event = {
@@ -375,7 +487,7 @@ class TestCortexNoGarbageEntities:
                 "source": "operator_session"
             }
 
-            entities = cortex._extract_entities_llm(event)
+            entities = cortex._extract_entities(event)
 
             # Should not create entity for "Generate"
             entity_names = [e.name.lower() for e in entities]
@@ -386,15 +498,29 @@ class TestCortexNoGarbageEntities:
         """
         Real names should be extracted even when mixed with action words.
         """
-        from engine.cortex import Cortex
+        from engine.cortex import Cortex, ExtractedEntity
+        from engine.ratchet import RatchetResult
 
-        mock_llm_response = json.dumps({
-            "entities": [
-                {"name": "Marcus Henderson", "type": "player", "is_new": True}
-            ]
-        })
+        mock_entities = [
+            ExtractedEntity(
+                name="Marcus Henderson",
+                entity_type="player",
+                source_event_id="test",
+                confidence=0.85,
+                context="Generate a progress report for Marcus Henderson",
+                is_new=True
+            )
+        ]
 
-        with patch('engine.llm_client.call_llm', return_value=mock_llm_response):
+        mock_result = RatchetResult(
+            result=mock_entities,
+            source="deterministic",  # Deterministic returns parsed entities
+            confidence=0.85,
+            latency_ms=80,
+            label="entity_extraction"
+        )
+
+        with patch('engine.ratchet.ratchet_classify', return_value=mock_result):
             cortex = Cortex()
 
             event = {
@@ -403,7 +529,7 @@ class TestCortexNoGarbageEntities:
                 "source": "operator_session"
             }
 
-            entities = cortex._extract_entities_llm(event)
+            entities = cortex._extract_entities(event)
 
             # Should extract Marcus Henderson but not Generate
             assert len(entities) == 1

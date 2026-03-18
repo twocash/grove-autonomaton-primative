@@ -278,12 +278,12 @@ class CognitiveRouter:
 
     def _escalate_to_llm(self, user_input: str) -> Optional[RoutingResult]:
         """
-        Escalate to Tier 2 LLM for structured intent classification.
+        Escalate to LLM for structured intent classification.
 
-        Uses Sonnet for reliable natural language understanding.
-        Haiku is too brittle for compound inputs and conversational phrasing.
-
-        Every classification is logged to telemetry for Ratchet analysis.
+        Sprint 6 (ADR-001): Routes through the invariant pipeline via force_route.
+        The ratchet_intent_classify route handles the LLM call with standardized
+        telemetry. This ensures all classification telemetry is consistent for
+        Ratchet analysis.
 
         Args:
             user_input: The ambiguous user input
@@ -292,140 +292,89 @@ class CognitiveRouter:
             RoutingResult if LLM successfully classifies, None on failure
         """
         try:
-            from engine.llm_client import call_llm
+            from engine.pipeline import run_pipeline
             from engine.telemetry import log_event
         except ImportError:
             return None
 
-        # Build list of valid intents from config (ALL intents now, including general_chat)
-        valid_intents = list(self.routes.keys())
+        # Build list of valid intents from config
+        valid_intents = [k for k in self.routes.keys() if not k.startswith("ratchet_")]
         if not valid_intents:
             return None
 
-        # Create intent descriptions for LLM context
-        intent_descriptions = []
-        for intent_name, route_config in self.routes.items():
-            desc = route_config.get("description", intent_name)
-            intent_type = route_config.get("intent_type", "actionable")
-            zone = route_config.get("zone", "yellow")
-            intent_descriptions.append(
-                f"- {intent_name} (type: {intent_type}, zone: {zone}): {desc}"
-            )
-
-        # Structured classification prompt — concise, Sonnet-grade
-        prompt = f"""You are an intent classifier. Given a user input and a list of valid intents, return a JSON object classifying the input.
-
-Valid intents:
-{chr(10).join(intent_descriptions)}
-
-User input: "{user_input}"
-
-Return ONLY a JSON object:
-{{
-  "intent": "<one of the intent names above, or 'unknown'>",
-  "intent_type": "<conversational|informational|actionable>",
-  "confidence": <0.0-1.0>,
-  "action_required": <true|false>,
-  "reasoning": "<one sentence>"
-}}
-
-Classification rules:
-- Match to the CLOSEST valid intent, even if the wording is informal or indirect.
-- Greetings, thanks, farewells, acknowledgments, small talk → general_chat (conversational, action_required: false)
-- If the user mentions content, drafting, TikTok, Instagram, social media, posts → content_draft or content_compilation
-- If the user asks about status, progress, what's loaded → informational intents
-- If the user wants to DO something (schedule, build, compile, prepare) → actionable intents
-- Compound inputs (multiple topics in one message): classify by the PRIMARY actionable intent.
-- Only return "unknown" if you genuinely cannot determine what the user wants. Prefer a best-guess match over unknown.
-
-JSON:"""
-
-        start_time = time.time()
-
         try:
-            response = call_llm(
-                prompt=prompt,
-                tier=2,  # Sonnet — Haiku is too brittle for natural language classification
-                intent="intent_classification"
+            # Route through the invariant pipeline with forced route to ratchet_intent_classify
+            # This ensures the LLM call goes through all 5 stages per ADR-001
+            pipeline_context = run_pipeline(
+                raw_input=user_input,
+                source="cognitive_router:llm_escalation",
+                zone="green",
+                force_route="ratchet_intent_classify"
             )
 
-            latency_ms = int((time.time() - start_time) * 1000)
+            # Check if classification succeeded
+            if not pipeline_context.executed or not pipeline_context.result:
+                return None
 
-            # Parse JSON response
-            try:
-                # Robust JSON extraction — find JSON object regardless of wrapping
-                # Handles: clean JSON, markdown code blocks, prose preamble, etc.
-                json_str = response.strip()
-                start_idx = json_str.find('{')
-                end_idx = json_str.rfind('}')
-                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                    json_str = json_str[start_idx:end_idx + 1]
-                classification = json.loads(json_str)
-            except json.JSONDecodeError:
-                # Fallback: try to extract just the intent
-                classified_intent = response.strip().lower()
-                if classified_intent in valid_intents:
-                    classification = {"intent": classified_intent, "confidence": 0.6}
+            result_data = pipeline_context.result
+            if isinstance(result_data, dict) and result_data.get("success"):
+                data = result_data.get("data", {})
+                classification = data.get("raw_result", {})
+                classified_intent = data.get("classification")
+
+                if classified_intent is None:
+                    classified_intent = classification.get("intent", "unknown")
+
+                # Normalize intent name
+                if isinstance(classified_intent, str):
+                    classified_intent = classified_intent.lower()
                 else:
-                    classification = {"intent": "unknown", "confidence": 0.3}
+                    classified_intent = "unknown"
 
-            # Log classification to telemetry for Ratchet
-            log_event(
-                source="cognitive_router",
-                raw_transcript=user_input[:200],
-                zone_context="classification",
-                inferred={
-                    "classification_tier": 2,
-                    "model": "claude-sonnet",
-                    "latency_ms": latency_ms,
-                    "input_text": user_input,
-                    "output": classification
+                confidence = float(classification.get("confidence", data.get("confidence", 0.5)))
+                intent_type = classification.get("intent_type", "actionable")
+                action_required = classification.get("action_required", True)
+
+                # Build llm_metadata for downstream use
+                llm_metadata = {
+                    "reasoning": classification.get("reasoning", ""),
+                    "classification_confidence": confidence,
+                    "via_pipeline": True  # ADR-001 compliance marker
                 }
-            )
 
-            # Extract fields from classification
-            classified_intent = classification.get("intent", "unknown").lower()
-            confidence = float(classification.get("confidence", 0.5))
-            intent_type = classification.get("intent_type", "actionable")
-            action_required = classification.get("action_required", True)
+                # Validate intent against declared routes
+                if classified_intent in valid_intents:
+                    route_config = self.routes[classified_intent]
+                    return RoutingResult(
+                        intent=classified_intent,
+                        domain=route_config.get("domain", "general"),
+                        zone=route_config.get("zone", "yellow"),
+                        tier=route_config.get("tier", 2),
+                        confidence=confidence,
+                        handler=route_config.get("handler"),
+                        handler_args=route_config.get("handler_args", {}),
+                        extracted_args={},
+                        intent_type=intent_type,
+                        action_required=action_required,
+                        llm_metadata=llm_metadata
+                    )
 
-            # Build llm_metadata for downstream use
-            llm_metadata = {
-                "reasoning": classification.get("reasoning", ""),
-                "classification_confidence": confidence
-            }
-
-            # Validate intent against declared routes
-            if classified_intent in valid_intents:
-                route_config = self.routes[classified_intent]
+                # LLM returned unknown - pass through metadata for clarification
                 return RoutingResult(
-                    intent=classified_intent,
-                    domain=route_config.get("domain", "general"),
-                    zone=route_config.get("zone", "yellow"),
-                    tier=route_config.get("tier", 2),
+                    intent="unknown",
+                    domain="general",
+                    zone="yellow",
+                    tier=2,
                     confidence=confidence,
-                    handler=route_config.get("handler"),
-                    handler_args=route_config.get("handler_args", {}),
+                    handler=None,
+                    handler_args={},
                     extracted_args={},
                     intent_type=intent_type,
                     action_required=action_required,
                     llm_metadata=llm_metadata
                 )
 
-            # LLM returned unknown - pass through metadata for clarification
-            return RoutingResult(
-                intent="unknown",
-                domain="general",
-                zone="yellow",
-                tier=2,
-                confidence=confidence,
-                handler=None,
-                handler_args={},
-                extracted_args={},
-                intent_type=intent_type,
-                action_required=action_required,
-                llm_metadata=llm_metadata
-            )
+            return None
 
         except Exception as e:
             # Log failure
@@ -433,10 +382,11 @@ JSON:"""
                 log_event(
                     source="cognitive_router",
                     raw_transcript=user_input[:200],
-                    zone_context="classification_error",
+                    zone_context="yellow",
                     inferred={
                         "error": str(e),
-                        "error_type": type(e).__name__
+                        "error_type": type(e).__name__,
+                        "stage": "llm_escalation_error"
                     }
                 )
             except Exception:

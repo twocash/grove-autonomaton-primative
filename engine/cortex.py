@@ -22,7 +22,7 @@ import yaml
 from pathlib import Path
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Any
 
 from engine.profile import (
     get_telemetry_path,
@@ -199,19 +199,72 @@ class Cortex:
         return events[-limit:]
 
     # =========================================================================
-    # Entity Extraction
+    # Entity Extraction (Sprint 6 - ADR-001 Ratchet Pattern)
     # =========================================================================
 
     def _extract_entities(self, event: dict) -> list[ExtractedEntity]:
         """
-        Extract entities from a telemetry event.
+        Extract entities from a telemetry event using ratchet pattern.
 
-        Sprint 4: Mock implementation using regex for capitalized names.
-        Future: LLM-powered NER.
+        Sprint 6 (ADR-001): Uses the two-layer architecture:
+        1. Deterministic layer (regex) runs first - free
+        2. LLM layer (via pipeline) runs if confidence < threshold
+
+        The LLM escalation routes through the invariant pipeline to
+        ratchet_entity_extract, ensuring standardized telemetry.
         """
+        from engine.ratchet import ratchet_classify, RatchetConfig
+
         transcript = event.get("raw_transcript", "")
         event_id = event.get("id", "unknown")
 
+        if not transcript.strip():
+            return []
+
+        # Configure entity extraction ratchet
+        entity_config = RatchetConfig(
+            label="entity_extraction",
+            deterministic=lambda t: self._regex_extract_entities(t, event_id),
+            interpret_route="ratchet_entity_extract",
+            threshold=0.7
+        )
+
+        # Run ratchet classification
+        try:
+            result = ratchet_classify(transcript, entity_config)
+        except Exception as e:
+            # Ratchet failed - log and return empty (Digital Jidoka: visible failure)
+            from engine.telemetry import log_event
+            log_event(
+                source="cortex:entity_extraction",
+                raw_transcript=transcript[:200],
+                zone_context="yellow",
+                inferred={
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "stage": "ratchet_classify"
+                }
+            )
+            return []
+
+        # Convert result to ExtractedEntity list
+        if result.result is None:
+            return []
+
+        if result.source == "deterministic":
+            # Deterministic layer returns list of ExtractedEntity
+            return result.result if isinstance(result.result, list) else []
+        else:
+            # Pipeline layer returns raw entities list from LLM
+            return self._parse_llm_entities(result.result, event_id, transcript)
+
+    def _regex_extract_entities(self, transcript: str, event_id: str) -> Optional[tuple]:
+        """
+        Deterministic entity extraction using regex patterns.
+
+        Returns (entities_list, confidence) or None if no entities found.
+        This is the free layer - no API calls.
+        """
         entities = []
 
         # Pattern: Capitalized words that look like names
@@ -259,83 +312,52 @@ class Cortex:
                     context=context
                 ))
 
-        return entities
+        if entities:
+            # Return entities with average confidence
+            avg_confidence = sum(e.confidence for e in entities) / len(entities)
+            return (entities, avg_confidence)
 
-    def _extract_entities_llm(self, event: dict) -> list[ExtractedEntity]:
+        # No matches - return None to trigger LLM escalation
+        return None
+
+    def _parse_llm_entities(
+        self,
+        llm_result: Any,
+        event_id: str,
+        transcript: str
+    ) -> list[ExtractedEntity]:
         """
-        Extract entities using Tier 1 LLM (Haiku).
+        Parse LLM extraction result into ExtractedEntity list.
 
-        Lens 1: Named Entity Recognition that understands context
-        and distinguishes real names from action words.
-
-        Args:
-            event: Telemetry event with raw_transcript
-
-        Returns:
-            List of extracted entities with is_new flag
+        The ratchet_interpreter handler returns entities in raw format.
+        This method converts them to ExtractedEntity dataclass instances.
         """
-        try:
-            from engine.llm_client import call_llm
-        except ImportError:
+        entities = []
+
+        # Handle different result formats
+        if isinstance(llm_result, list):
+            entities_data = llm_result
+        elif isinstance(llm_result, dict):
+            entities_data = llm_result.get("entities", [])
+        else:
             return []
 
-        transcript = event.get("raw_transcript", "")
-        event_id = event.get("id", "unknown")
-
-        if not transcript.strip():
-            return []
-
-        # Build extraction prompt
-        prompt = f"""Extract named entities from this transcript.
-Return JSON with an "entities" array. Each entity should have:
-- name: The full name (e.g., "Marcus Henderson")
-- type: One of: player, parent, client, venue
-- is_new: true if this appears to be a new person/place, false if existing
-
-IMPORTANT:
-- Only extract real person or place names
-- Do NOT extract action words like "Generate", "Create", "Update", etc.
-- Do NOT extract common nouns or verbs
-- Focus on proper nouns that are actual names
-
-Transcript: "{transcript}"
-
-Return ONLY valid JSON, no explanations:"""
-
-        try:
-            response = call_llm(
-                prompt=prompt,
-                tier=1,  # Haiku for speed/cost
-                intent="cortex_extraction"
-            )
-
-            # Parse JSON response
-            data = json.loads(response)
-            entities_data = data.get("entities", [])
-
-            entities = []
-            for e in entities_data:
-                name = e.get("name", "").strip()
+        for e in entities_data:
+            if isinstance(e, dict):
+                name = e.get("name", e.get("text", "")).strip()
                 if not name:
                     continue
 
                 entities.append(ExtractedEntity(
                     name=name,
-                    entity_type=e.get("type", "player"),
+                    entity_type=e.get("type", e.get("entity_type", "player")),
                     source_event_id=event_id,
                     confidence=0.8,  # LLM extraction confidence
                     context=transcript[:100],
                     is_new=e.get("is_new", True)
                 ))
 
-            return entities
-
-        except json.JSONDecodeError:
-            # Malformed response - return empty list
-            return []
-        except Exception:
-            # LLM failure - return empty list
-            return []
+        return entities
 
     def _validate_new_entity(self, entity: ExtractedEntity) -> bool:
         """

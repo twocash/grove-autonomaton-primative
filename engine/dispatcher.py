@@ -65,6 +65,7 @@ class Dispatcher:
             "plan_update": self._handle_plan_update,
             "regenerate_plan": self._handle_regenerate_plan,
             "fill_entity_gap": self._handle_fill_entity_gap,
+            "ratchet_interpreter": self._handle_ratchet_interpreter,
         }
 
     def dispatch(
@@ -1296,6 +1297,216 @@ Return ONLY valid JSON, no explanations:"""
                 message=f"Entity update failed: {str(e)}",
                 data={"type": "fill_entity_gap", "error": str(e)}
             )
+
+    def _handle_ratchet_interpreter(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Generic ratchet classification interpreter (Sprint 6 - ADR-001).
+
+        This handler reads a prompt template from config and executes
+        LLM classification. It's the interpret layer for ratchet_classify().
+
+        The handler_args specify:
+        - classifier: Name of the classification task (for telemetry)
+        - prompt_template: Name of the prompt template file
+
+        Green Zone - classification doesn't modify state.
+        Tier determined by routing.config entry.
+        """
+        import json
+        from engine.llm_client import call_llm
+        from engine.profile import get_config_dir
+        from engine.telemetry import log_event
+
+        classifier = routing_result.handler_args.get("classifier", "unknown")
+        template_name = routing_result.handler_args.get("prompt_template", "")
+
+        if not template_name:
+            return DispatchResult(
+                success=False,
+                message=f"Ratchet interpreter missing prompt_template for {classifier}",
+                data={"type": "ratchet_interpreter", "error": "missing_template"}
+            )
+
+        # Load prompt template from cognitive-router/prompts/
+        config_dir = get_config_dir()
+        template_path = config_dir / "cognitive-router" / "prompts" / f"{template_name}.md"
+
+        if not template_path.exists():
+            return DispatchResult(
+                success=False,
+                message=f"Prompt template not found: {template_name}",
+                data={"type": "ratchet_interpreter", "error": "template_not_found"}
+            )
+
+        try:
+            template_content = template_path.read_text(encoding="utf-8")
+        except Exception as e:
+            return DispatchResult(
+                success=False,
+                message=f"Failed to read prompt template: {e}",
+                data={"type": "ratchet_interpreter", "error": "template_read_failed"}
+            )
+
+        # Build context for template substitution
+        context = self._build_ratchet_context(classifier, raw_input)
+
+        # Substitute placeholders in template
+        prompt = template_content
+        for key, value in context.items():
+            placeholder = "{" + key + "}"
+            if placeholder in prompt:
+                prompt = prompt.replace(placeholder, str(value))
+
+        # Determine tier from routing config
+        tier = routing_result.tier if hasattr(routing_result, 'tier') else 1
+
+        try:
+            response = call_llm(
+                prompt=prompt,
+                tier=tier,
+                intent=f"ratchet_{classifier}"
+            )
+
+            # Parse JSON response
+            json_str = response.strip()
+            start_idx = json_str.find('{')
+            end_idx = json_str.rfind('}')
+            if start_idx != -1 and end_idx != -1:
+                json_str = json_str[start_idx:end_idx + 1]
+
+            result = json.loads(json_str)
+
+            # Extract classification from result based on classifier type
+            classification = self._extract_classification(classifier, result)
+            confidence = result.get("confidence", 0.5)
+
+            return DispatchResult(
+                success=True,
+                message=f"Classification complete: {classifier}",
+                data={
+                    "type": "ratchet_interpreter",
+                    "classifier": classifier,
+                    "classification": classification,
+                    "confidence": confidence,
+                    "raw_result": result
+                }
+            )
+
+        except json.JSONDecodeError as e:
+            log_event(
+                source="dispatcher",
+                raw_transcript=raw_input[:200],
+                zone_context="yellow",
+                inferred={
+                    "error": str(e),
+                    "handler": "ratchet_interpreter",
+                    "classifier": classifier,
+                    "stage": "json_parse_error"
+                }
+            )
+            return DispatchResult(
+                success=False,
+                message=f"Failed to parse {classifier} classification response",
+                data={"type": "ratchet_interpreter", "error": "json_parse_failed"}
+            )
+        except Exception as e:
+            log_event(
+                source="dispatcher",
+                raw_transcript=raw_input[:200],
+                zone_context="yellow",
+                inferred={
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "handler": "ratchet_interpreter",
+                    "classifier": classifier,
+                    "stage": "handler_error"
+                }
+            )
+            return DispatchResult(
+                success=False,
+                message=f"Classification failed: {str(e)}",
+                data={"type": "ratchet_interpreter", "error": str(e)}
+            )
+
+    def _build_ratchet_context(self, classifier: str, raw_input: str) -> dict:
+        """
+        Build context dict for prompt template substitution.
+
+        Different classifiers need different context.
+        """
+        context = {
+            "user_input": raw_input
+        }
+
+        if classifier == "intent":
+            # Load available intents from routing config
+            from engine.cognitive_router import get_router
+            router = get_router()
+            intent_descriptions = []
+            for intent_name, config in router.routes.items():
+                if not intent_name.startswith("ratchet_"):
+                    desc = config.get("description", intent_name)
+                    intent_descriptions.append(f"- {intent_name}: {desc[:80]}")
+            context["available_intents"] = "\n".join(intent_descriptions[:20])
+
+        elif classifier == "entity_extraction":
+            # Load known entities
+            from engine.profile import get_entities_dir
+            entities_dir = get_entities_dir()
+            known = []
+            if entities_dir.exists():
+                for type_dir in entities_dir.iterdir():
+                    if type_dir.is_dir() and not type_dir.name.startswith('.'):
+                        for entity_file in type_dir.glob("*.md"):
+                            known.append(f"- {type_dir.name}: {entity_file.stem}")
+            context["known_entities"] = "\n".join(known[:30]) or "No entities registered yet."
+
+        elif classifier == "correction_detection":
+            # Include previous system output if available
+            from engine.telemetry import read_recent_events
+            recent = read_recent_events(limit=3)
+            prev_output = ""
+            for event in reversed(recent):
+                if event.get("source") == "dispatcher":
+                    prev_output = event.get("raw_transcript", "")[:300]
+                    break
+            context["previous_output"] = prev_output or "No previous output available."
+
+        elif classifier == "gap_detection":
+            # Entity profile should be passed in handler_args
+            # For now, provide placeholder
+            context["entity_profile"] = "Entity profile not provided."
+
+        return context
+
+    def _extract_classification(self, classifier: str, result: dict) -> Any:
+        """
+        Extract the classification value from the LLM result.
+
+        Different classifiers return different structures.
+        """
+        if classifier == "intent":
+            return result.get("intent")
+        elif classifier == "entity_extraction":
+            return result.get("entities", [])
+        elif classifier == "correction_detection":
+            if result.get("is_correction"):
+                return {
+                    "type": result.get("correction_type"),
+                    "subject": result.get("subject"),
+                    "old_value": result.get("old_value"),
+                    "new_value": result.get("new_value")
+                }
+            return None
+        elif classifier == "gap_detection":
+            return result.get("gaps", [])
+        else:
+            # Generic fallback
+            return result
 
 
 # =========================================================================

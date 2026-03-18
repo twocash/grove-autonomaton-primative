@@ -44,6 +44,7 @@ class PipelineContext:
     intent: Optional[str] = None
     entities: dict = field(default_factory=dict)
     domain: Optional[str] = None
+    force_route: Optional[str] = None  # Sprint 6: Force routing to specific handler
 
     # Stage 3: Compilation
     proposed_action: Optional[str] = None
@@ -69,7 +70,13 @@ class InvariantPipeline:
     def __init__(self):
         self.context: Optional[PipelineContext] = None
 
-    def run(self, raw_input: str, source: str = "operator_session", zone: str = "yellow") -> PipelineContext:
+    def run(
+        self,
+        raw_input: str,
+        source: str = "operator_session",
+        zone: str = "yellow",
+        force_route: Optional[str] = None
+    ) -> PipelineContext:
         """
         Execute the full invariant pipeline.
 
@@ -77,6 +84,8 @@ class InvariantPipeline:
             raw_input: The user's raw input string
             source: Origin identifier for telemetry
             zone: Zone classification (green/yellow/red)
+            force_route: Optional - Force routing to a specific intent (Sprint 6)
+                        Used by ratchet_classify() for classification sub-intents
 
         Returns:
             PipelineContext with all stages populated
@@ -88,7 +97,8 @@ class InvariantPipeline:
         self.context = PipelineContext(
             raw_input=raw_input,
             source=source,
-            zone=zone
+            zone=zone,
+            force_route=force_route
         )
 
         try:
@@ -162,14 +172,39 @@ class InvariantPipeline:
         Parse intent, entities, and domain from input.
 
         Sprint 1: Tier 0 keyword-based classification via Cognitive Router.
-        Future: LLM-powered intent classification.
+        Sprint 6: Support force_route for ratchet_classify() pipeline traversals.
 
         CRITICAL: The router's zone classification overrides the caller's zone.
         Unknown intents default to yellow zone per Digital Jidoka principle.
         """
-        from engine.cognitive_router import classify_intent
+        from engine.cognitive_router import classify_intent, get_router
 
-        # Classify intent using the cognitive router
+        # Sprint 6: Handle forced routing for ratchet_classify()
+        # This allows classification sub-intents to traverse the pipeline
+        if self.context.force_route:
+            router = get_router()
+            route_config = router.routes.get(self.context.force_route, {})
+
+            # Build routing result from the forced route's config
+            self.context.intent = self.context.force_route
+            self.context.domain = route_config.get("domain", "system")
+            self.context.zone = route_config.get("zone", "green")
+
+            self.context.entities = {
+                "routing": {
+                    "tier": route_config.get("tier", 1),
+                    "confidence": 1.0,  # Forced route = full confidence
+                    "handler": route_config.get("handler"),
+                    "handler_args": route_config.get("handler_args", {}),
+                    "extracted_args": {},
+                    "intent_type": route_config.get("intent_type", "actionable"),
+                    "action_required": route_config.get("intent_type") != "conversational",
+                    "llm_metadata": {"forced_route": True}
+                }
+            }
+            return
+
+        # Normal classification path
         routing_result = classify_intent(self.context.raw_input)
 
         # Set context from routing result - router is authoritative
@@ -702,14 +737,26 @@ JSON:"""
 
 
 # Module-level convenience functions
-def run_pipeline(raw_input: str, source: str = "operator_session", zone: str = "yellow") -> PipelineContext:
+def run_pipeline(
+    raw_input: str,
+    source: str = "operator_session",
+    zone: str = "yellow",
+    force_route: Optional[str] = None
+) -> PipelineContext:
     """
     Execute the invariant pipeline on the given input.
 
     This is the primary entry point for processing user interactions.
+
+    Args:
+        raw_input: The user's raw input string
+        source: Origin identifier for telemetry
+        zone: Zone classification (green/yellow/red)
+        force_route: Optional - Force routing to a specific intent (Sprint 6)
+                    Used by ratchet_classify() for classification sub-intents
     """
     pipeline = InvariantPipeline()
-    return pipeline.run(raw_input, source, zone)
+    return pipeline.run(raw_input, source, zone, force_route)
 
 
 def run_pipeline_with_mcp(

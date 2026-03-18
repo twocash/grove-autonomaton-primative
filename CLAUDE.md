@@ -222,6 +222,46 @@ When actual behavior aligns with a stated aspiration, Lens 5 marks the proposal 
 
 ---
 
+### Invariant #12: Ratchet Classification (Sprint 6 - ADR-001)
+
+**Every classification task MUST use `ratchet_classify()`.**
+
+The two-layer architecture:
+1. **Deterministic Layer (Tier 0)** - Keywords, regex, lookup tables. Free, fast.
+2. **Interpret Layer (Pipeline)** - LLM classification through the invariant pipeline. NOT a raw `call_llm()`.
+
+```
+INPUT
+  │
+  ▼
+LAYER 1: Deterministic (free)
+  Keywords, regex, lookup table.
+  If confidence ≥ threshold → return result
+  │
+  ▼ (confidence < threshold)
+LAYER 2: Pipeline Interpretation
+  Routes through run_pipeline(force_route=...)
+  Uses ratchet_interpreter handler
+  │
+  ▼
+TELEMETRY: Every classification logged
+  Standardized schema for Ratchet analysis
+```
+
+**Rules:**
+- No classification task may use only an LLM layer
+- No classification task may skip telemetry
+- The interpret layer routes THROUGH the pipeline
+- Deterministic rules are declared in config (routing.config, cortex.yaml)
+- The Ratchet adds rules over time through confirmed patterns
+
+**Violation Example:** Raw `call_llm()` for classification without deterministic first pass.
+**Correct Pattern:** Use `ratchet_classify()` with deterministic function and interpret_route.
+
+**See:** `docs/ADR-001-ratchet-classification.md`
+
+---
+
 ## The Three-Layer Architecture
 
 ### Layer 1: The Dock (Strategic Memory)
@@ -251,6 +291,8 @@ Asynchronous analytical lenses:
 - **Lens 3:** Pattern Analysis (Tier 2 - Sonnet)
 - **Lens 4:** Ratchet Analysis (Tier 2 - Sonnet)
 - **Lens 5:** Evolution/PPM (Tier 2 - Sonnet)
+- **Lens 6:** Context Gardener (Tier 1/2 - Gap detection, plan updates)
+- **Lens 7:** Memory Accumulator (Sprint 6 - Correction detection, Tier 1)
 
 The Cortex answers: *"What patterns and improvements exist in the telemetry?"*
 

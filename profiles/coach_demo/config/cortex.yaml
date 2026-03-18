@@ -1,6 +1,26 @@
 # cortex.yaml
 # Configuration for the Cortex analytical engine (Layer 3)
 # Sprint 5: Context Gardener gating parameters
+# Sprint 6: Correction detection keywords for Memory Accumulator
+
+# Correction Detection (Sprint 6 - ADR-001)
+# Keywords that trigger the Memory Accumulator's correction detection.
+# The Ratchet can add to this list via confirmed patterns.
+correction_detection:
+  keywords:
+    - "actually"
+    - "no, it's"
+    - "that's wrong"
+    - "not really"
+    - "that's not right"
+    - "the real issue"
+    - "not X, Y"
+    - "i meant"
+    - "let me clarify"
+  # Confidence threshold for keyword detection
+  keyword_confidence: 0.6
+  # LLM tier for interpret layer (via ratchet_correction_detect)
+  interpret_tier: 1  # Haiku - fast/cheap
 
 # Context Gardener (Lens 6) Configuration
 context_gardener:
@@ -32,6 +52,7 @@ lens_order:
   - ratchet_analysis       # Lens 4
   - evolution_analysis     # Lens 5
   - context_gardener       # Lens 6
+  - memory_accumulator     # Lens 7 (Sprint 6)
 
 # Tail pass settings
 tail_pass:
@@ -42,6 +63,7 @@ tail_pass:
   always_run:
     - entity_extraction
     - content_seed_mining
+    - memory_accumulator    # Sprint 6: Correction detection on every pass
 
   # These only run when explicitly triggered or via Context Gardener
   batch_only:
