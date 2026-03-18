@@ -61,6 +61,7 @@ class Dispatcher:
             "cortex_batch": self._handle_cortex_batch,
             "vision_capture": self._handle_vision_capture,
             "general_chat": self._handle_general_chat,
+            "strategy_session": self._handle_strategy_session,
         }
 
     def dispatch(
@@ -950,6 +951,103 @@ Respond (1-2 sentences only):"""
                     "type": "general_chat",
                     "response": fallback_msg,
                     "fallback": True
+                }
+            )
+
+    def _handle_strategy_session(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Handle strategy session requests - active work on goals/plan.
+
+        Green Zone - Reviews Dock context and suggests immediate next step.
+        Uses Tier 1 (Haiku) for low latency responses.
+
+        This is for ACTIVE work requests, not aspirational wishes
+        (which go to vision_capture).
+        """
+        from engine.llm_client import call_llm
+        from engine.profile import get_dock_dir
+        from engine.config_loader import get_persona
+
+        persona = get_persona()
+        dock_dir = get_dock_dir()
+
+        # Load goals.md
+        goals_context = ""
+        goals_path = dock_dir / "goals.md"
+        if goals_path.exists():
+            try:
+                goals_context = goals_path.read_text(encoding="utf-8")
+            except Exception:
+                pass
+
+        # Load business-plan.md
+        business_context = ""
+        business_path = dock_dir / "business-plan.md"
+        if business_path.exists():
+            try:
+                business_context = business_path.read_text(encoding="utf-8")
+            except Exception:
+                pass
+
+        if not goals_context and not business_context:
+            return DispatchResult(
+                success=True,
+                message="No goals or business plan found in the Dock. Run 'session zero' to set up your strategy.",
+                data={
+                    "type": "strategy_session",
+                    "response": "No Dock context available"
+                }
+            )
+
+        # Build system prompt from persona
+        task_context = """The boss wants to work on their goals.
+Review the provided Dock context.
+Suggest ONE specific, immediate next step they can take right now to move the needle on their strategy.
+Keep it brief and actionable."""
+
+        system_prompt = persona.build_system_prompt(task_context)
+
+        dock_context = ""
+        if goals_context:
+            dock_context += f"## Goals\n{goals_context}\n\n"
+        if business_context:
+            dock_context += f"## Business Plan\n{business_context}\n\n"
+
+        prompt = f"""User request: {raw_input}
+
+Dock Context:
+{dock_context}
+
+Suggest ONE specific, immediate next step:"""
+
+        try:
+            response = call_llm(
+                prompt=prompt,
+                system=system_prompt,
+                tier=1,
+                intent="strategy_session"
+            )
+
+            return DispatchResult(
+                success=True,
+                message=response.strip(),
+                data={
+                    "type": "strategy_session",
+                    "response": response.strip()
+                }
+            )
+
+        except Exception as e:
+            return DispatchResult(
+                success=False,
+                message=f"Strategy session failed: {str(e)}",
+                data={
+                    "type": "strategy_session",
+                    "error": str(e)
                 }
             )
 
