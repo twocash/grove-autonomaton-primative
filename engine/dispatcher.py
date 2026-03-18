@@ -59,6 +59,7 @@ class Dispatcher:
             "mcp_gmail": self._handle_mcp_gmail,
             "skill_executor": self._handle_skill_executor,
             "cortex_batch": self._handle_cortex_batch,
+            "vision_capture": self._handle_vision_capture,
         }
 
     def dispatch(
@@ -658,8 +659,9 @@ Return ONLY valid JSON, no explanations:"""
             # Lens 5: Evolution / Personal Product Manager
             telemetry_events = self._load_recent_telemetry(limit=50)
             exhaust_board = self._load_exhaust_board()
+            vision_board = self._load_vision_board()
 
-            result = cortex.run_evolution_analysis(telemetry_events, exhaust_board)
+            result = cortex.run_evolution_analysis(telemetry_events, exhaust_board, vision_board)
 
             proposals_count = len(result.get("evolution_proposals", []))
 
@@ -792,6 +794,77 @@ Return ONLY valid JSON, no explanations:"""
             if p.get('pit_crew_ready'):
                 lines.append("        Status: READY FOR PIT CREW")
         return "\n".join(lines)
+
+    def _handle_vision_capture(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Handle Vision Board capture (Sprint 6.5).
+
+        Green Zone - no approval required.
+        Appends user aspiration to vision-board.md for future Lens 5 consideration.
+        """
+        from datetime import datetime
+        from engine.profile import get_dock_dir
+
+        dock_dir = get_dock_dir()
+        vision_board_path = dock_dir / "system" / "vision-board.md"
+
+        # Ensure parent directory exists
+        vision_board_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Initialize if doesn't exist
+        if not vision_board_path.exists():
+            vision_board_path.write_text(
+                "# Vision Board\n\n"
+                "> *A scratchpad for aspirations and future automation ideas*\n\n"
+                "---\n\n"
+                "## Aspirations\n\n"
+                "<!-- New aspirations are appended below automatically -->\n\n",
+                encoding="utf-8"
+            )
+
+        # Format the aspiration entry
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        entry = f"- [{timestamp}] {raw_input}\n"
+
+        # Append to vision board
+        try:
+            with open(vision_board_path, "a", encoding="utf-8") as f:
+                f.write(entry)
+
+            return DispatchResult(
+                success=True,
+                message="Aspiration captured to Vision Board",
+                data={
+                    "type": "vision_capture",
+                    "aspiration": raw_input,
+                    "timestamp": timestamp
+                }
+            )
+
+        except Exception as e:
+            return DispatchResult(
+                success=False,
+                message=f"Failed to capture aspiration: {e}",
+                data={"type": "vision_capture", "error": str(e)}
+            )
+
+    def _load_vision_board(self) -> str:
+        """Load the vision board content for Lens 5."""
+        from engine.profile import get_dock_dir
+
+        dock_dir = get_dock_dir()
+        vision_path = dock_dir / "system" / "vision-board.md"
+
+        if vision_path.exists():
+            try:
+                return vision_path.read_text(encoding="utf-8")
+            except Exception:
+                return "# Vision Board\n\nNo entries yet."
+        return "# Vision Board\n\nNo entries yet."
 
 
 # =========================================================================

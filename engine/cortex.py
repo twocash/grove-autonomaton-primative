@@ -761,18 +761,24 @@ Return ONLY valid JSON, no explanations:"""
     def run_evolution_analysis(
         self,
         telemetry_events: list[dict],
-        exhaust_board: str
+        exhaust_board: str,
+        vision_board: str = ""
     ) -> dict:
         """
         Lens 5: Evolution Analysis - propose new skills for Pit Crew.
 
-        Uses Tier 2 (Sonnet) to analyze telemetry patterns and the Exhaust Board
-        to identify opportunities for new skill creation. Acts as the Personal
-        Product Manager, generating Pit Crew work orders.
+        Uses Tier 2 (Sonnet) to analyze telemetry patterns, the Exhaust Board,
+        and the Vision Board to identify opportunities for new skill creation.
+        Acts as the Personal Product Manager, generating Pit Crew work orders.
+
+        Sprint 6.5: Now includes Vision Board analysis to match user aspirations
+        with actual behavior patterns. Skills that fulfill stated aspirations
+        are prioritized.
 
         Args:
             telemetry_events: Recent telemetry events
             exhaust_board: Contents of exhaust-board.md
+            vision_board: Contents of vision-board.md (user aspirations)
 
         Returns:
             Dict with evolution_proposals (Pit Crew work orders)
@@ -782,19 +788,32 @@ Return ONLY valid JSON, no explanations:"""
         # Format telemetry for analysis
         telemetry_summary = json.dumps(telemetry_events, indent=2)
 
+        # Build Vision Board section if content exists
+        vision_section = ""
+        if vision_board and vision_board.strip():
+            vision_section = f"""
+VISION BOARD (User Aspirations):
+{vision_board}
+"""
+
         prompt = f"""You are the Personal Product Manager for this Autonomaton.
-Analyze telemetry and the Exhaust Board to propose new skills.
+Analyze telemetry, the Exhaust Board, and the Vision Board to propose new skills.
 
 TELEMETRY EVENTS:
 {telemetry_summary}
 
 EXHAUST BOARD (Telemetry Signal Registry):
 {exhaust_board}
-
+{vision_section}
 Your task:
 1. Identify automation opportunities from recurring patterns
 2. Cross-reference with Exhaust Board telemetry unlocks
-3. Propose new skills that would save operator time
+3. **Match user aspirations from the Vision Board with actual telemetry behavior**
+4. Propose new skills that would save operator time
+5. **Prioritize skills that fulfill stated aspirations when telemetry supports them**
+
+When an aspiration from the Vision Board aligns with observed telemetry patterns,
+mark the proposal with "vision_match": true - these get highest priority.
 
 Each proposal becomes a Pit Crew work order for skill generation.
 
@@ -808,6 +827,7 @@ Return JSON with:
     - zone: "green", "yellow", or "red"
     - tier: 1, 2, or 3
   - pit_crew_ready: true if ready for immediate generation
+  - vision_match: true if this fulfills a stated aspiration
 
 Return ONLY valid JSON, no explanations:"""
 
