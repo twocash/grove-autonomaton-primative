@@ -3,15 +3,116 @@ telemetry.py - The Feed-First Engine
 
 Every interaction MUST be logged as structured data before any processing.
 This enforces the first stage of the Invariant Pipeline.
+
+Sprint 6: Strict schema validation ensures the Cortex never ingests malformed data.
 """
 
 import json
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
 from engine.profile import get_telemetry_path
 
+
+# =========================================================================
+# Schema Validation
+# =========================================================================
+
+class TelemetryValidationError(Exception):
+    """Raised when a telemetry event fails schema validation."""
+    pass
+
+
+VALID_ZONES = {"green", "yellow", "red"}
+
+
+def _generate_id() -> str:
+    """Generate a UUID v4 string."""
+    return str(uuid.uuid4())
+
+
+def _generate_timestamp() -> str:
+    """Generate an ISO-8601 timestamp."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+# =========================================================================
+# Telemetry Event Schema
+# =========================================================================
+
+@dataclass
+class TelemetryEvent:
+    """
+    Formal schema for telemetry events.
+
+    All events MUST conform to this schema before being logged.
+    This ensures the Cortex analytical engine never ingests malformed data.
+
+    Required Fields:
+        - id: UUID v4 (auto-generated if not provided)
+        - timestamp: ISO-8601 format (auto-generated if not provided)
+        - source: Origin of the event (e.g., 'operator_session')
+        - raw_transcript: The raw user input or system message
+        - zone_context: Current zone classification (green, yellow, red)
+
+    Optional Fields:
+        - inferred: Dict of inferred data (default empty dict)
+    """
+    source: str
+    raw_transcript: str
+    zone_context: str
+    id: str = field(default_factory=_generate_id)
+    timestamp: str = field(default_factory=_generate_timestamp)
+    inferred: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        """Validate fields after initialization."""
+        self._validate()
+
+    def _validate(self) -> None:
+        """Validate all required fields."""
+        if not self.source or not self.source.strip():
+            raise TelemetryValidationError(
+                "source is required and cannot be empty"
+            )
+
+        if not self.raw_transcript or not self.raw_transcript.strip():
+            raise TelemetryValidationError(
+                "raw_transcript is required and cannot be empty"
+            )
+
+        if not self.zone_context or not self.zone_context.strip():
+            raise TelemetryValidationError(
+                "zone_context is required and cannot be empty"
+            )
+
+        if self.zone_context not in VALID_ZONES:
+            raise TelemetryValidationError(
+                f"zone_context must be one of {VALID_ZONES}, got '{self.zone_context}'"
+            )
+
+        if not isinstance(self.inferred, dict):
+            raise TelemetryValidationError(
+                f"inferred must be a dict, got {type(self.inferred).__name__}"
+            )
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "timestamp": self.timestamp,
+            "source": self.source,
+            "raw_transcript": self.raw_transcript,
+            "zone_context": self.zone_context,
+            "inferred": self.inferred
+        }
+
+
+# =========================================================================
+# Event Creation and Logging
+# =========================================================================
 
 def create_event(
     source: str,
@@ -22,22 +123,36 @@ def create_event(
     """
     Create a telemetry event conforming to the required schema.
 
-    Schema:
-        - id: UUID v4
-        - timestamp: ISO-8601 format
-        - source: Origin of the event (e.g., 'operator_session')
-        - raw_transcript: The raw user input or system message
-        - inferred: Dict of inferred data (default empty)
-        - zone_context: Current zone classification
+    Validates all fields before returning. Raises TelemetryValidationError
+    if any required field is missing or malformed.
+
+    Args:
+        source: Origin of the event (e.g., 'operator_session')
+        raw_transcript: The raw user input or system message
+        zone_context: Zone classification (green, yellow, red)
+        inferred: Dict of inferred data (default empty)
+
+    Returns:
+        Dict conforming to telemetry schema
+
+    Raises:
+        TelemetryValidationError: If validation fails
     """
-    return {
-        "id": str(uuid.uuid4()),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "source": source,
-        "raw_transcript": raw_transcript,
-        "inferred": inferred if inferred is not None else {},
-        "zone_context": zone_context
-    }
+    # Validate inferred type before creating event
+    if inferred is not None and not isinstance(inferred, dict):
+        raise TelemetryValidationError(
+            f"inferred must be a dict, got {type(inferred).__name__}"
+        )
+
+    # Create and validate event
+    event = TelemetryEvent(
+        source=source,
+        raw_transcript=raw_transcript,
+        zone_context=zone_context,
+        inferred=inferred if inferred is not None else {}
+    )
+
+    return event.to_dict()
 
 
 def log_event(
@@ -49,8 +164,22 @@ def log_event(
     """
     Append a telemetry event to the JSONL file.
 
-    Returns the logged event for pipeline continuity.
+    Validates the event BEFORE writing to ensure data integrity.
+    If validation fails, raises TelemetryValidationError and does NOT write.
+
+    Args:
+        source: Origin of the event (e.g., 'operator_session')
+        raw_transcript: The raw user input or system message
+        zone_context: Zone classification (green, yellow, red)
+        inferred: Dict of inferred data (default empty)
+
+    Returns:
+        The logged event dict for pipeline continuity
+
+    Raises:
+        TelemetryValidationError: If validation fails (no write occurs)
     """
+    # Create and validate event (raises on failure)
     event = create_event(
         source=source,
         raw_transcript=raw_transcript,

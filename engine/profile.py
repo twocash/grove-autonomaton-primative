@@ -13,6 +13,14 @@ from pathlib import Path
 from typing import Optional
 
 
+# =========================================================================
+# Module Constants
+# =========================================================================
+
+# The profiles directory (relative to repo root)
+PROFILES_DIR = Path(__file__).parent.parent / "profiles"
+
+
 # Global profile state
 _active_profile: Optional[str] = None
 _profile_base_path: Optional[Path] = None

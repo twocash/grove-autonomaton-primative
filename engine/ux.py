@@ -12,6 +12,28 @@ import sys
 import os
 
 
+# =========================================================================
+# Terminal Colors
+# =========================================================================
+
+class _Colors:
+    """ANSI color codes for terminal output."""
+    ENABLED = sys.stdout.isatty() and os.environ.get("TERM", "") != "dumb"
+
+    RESET = "\033[0m" if ENABLED else ""
+    BOLD = "\033[1m" if ENABLED else ""
+    DIM = "\033[2m" if ENABLED else ""
+    YELLOW = "\033[93m" if ENABLED else ""
+    RED = "\033[91m" if ENABLED else ""
+    GREEN = "\033[92m" if ENABLED else ""
+    CYAN = "\033[96m" if ENABLED else ""
+    WHITE = "\033[97m" if ENABLED else ""
+    MAGENTA = "\033[95m" if ENABLED else ""
+
+
+_c = _Colors
+
+
 def ask_jidoka(context_message: str, options: dict) -> str:
     """
     Present a Jidoka prompt requiring single-keystroke numeric response.
@@ -30,15 +52,16 @@ def ask_jidoka(context_message: str, options: dict) -> str:
         - Blocks until valid single-digit response
         - Rejects any non-matching input and re-prompts
     """
-    print("\n" + "=" * 50)
-    print("JIDOKA: Stopping the line for human input")
-    print("=" * 50)
+    print()
+    print(f"{_c.YELLOW}{'=' * 60}{_c.RESET}")
+    print(f"{_c.BOLD}{_c.YELLOW}JIDOKA: Stopping the line for human input{_c.RESET}")
+    print(f"{_c.YELLOW}{'=' * 60}{_c.RESET}")
     print(f"\n{context_message}\n")
 
     # Display options
     valid_keys = set(options.keys())
     for key in sorted(options.keys(), key=int):
-        print(f"  [{key}] {options[key]}")
+        print(f"  {_c.CYAN}[{key}]{_c.RESET} {options[key]}")
 
     print()
 
@@ -46,10 +69,10 @@ def ask_jidoka(context_message: str, options: dict) -> str:
         try:
             response = _get_single_keystroke(valid_keys)
             if response in valid_keys:
-                print(f"\n>> Selected: {options[response]}\n")
+                print(f"\n{_c.GREEN}>>{_c.RESET} Selected: {_c.WHITE}{options[response]}{_c.RESET}\n")
                 return response
         except KeyboardInterrupt:
-            print("\n\nOperation cancelled by user.")
+            print(f"\n\n{_c.YELLOW}Operation cancelled by user.{_c.RESET}")
             sys.exit(0)
 
 
@@ -135,7 +158,23 @@ def confirm_yellow_zone(action_description: str) -> bool:
     Returns True if user approves, False if cancelled.
     """
     result = ask_jidoka(
-        context_message=f"YELLOW ZONE ACTION REQUIRES APPROVAL:\n{action_description}",
+        context_message=f"{_c.YELLOW}YELLOW ZONE ACTION REQUIRES APPROVAL:{_c.RESET}\n{action_description}",
+        options={
+            "1": "Approve and execute",
+            "2": "Cancel operation"
+        }
+    )
+    return result == "1"
+
+
+def confirm_red_zone(action_description: str) -> bool:
+    """
+    Convenience wrapper for Red Zone approval.
+
+    Returns True if user approves, False if cancelled.
+    """
+    result = ask_jidoka(
+        context_message=f"{_c.RED}{_c.BOLD}RED ZONE ACTION REQUIRES EXPLICIT APPROVAL:{_c.RESET}\n{action_description}",
         options={
             "1": "Approve and execute",
             "2": "Cancel operation"
@@ -154,7 +193,7 @@ def resolve_entity_ambiguity(entity_type: str, candidates: list[str]) -> str:
     options[str(len(candidates) + 1)] = "None of these / Cancel"
 
     result = ask_jidoka(
-        context_message=f"AMBIGUOUS {entity_type.upper()} REFERENCE:\nMultiple matches found. Please select:",
+        context_message=f"{_c.CYAN}AMBIGUOUS {entity_type.upper()} REFERENCE:{_c.RESET}\nMultiple matches found. Please select:",
         options=options
     )
 

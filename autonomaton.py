@@ -19,6 +19,7 @@ Usage:
 """
 
 import sys
+import os
 import argparse
 from pathlib import Path
 
@@ -27,6 +28,40 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # Profile must be set BEFORE importing engine modules
 from engine.profile import set_profile, list_available_profiles, get_profile
+
+
+# =========================================================================
+# Terminal Colors (ANSI escape codes)
+# =========================================================================
+
+class Colors:
+    """ANSI color codes for terminal output."""
+    # Check if colors are supported
+    ENABLED = sys.stdout.isatty() and os.environ.get("TERM", "") != "dumb"
+
+    # Colors
+    RESET = "\033[0m" if ENABLED else ""
+    BOLD = "\033[1m" if ENABLED else ""
+    DIM = "\033[2m" if ENABLED else ""
+
+    # Zone colors
+    GREEN = "\033[92m" if ENABLED else ""
+    YELLOW = "\033[93m" if ENABLED else ""
+    RED = "\033[91m" if ENABLED else ""
+    CYAN = "\033[96m" if ENABLED else ""
+    WHITE = "\033[97m" if ENABLED else ""
+    BLUE = "\033[94m" if ENABLED else ""
+    MAGENTA = "\033[95m" if ENABLED else ""
+
+
+def zone_color(zone: str) -> str:
+    """Get the color for a zone."""
+    zone_map = {
+        "green": Colors.GREEN,
+        "yellow": Colors.YELLOW,
+        "red": Colors.RED
+    }
+    return zone_map.get(zone, Colors.WHITE)
 
 
 def parse_args():
@@ -59,23 +94,24 @@ def parse_args():
 
 def print_banner(profile: str, dock_info: str, cortex_info: str):
     """Display startup banner with profile, dock, and cortex status."""
+    c = Colors
     print()
-    print("=" * 55)
-    print("  THE AUTONOMATON")
-    print(f"  Profile: {profile}")
-    print("=" * 55)
-    print(f"  {dock_info}")
-    print(f"  {cortex_info}")
-    print("=" * 55)
-    print("  Commands:")
-    print("    exit/quit         - End session")
-    print("    compile content   - Compile content seeds (Yellow Zone)")
-    print("    build skill [name]- Build new skill (RED ZONE)")
-    print("    skills            - List deployed skills")
-    print("    dock              - Show dock status")
-    print("    queue             - Show pending Kaizen items")
-    print("    verbose           - Toggle verbose mode")
-    print("=" * 55)
+    print(f"{c.CYAN}{'=' * 60}{c.RESET}")
+    print(f"{c.BOLD}{c.WHITE}  THE AUTONOMATON{c.RESET}")
+    print(f"{c.DIM}  Profile: {c.CYAN}{profile}{c.RESET}")
+    print(f"{c.CYAN}{'=' * 60}{c.RESET}")
+    print(f"  {c.DIM}{dock_info}{c.RESET}")
+    print(f"  {c.DIM}{cortex_info}{c.RESET}")
+    print(f"{c.CYAN}{'=' * 60}{c.RESET}")
+    print(f"  {c.BOLD}Commands:{c.RESET}")
+    print(f"    {c.WHITE}exit/quit{c.RESET}          - End session")
+    print(f"    {c.YELLOW}compile content{c.RESET}    - Compile content seeds")
+    print(f"    {c.RED}build skill [name]{c.RESET} - Build new skill")
+    print(f"    {c.GREEN}skills{c.RESET}             - List deployed skills")
+    print(f"    {c.GREEN}dock{c.RESET}               - Show dock status")
+    print(f"    {c.GREEN}queue{c.RESET}              - Show pending Kaizen items")
+    print(f"    {c.DIM}verbose{c.RESET}            - Toggle verbose mode")
+    print(f"{c.CYAN}{'=' * 60}{c.RESET}")
     print()
 
 
@@ -88,16 +124,17 @@ def process_pending_queue() -> int:
     from engine.cortex import load_pending_queue, remove_from_queue
     from engine.ux import ask_jidoka
 
+    c = Colors
     pending = load_pending_queue()
 
     if not pending:
         return 0
 
     print()
-    print("=" * 55)
-    print("  PENDING KAIZEN ITEMS")
-    print("  The Cortex has identified improvement opportunities.")
-    print("=" * 55)
+    print(f"{c.MAGENTA}{'=' * 60}{c.RESET}")
+    print(f"  {c.BOLD}{c.MAGENTA}PENDING KAIZEN ITEMS{c.RESET}")
+    print(f"  {c.DIM}The Cortex has identified improvement opportunities.{c.RESET}")
+    print(f"{c.MAGENTA}{'=' * 60}{c.RESET}")
     print()
 
     processed = 0
@@ -117,15 +154,15 @@ def process_pending_queue() -> int:
         )
 
         if result == "1":
-            print(f"  Accepted: {proposal[:50]}...")
+            print(f"  {c.GREEN}Accepted:{c.RESET} {proposal[:50]}...")
             remove_from_queue(item_id)
             processed += 1
         elif result == "2":
-            print(f"  Dismissed: {item_id}")
+            print(f"  {c.YELLOW}Dismissed:{c.RESET} {item_id}")
             remove_from_queue(item_id)
             processed += 1
         else:
-            print(f"  Deferred: {item_id}")
+            print(f"  {c.DIM}Deferred:{c.RESET} {item_id}")
             processed += 1
 
     print()
@@ -138,86 +175,114 @@ def display_result(context, verbose: bool) -> None:
 
     Handles type-specific formatting for different handler outputs.
     """
+    c = Colors
     event_id = context.telemetry_event.get('id', 'unknown')[:8]
+    zone = context.zone or "green"
     data = context.result.get("data", {})
     data_type = data.get("type") if isinstance(data, dict) else None
 
     # Verbose dock context
     if verbose and context.dock_context:
-        print(f"\n  [DOCK CONTEXT]")
+        print(f"\n  {c.CYAN}[DOCK CONTEXT]{c.RESET}")
         dock_text = context.dock_context[0] if context.dock_context else ""
         lines = dock_text.split('\n')
         for line in lines[:5]:
             if line.strip():
-                print(f"  {line.strip()}")
+                print(f"  {c.DIM}{line.strip()}{c.RESET}")
         print()
 
     # Type-specific display
     if data_type == "dock_status":
-        print(f"\n  [DOCK STATUS]")
-        print(f"  Chunks: {data.get('chunks', 0)}")
-        print(f"  Sources: {', '.join(data.get('sources', []))}\n")
+        print(f"\n  {c.GREEN}[DOCK STATUS]{c.RESET}")
+        print(f"  {c.DIM}Chunks:{c.RESET} {data.get('chunks', 0)}")
+        print(f"  {c.DIM}Sources:{c.RESET} {', '.join(data.get('sources', []))}\n")
 
     elif data_type == "queue_status":
-        print(f"\n  [KAIZEN QUEUE]")
+        print(f"\n  {c.MAGENTA}[KAIZEN QUEUE]{c.RESET}")
         items = data.get("items", [])
         if items:
             for item in items:
-                print(f"  - [{item.get('trigger', '?')}] {item.get('proposal', '?')}...")
+                print(f"  {c.DIM}-{c.RESET} [{c.CYAN}{item.get('trigger', '?')}{c.RESET}] {item.get('proposal', '?')}...")
         else:
-            print("  No pending items.")
+            print(f"  {c.DIM}No pending items.{c.RESET}")
         print()
 
     elif data_type == "skills_list":
-        print(f"\n  [DEPLOYED SKILLS]")
+        print(f"\n  {c.BLUE}[DEPLOYED SKILLS]{c.RESET}")
         skills = data.get("skills", [])
         if skills:
             for skill in skills:
                 status = "configured" if skill.get("has_config") else "incomplete"
-                print(f"    - {skill['name']} ({status})")
+                status_color = c.GREEN if skill.get("has_config") else c.YELLOW
+                print(f"    {c.DIM}-{c.RESET} {c.WHITE}{skill['name']}{c.RESET} ({status_color}{status}{c.RESET})")
         else:
-            print("    No skills deployed yet.")
+            print(f"    {c.DIM}No skills deployed yet.{c.RESET}")
         print()
 
     elif data_type == "content_compilation":
         draft_count = data.get("draft_count", 0)
         if draft_count > 0:
-            print(f"\n  [CONTENT ENGINE] {draft_count} draft(s) compiled")
-            print("  Approval was handled during pipeline execution.\n")
+            print(f"\n  {c.YELLOW}[CONTENT ENGINE]{c.RESET} {draft_count} draft(s) compiled")
+            print(f"  {c.DIM}Approval was handled during pipeline execution.{c.RESET}\n")
         else:
-            print("\n  [CONTENT ENGINE] No content seeds found\n")
+            print(f"\n  {c.YELLOW}[CONTENT ENGINE]{c.RESET} {c.DIM}No content seeds found{c.RESET}\n")
 
     elif data_type == "pit_crew_build":
         if data.get("requires_description"):
             # Need to collect description interactively
             handle_skill_build_interactive(data.get("skill_name"))
         elif data.get("error"):
-            print(f"\n  [PIT CREW] {context.result.get('message')}\n")
+            print(f"\n  {c.RED}[PIT CREW]{c.RESET} {context.result.get('message')}\n")
         else:
-            print(f"\n  [PIT CREW] {context.result.get('message')}\n")
+            print(f"\n  {c.RED}[PIT CREW]{c.RESET} {context.result.get('message')}\n")
 
     elif data_type == "session_zero":
         # Session Zero intake - display the Socratic prompt
-        print(f"\n  [SESSION ZERO] Cortex Intake Interview")
-        print("=" * 55)
+        print(f"\n  {c.CYAN}[SESSION ZERO]{c.RESET} Cortex Intake Interview")
+        print(f"{c.CYAN}{'=' * 60}{c.RESET}")
         prompt_content = data.get("prompt_content", "")
         if prompt_content:
             # Display the prompt (Sprint 2: send to LLM instead)
             print(prompt_content)
         else:
-            print("  Error: No prompt content available")
-        print("=" * 55)
+            print(f"  {c.RED}Error:{c.RESET} No prompt content available")
+        print(f"{c.CYAN}{'=' * 60}{c.RESET}")
         if data.get("note"):
-            print(f"\n  Note: {data.get('note')}\n")
+            print(f"\n  {c.DIM}Note: {data.get('note')}{c.RESET}\n")
+
+    elif data_type and data_type.startswith("cortex_"):
+        # Cortex batch analysis results
+        zc = zone_color(zone)
+        print(f"\n  {c.MAGENTA}[CORTEX]{c.RESET} {context.result.get('message', 'Analysis complete')}")
+        if data.get("patterns_detected"):
+            print(f"  {c.DIM}Patterns:{c.RESET}")
+            for pattern in data["patterns_detected"][:3]:
+                print(f"    {c.DIM}-{c.RESET} {pattern}")
+        if data.get("kaizen_proposals"):
+            print(f"  {c.DIM}Kaizen Proposals:{c.RESET}")
+            for proposal in data["kaizen_proposals"][:3]:
+                priority = proposal.get("priority", "medium")
+                pc = c.RED if priority == "high" else (c.YELLOW if priority == "medium" else c.GREEN)
+                print(f"    {pc}[{priority.upper()}]{c.RESET} {proposal.get('proposal', '?')}")
+        if data.get("ratchet_proposals"):
+            print(f"  {c.DIM}Ratchet Proposals:{c.RESET}")
+            for proposal in data["ratchet_proposals"][:3]:
+                print(f"    {c.CYAN}[{proposal.get('intent', '?')}]{c.RESET} {proposal.get('proposed_action', '?')}")
+        if data.get("evolution_proposals"):
+            print(f"  {c.DIM}Evolution Proposals:{c.RESET}")
+            for proposal in data["evolution_proposals"][:3]:
+                print(f"    {c.BLUE}[{proposal.get('skill_name', '?')}]{c.RESET} {proposal.get('description', '?')}")
+        print()
 
     else:
-        # Generic display
+        # Generic display with zone coloring
+        zc = zone_color(zone)
         if context.executed:
-            print(f"  [LOGGED] Event ID: {event_id}...")
-            print(f"  [STATUS] {context.result.get('message', 'Complete')}\n")
+            print(f"  {c.DIM}[LOGGED]{c.RESET} Event ID: {c.DIM}{event_id}...{c.RESET}")
+            print(f"  {zc}[{zone.upper()}]{c.RESET} {context.result.get('message', 'Complete')}\n")
         else:
-            print(f"  [LOGGED] Event ID: {event_id}...")
-            print(f"  [STATUS] {context.result.get('message', 'Cancelled')}\n")
+            print(f"  {c.DIM}[LOGGED]{c.RESET} Event ID: {c.DIM}{event_id}...{c.RESET}")
+            print(f"  {c.YELLOW}[CANCELLED]{c.RESET} {context.result.get('message', 'Cancelled')}\n")
 
 
 def handle_skill_build_interactive(skill_name: str) -> None:
@@ -230,32 +295,34 @@ def handle_skill_build_interactive(skill_name: str) -> None:
     """
     from engine.pit_crew import build_skill
 
-    print(f"\n  [PIT CREW] Initiating skill build: {skill_name}")
-    print("  This is a RED ZONE operation that modifies system capabilities.\n")
+    c = Colors
+
+    print(f"\n  {c.RED}[PIT CREW]{c.RESET} Initiating skill build: {c.WHITE}{skill_name}{c.RESET}")
+    print(f"  {c.DIM}This is a RED ZONE operation that modifies system capabilities.{c.RESET}\n")
 
     try:
-        description = input("  Enter skill description: ").strip()
+        description = input(f"  {c.BOLD}Enter skill description:{c.RESET} ").strip()
         if not description:
             description = f"Auto-generated skill: {skill_name}"
     except (KeyboardInterrupt, EOFError):
-        print("\n  [PIT CREW] Build cancelled.\n")
+        print(f"\n  {c.YELLOW}[PIT CREW]{c.RESET} Build cancelled.\n")
         return
 
     # Build the skill (includes its own Red Zone approval)
     result = build_skill(skill_name, description)
 
     if result.get("status") == "deployed":
-        print(f"\n  [PIT CREW] Skill deployed successfully!")
-        print(f"  Location: skills/{skill_name}/")
+        print(f"\n  {c.GREEN}[PIT CREW]{c.RESET} Skill deployed successfully!")
+        print(f"  {c.DIM}Location:{c.RESET} skills/{skill_name}/")
         if result.get("files"):
-            print("  Files created:")
+            print(f"  {c.DIM}Files created:{c.RESET}")
             for f in result["files"]:
-                print(f"    - {Path(f).name}")
+                print(f"    {c.DIM}-{c.RESET} {Path(f).name}")
         print()
     elif result.get("status") == "rejected":
-        print(f"\n  [PIT CREW] {result.get('message')}\n")
+        print(f"\n  {c.YELLOW}[PIT CREW]{c.RESET} {result.get('message')}\n")
     else:
-        print(f"\n  [PIT CREW] Error: {result.get('message')}\n")
+        print(f"\n  {c.RED}[PIT CREW]{c.RESET} Error: {result.get('message')}\n")
 
 
 def main():
@@ -302,14 +369,16 @@ def main():
     if not args.skip_queue and pending:
         process_pending_queue()
 
+    c = Colors
+
     while True:
         try:
-            # Read user input
-            user_input = input("autonomaton> ").strip()
+            # Read user input with colored prompt
+            user_input = input(f"{c.CYAN}autonomaton>{c.RESET} ").strip()
 
             # Handle exit commands (only exception - not routed through pipeline)
             if user_input.lower() in ("exit", "quit"):
-                print("\nSession complete. Engine standing by.\n")
+                print(f"\n{c.DIM}Session complete. Engine standing by.{c.RESET}\n")
                 break
 
             # Handle empty input
@@ -319,7 +388,8 @@ def main():
             # Handle verbose toggle (system command, no telemetry needed)
             if user_input.lower() == "verbose":
                 verbose = not verbose
-                print(f"\n  [VERBOSE MODE] {'ON' if verbose else 'OFF'}\n")
+                status = f"{c.GREEN}ON{c.RESET}" if verbose else f"{c.YELLOW}OFF{c.RESET}"
+                print(f"\n  {c.DIM}[VERBOSE MODE]{c.RESET} {status}\n")
                 continue
 
             # ================================================================
@@ -338,19 +408,19 @@ def main():
             # Run Cortex tail-pass analysis (Layer 3)
             cortex_result = run_tail_pass()
             if cortex_result.get("entities", 0) > 0 or cortex_result.get("kaizen", 0) > 0:
-                print(f"  [CORTEX] Extracted {cortex_result.get('entities', 0)} entities, "
+                print(f"  {c.MAGENTA}[CORTEX]{c.RESET} Extracted {cortex_result.get('entities', 0)} entities, "
                       f"{cortex_result.get('kaizen', 0)} Kaizen proposals\n")
 
         except KeyboardInterrupt:
-            print("\n\nSession interrupted. Exiting...\n")
+            print(f"\n\n{c.YELLOW}Session interrupted.{c.RESET} Exiting...\n")
             break
         except EOFError:
-            print("\n\nEnd of input. Exiting...\n")
+            print(f"\n\n{c.DIM}End of input.{c.RESET} Exiting...\n")
             break
         except Exception as e:
             # Digital Jidoka: Surface errors, don't swallow them
-            print(f"\n  [ERROR] Pipeline failure: {e}")
-            print("  The line has stopped. Please review and retry.\n")
+            print(f"\n  {c.RED}[ERROR]{c.RESET} Pipeline failure: {e}")
+            print(f"  {c.DIM}The line has stopped. Please review and retry.{c.RESET}\n")
 
 
 if __name__ == "__main__":
