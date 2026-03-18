@@ -278,11 +278,10 @@ class CognitiveRouter:
 
     def _escalate_to_llm(self, user_input: str) -> Optional[RoutingResult]:
         """
-        Escalate to Tier 1 LLM for structured intent classification.
+        Escalate to Tier 2 LLM for structured intent classification.
 
-        Sprint 8: Returns enriched structured JSON with:
-        - intent, intent_type, domain, confidence
-        - action_required, entities_mentioned, content_seeds, sentiment
+        Uses Sonnet for reliable natural language understanding.
+        Haiku is too brittle for compound inputs and conversational phrasing.
 
         Every classification is logged to telemetry for Ratchet analysis.
 
@@ -313,31 +312,31 @@ class CognitiveRouter:
                 f"- {intent_name} (type: {intent_type}, zone: {zone}): {desc}"
             )
 
-        # Structured classification prompt
-        prompt = f"""Classify this user input and return a JSON object.
+        # Structured classification prompt — concise, Sonnet-grade
+        prompt = f"""You are an intent classifier. Given a user input and a list of valid intents, return a JSON object classifying the input.
 
 Valid intents:
 {chr(10).join(intent_descriptions)}
 
 User input: "{user_input}"
 
-Return ONLY valid JSON with these fields:
+Return ONLY a JSON object:
 {{
-  "intent": "<intent_name or 'unknown'>",
+  "intent": "<one of the intent names above, or 'unknown'>",
   "intent_type": "<conversational|informational|actionable>",
   "confidence": <0.0-1.0>,
-  "reasoning": "<brief explanation>",
   "action_required": <true|false>,
-  "entities_mentioned": ["<any names, places, dates mentioned>"],
-  "content_seeds": ["<any quotable/notable phrases>"],
-  "sentiment": "<positive|neutral|negative>"
+  "reasoning": "<one sentence>"
 }}
 
-Rules:
-- If it's a greeting, acknowledgment, or small talk → intent_type: "conversational", action_required: false
-- If it's asking about status or information → intent_type: "informational"
-- If it requires the system to DO something → intent_type: "actionable", action_required: true
-- If unclear, set intent to "unknown" and confidence below 0.5
+Classification rules:
+- Match to the CLOSEST valid intent, even if the wording is informal or indirect.
+- Greetings, thanks, farewells, acknowledgments, small talk → general_chat (conversational, action_required: false)
+- If the user mentions content, drafting, TikTok, Instagram, social media, posts → content_draft or content_compilation
+- If the user asks about status, progress, what's loaded → informational intents
+- If the user wants to DO something (schedule, build, compile, prepare) → actionable intents
+- Compound inputs (multiple topics in one message): classify by the PRIMARY actionable intent.
+- Only return "unknown" if you genuinely cannot determine what the user wants. Prefer a best-guess match over unknown.
 
 JSON:"""
 
@@ -346,7 +345,7 @@ JSON:"""
         try:
             response = call_llm(
                 prompt=prompt,
-                tier=1,  # Use Haiku for speed/cost
+                tier=2,  # Sonnet — Haiku is too brittle for natural language classification
                 intent="intent_classification"
             )
 
@@ -393,9 +392,6 @@ JSON:"""
             # Build llm_metadata for downstream use
             llm_metadata = {
                 "reasoning": classification.get("reasoning", ""),
-                "entities_mentioned": classification.get("entities_mentioned", []),
-                "content_seeds": classification.get("content_seeds", []),
-                "sentiment": classification.get("sentiment", "neutral"),
                 "classification_confidence": confidence
             }
 

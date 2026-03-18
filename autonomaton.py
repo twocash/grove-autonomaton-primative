@@ -174,7 +174,7 @@ Generate the welcome card now:"""
         response = call_llm(
             prompt=prompt,
             system=system_prompt,
-            tier=1,  # Haiku for speed
+            tier=2,  # Sonnet — welcome needs to feel human, not template-filled
             intent="welcome_card"
         )
         return response.strip()
