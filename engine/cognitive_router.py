@@ -162,8 +162,18 @@ class CognitiveRouter:
                 elif normalized_input.startswith(keyword_lower):
                     confidence = 0.85
                 # Contains keyword (lower priority)
+                # Require word boundary match for short keywords to avoid
+                # false positives (e.g. "hi" in "nothing")
                 elif keyword_lower in normalized_input:
-                    confidence = 0.5
+                    # Check word boundaries for short keywords (< 4 chars)
+                    if len(keyword_lower) < 4:
+                        # Must be surrounded by word boundaries
+                        import re
+                        pattern = r'\b' + re.escape(keyword_lower) + r'\b'
+                        if re.search(pattern, normalized_input):
+                            confidence = 0.5
+                    else:
+                        confidence = 0.5
 
                 if confidence > 0:
                     if best_match is None or confidence > best_match[2]:
@@ -234,6 +244,11 @@ class CognitiveRouter:
 
         return extracted
 
+    # Intents that should ONLY match via keywords, not LLM escalation
+    # This protects Green Zone conversational fallbacks from being used
+    # as catch-alls for ambiguous input (would bypass Jidoka)
+    KEYWORD_ONLY_INTENTS = {"general_chat"}
+
     def _escalate_to_llm(self, user_input: str) -> Optional[RoutingResult]:
         """
         Escalate to Tier 1 LLM for intent classification.
@@ -253,7 +268,12 @@ class CognitiveRouter:
             return None
 
         # Build list of valid intents from config
-        valid_intents = list(self.routes.keys())
+        # Exclude keyword-only intents (like general_chat) to prevent
+        # LLM from bypassing Jidoka by classifying unknowns as Green Zone
+        valid_intents = [
+            intent for intent in self.routes.keys()
+            if intent not in self.KEYWORD_ONLY_INTENTS
+        ]
         if not valid_intents:
             return None
 

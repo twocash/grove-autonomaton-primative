@@ -201,3 +201,139 @@ def resolve_entity_ambiguity(entity_type: str, candidates: list[str]) -> str:
     if idx < len(candidates):
         return candidates[idx]
     return ""
+
+
+# =========================================================================
+# Conversational Jidoka (Sprint 7.5)
+# =========================================================================
+
+def translate_action_for_approval(payload: dict) -> str:
+    """
+    Translate a raw action payload into conversational language.
+
+    Uses Tier 1 (Haiku) LLM for low latency.
+    Chief of Staff persona explains what the system wants to do.
+
+    Args:
+        payload: Raw action payload with intent, handler, handler_args, etc.
+
+    Returns:
+        Conversational explanation string
+    """
+    import json
+    from engine.llm_client import call_llm
+
+    payload_str = json.dumps(payload, indent=2, default=str)
+
+    system_prompt = """You are the Autonomaton engine acting as a Chief of Staff.
+The system has halted to ask the boss for approval.
+Read this technical payload and explain to the boss in 1-2 conversational sentences
+what the system wants to do and why it needs permission.
+Be clear, concise, and professional. Do not include technical jargon."""
+
+    prompt = f"""Technical payload requiring approval:
+
+{payload_str}
+
+Explain this action in conversational language:"""
+
+    try:
+        translation = call_llm(prompt=prompt, system=system_prompt, tier=1)
+        return translation.strip()
+    except Exception:
+        # Graceful fallback: return a basic description
+        intent = payload.get("intent", "unknown action")
+        handler = payload.get("handler", "")
+        return f"The system wants to perform: {intent}" + (f" (via {handler})" if handler else "")
+
+
+def format_jidoka_display(conversational: str, raw_payload: dict) -> str:
+    """
+    Format the Jidoka display with conversational summary at top,
+    raw payload underneath for transparency.
+
+    Args:
+        conversational: The conversational explanation from translate_action_for_approval
+        raw_payload: The raw technical payload dict
+
+    Returns:
+        Formatted string for display
+    """
+    import json
+
+    payload_str = json.dumps(raw_payload, indent=2, default=str)
+
+    output_lines = [
+        "",
+        f"{_c.BOLD}Chief of Staff:{_c.RESET}",
+        f"  {conversational}",
+        "",
+        f"{_c.DIM}─── RAW SYSTEM PAYLOAD ───{_c.RESET}",
+        f"{_c.DIM}{payload_str}{_c.RESET}",
+        f"{_c.DIM}──────────────────────────{_c.RESET}",
+        ""
+    ]
+
+    return "\n".join(output_lines)
+
+
+def confirm_yellow_zone_with_context(action_description: str, payload: dict) -> bool:
+    """
+    Yellow Zone approval with conversational translation.
+
+    Translates the payload to conversational language before showing
+    the approval prompt. Shows both conversational summary and raw payload.
+
+    Args:
+        action_description: Brief description of the action
+        payload: Raw action payload for translation
+
+    Returns:
+        True if user approves, False if cancelled
+    """
+    # Get conversational translation
+    conversational = translate_action_for_approval(payload)
+
+    # Format the display
+    display = format_jidoka_display(conversational, payload)
+
+    # Show with Jidoka prompt
+    result = ask_jidoka(
+        context_message=f"{_c.YELLOW}YELLOW ZONE ACTION REQUIRES APPROVAL:{_c.RESET}\n{display}",
+        options={
+            "1": "Approve and execute",
+            "2": "Cancel operation"
+        }
+    )
+    return result == "1"
+
+
+def confirm_red_zone_with_context(action_description: str, payload: dict) -> bool:
+    """
+    Red Zone approval with conversational translation.
+
+    Translates the payload to conversational language before showing
+    the approval prompt. Shows both conversational summary and raw payload.
+
+    Args:
+        action_description: Brief description of the action
+        payload: Raw action payload for translation
+
+    Returns:
+        True if user approves, False if cancelled
+    """
+    # Get conversational translation
+    conversational = translate_action_for_approval(payload)
+
+    # Format the display
+    display = format_jidoka_display(conversational, payload)
+
+    # Show with Jidoka prompt
+    result = ask_jidoka(
+        context_message=f"{_c.RED}{_c.BOLD}RED ZONE ACTION REQUIRES EXPLICIT APPROVAL:{_c.RESET}\n{display}",
+        options={
+            "1": "Approve and execute",
+            "2": "Cancel operation"
+        }
+    )
+    return result == "1"

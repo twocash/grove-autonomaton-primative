@@ -146,9 +146,14 @@ class TestRouterUnknownIntents:
 
         This is CRITICAL - green zone for unknown would bypass Jidoka.
         """
-        from engine.cognitive_router import classify_intent
+        from unittest.mock import patch
+        from engine.cognitive_router import classify_intent, reset_router
 
-        result = classify_intent("xyzzy plugh random gibberish that matches nothing")
+        reset_router()
+
+        # Patch LLM to return "unknown" for truly unrecognized input
+        with patch('engine.llm_client.call_llm', return_value="unknown"):
+            result = classify_intent("xyzzy plugh random gibberish that matches nothing")
 
         assert result.intent == "unknown", \
             f"Unrecognized input should return 'unknown' intent, got '{result.intent}'"

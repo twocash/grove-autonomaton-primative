@@ -60,6 +60,7 @@ class Dispatcher:
             "skill_executor": self._handle_skill_executor,
             "cortex_batch": self._handle_cortex_batch,
             "vision_capture": self._handle_vision_capture,
+            "general_chat": self._handle_general_chat,
         }
 
     def dispatch(
@@ -865,6 +866,85 @@ Return ONLY valid JSON, no explanations:"""
             except Exception:
                 return "# Vision Board\n\nNo entries yet."
         return "# Vision Board\n\nNo entries yet."
+
+    def _handle_general_chat(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Handle conversational greetings and basic chat (Sprint 7.5).
+
+        Green Zone - Chief of Staff persona responds warmly and professionally.
+        Uses Tier 1 (Haiku) for low latency responses.
+        """
+        from engine.llm_client import call_llm
+        from engine.profile import get_dock_dir
+
+        # Load dock context for mission awareness
+        dock_dir = get_dock_dir()
+        mission_context = ""
+
+        goals_path = dock_dir / "goals.md"
+        if goals_path.exists():
+            try:
+                goals_content = goals_path.read_text(encoding="utf-8")
+                # Extract first few lines for context
+                lines = goals_content.split("\n")[:10]
+                mission_context = "\n".join(lines)
+            except Exception:
+                pass
+
+        business_path = dock_dir / "business-plan.md"
+        if business_path.exists() and not mission_context:
+            try:
+                business_content = business_path.read_text(encoding="utf-8")
+                lines = business_content.split("\n")[:10]
+                mission_context = "\n".join(lines)
+            except Exception:
+                pass
+
+        system_prompt = """You are the Autonomaton engine, acting as a confident, strategic Chief of Staff.
+The user is just saying hello or asking a basic question.
+Respond briefly (1-2 sentences), warmly, and professionally.
+If there is mission context provided, you may acknowledge it naturally, but do not take any system actions.
+Be warm but purposeful - you are here to serve the mission."""
+
+        prompt = f"""User message: {raw_input}
+
+Mission Context (if available):
+{mission_context if mission_context else "No specific mission loaded yet."}
+
+Respond as the Chief of Staff (1-2 sentences only):"""
+
+        try:
+            response = call_llm(
+                prompt=prompt,
+                system=system_prompt,
+                tier=1,  # Haiku for speed
+                intent="general_chat"
+            )
+
+            return DispatchResult(
+                success=True,
+                message=response.strip(),
+                data={
+                    "type": "general_chat",
+                    "response": response.strip()
+                }
+            )
+
+        except Exception as e:
+            # Fallback response if LLM fails
+            return DispatchResult(
+                success=True,
+                message="Hello! I'm your Autonomaton, ready to serve. How can I help?",
+                data={
+                    "type": "general_chat",
+                    "response": "Hello! I'm your Autonomaton, ready to serve. How can I help?",
+                    "fallback": True
+                }
+            )
 
 
 # =========================================================================
