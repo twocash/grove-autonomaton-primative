@@ -35,12 +35,13 @@ class PersonaConfig:
         "Do not use flowery or subservient language."
     ])
 
-    def build_system_prompt(self, task_context: str = "") -> str:
+    def build_system_prompt(self, task_context: str = "", include_state: bool = False) -> str:
         """
         Build a system prompt from the persona configuration.
 
         Args:
             task_context: Additional context for the specific task
+            include_state: If True, include the standing context snapshot
 
         Returns:
             Complete system prompt string
@@ -55,6 +56,15 @@ Vibe: {self.vibe}
 
 CONSTRAINTS (you MUST follow these):
 {constraints_text}"""
+
+        if include_state:
+            try:
+                from engine.compiler import get_standing_context
+                state = get_standing_context()
+                if state:
+                    prompt += f"\n\n{state}"
+            except Exception:
+                pass  # Standing context is enrichment, not critical path
 
         if task_context:
             prompt += f"\n\nTask Context:\n{task_context}"
@@ -77,8 +87,8 @@ def _log_config_error(error: Exception, config_file: str, stage: str) -> None:
             inferred={"error": str(error), "error_type": type(error).__name__,
                       "config_file": config_file, "stage": stage, "fallback": "defaults"}
         )
-    except ImportError:
-        pass  # Telemetry not available during early bootstrap
+    except (ImportError, RuntimeError):
+        pass  # Telemetry not available during early bootstrap or no profile set
 
 
 def load_persona() -> PersonaConfig:

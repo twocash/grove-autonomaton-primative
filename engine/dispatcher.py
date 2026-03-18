@@ -488,7 +488,14 @@ Return ONLY valid JSON, no explanations:"""
                 data={"type": "skill_error", "error": "read_failed"}
             )
 
-        # Build the execution prompt
+        # Build the execution prompt with persona + standing context
+        from engine.config_loader import get_persona
+        persona = get_persona()
+        system_prompt = persona.build_system_prompt(
+            task_context=f"Executing skill: {skill_name}",
+            include_state=True
+        )
+
         execution_prompt = f"""{prompt_template}
 
 ---
@@ -501,6 +508,7 @@ Please execute the skill based on the above instructions and user request.
         try:
             response = call_llm(
                 prompt=execution_prompt,
+                system=system_prompt,
                 tier=2,  # Use Sonnet for skill execution
                 intent=f"skill_execution:{skill_name}"
             )
@@ -892,11 +900,12 @@ Return ONLY valid JSON, no explanations:"""
         persona = get_persona()
 
         # Build system prompt from persona config
-        # Sprint 8: No dock context - just pure conversational response
+        # Sprint 8: Conversational with ambient awareness
         task_context = """The user is saying hello or making casual conversation.
-Respond naturally and briefly. No system actions, no strategic context needed."""
+Respond naturally and briefly. You're aware of the context but don't dump it —
+reference it naturally if relevant."""
 
-        system_prompt = persona.build_system_prompt(task_context)
+        system_prompt = persona.build_system_prompt(task_context, include_state=True)
 
         prompt = f"""User: {raw_input}
 
@@ -946,95 +955,62 @@ Respond (1-2 sentences only):"""
         raw_input: str
     ) -> DispatchResult:
         """
-        Handle strategy session requests - active work on goals/plan.
+        Chief of Staff strategic synthesis.
 
-        Green Zone - Reviews Dock context and suggests immediate next step.
-        Uses Tier 1 (Haiku) for low latency responses.
+        The persona carries the standing context. This handler asks it
+        to synthesize what matters right now.
 
-        This is for ACTIVE work requests, not aspirational wishes
-        (which go to vision_capture).
+        Green Zone — advisory, no side effects.
+        Uses Tier 2 (Sonnet) for quality synthesis.
         """
         from engine.llm_client import call_llm
-        from engine.profile import get_dock_dir
         from engine.config_loader import get_persona
+        from engine.telemetry import log_event
 
         persona = get_persona()
-        dock_dir = get_dock_dir()
 
-        # Load goals.md
-        goals_context = ""
-        goals_path = dock_dir / "goals.md"
-        if goals_path.exists():
-            try:
-                goals_context = goals_path.read_text(encoding="utf-8")
-            except Exception:
-                pass
+        task_context = (
+            "The operator is asking what to focus on right now. "
+            "Synthesize the standing context into 3-5 prioritized action items. "
+            "Lead with urgency (dates, deadlines). Be specific (names, numbers). "
+            "For each item, suggest what the operator can say to start working on it. "
+            "Sound like a colleague briefing them over coffee, not a dashboard."
+        )
 
-        # Load business-plan.md
-        business_context = ""
-        business_path = dock_dir / "business-plan.md"
-        if business_path.exists():
-            try:
-                business_context = business_path.read_text(encoding="utf-8")
-            except Exception:
-                pass
+        system_prompt = persona.build_system_prompt(
+            task_context=task_context,
+            include_state=True  # THE ARCHITECTURAL FIX
+        )
 
-        if not goals_context and not business_context:
-            return DispatchResult(
-                success=True,
-                message="No goals or business plan found in the Dock. Run 'session zero' to set up your strategy.",
-                data={
-                    "type": "strategy_session",
-                    "response": "No Dock context available"
-                }
-            )
+        prompt = f"""Operator: {raw_input}
 
-        # Build system prompt from persona
-        task_context = """The boss wants to work on their goals.
-Review the provided Dock context.
-Suggest ONE specific, immediate next step they can take right now to move the needle on their strategy.
-Keep it brief and actionable."""
-
-        system_prompt = persona.build_system_prompt(task_context)
-
-        dock_context = ""
-        if goals_context:
-            dock_context += f"## Goals\n{goals_context}\n\n"
-        if business_context:
-            dock_context += f"## Business Plan\n{business_context}\n\n"
-
-        prompt = f"""User request: {raw_input}
-
-Dock Context:
-{dock_context}
-
-Suggest ONE specific, immediate next step:"""
+Generate a focused strategic brief (3-5 items, natural language):"""
 
         try:
             response = call_llm(
                 prompt=prompt,
                 system=system_prompt,
-                tier=1,
+                tier=2,
                 intent="strategy_session"
             )
 
             return DispatchResult(
                 success=True,
                 message=response.strip(),
-                data={
-                    "type": "strategy_session",
-                    "response": response.strip()
-                }
+                data={"type": "strategy_session", "response": response.strip()}
             )
 
         except Exception as e:
+            log_event(
+                source="dispatcher",
+                raw_transcript=raw_input[:200],
+                zone_context="yellow",
+                inferred={"error": str(e), "handler": "strategy_session", "stage": "handler_error"}
+            )
             return DispatchResult(
                 success=False,
-                message=f"Strategy session failed: {str(e)}",
-                data={
-                    "type": "strategy_session",
-                    "error": str(e)
-                }
+                message=f"Strategic briefing failed: {str(e)}",
+                data={"type": "strategy_session", "error": str(e)}
             )
 
 

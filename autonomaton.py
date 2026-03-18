@@ -165,11 +165,12 @@ def generate_welcome_briefing() -> str:
     else:
         dock_context = "\n\n".join(dock_context_parts)
 
-    # Build persona system prompt
+    # Build persona system prompt with standing context
     persona = get_persona()
     system_prompt = persona.build_system_prompt(
         "You are generating a startup welcome briefing. "
-        "Read the skill instructions carefully and follow them exactly."
+        "Read the skill instructions carefully and follow them exactly.",
+        include_state=True
     )
 
     # Build the user prompt
@@ -197,6 +198,46 @@ Generate the welcome card now:"""
             raw_transcript="welcome_card_generation",
             zone_context="yellow",
             inferred={"error": str(e), "error_type": type(e).__name__, "stage": "llm_generation"}
+        )
+        return ""
+
+
+def generate_startup_brief() -> str:
+    """Generate Chief of Staff strategic brief for startup."""
+    from engine.config_loader import get_persona
+    from engine.llm_client import call_llm
+    from engine.telemetry import log_event
+
+    persona = get_persona()
+
+    task_context = (
+        "The operator just opened the system. Give a focused strategic brief: "
+        "3-5 prioritized items based on what you know. Lead with urgency. "
+        "Suggest specific commands for each item. Keep it to one short paragraph "
+        "per item. Sound like a colleague, not a report."
+    )
+
+    system_prompt = persona.build_system_prompt(
+        task_context=task_context,
+        include_state=True
+    )
+
+    prompt = "Generate the startup strategic brief now:"
+
+    try:
+        response = call_llm(
+            prompt=prompt,
+            system=system_prompt,
+            tier=2,
+            intent="startup_brief"
+        )
+        return response.strip()
+    except Exception as e:
+        log_event(
+            source="startup_brief",
+            raw_transcript="startup",
+            zone_context="yellow",
+            inferred={"error": str(e), "error_type": type(e).__name__}
         )
         return ""
 
@@ -468,6 +509,13 @@ def main():
             print(f"  {c.YELLOW}[JIDOKA]{c.RESET} Welcome briefing unavailable — check telemetry for details.")
             print(f"  {c.DIM}Type {c.CYAN}help{c.RESET} for the operator guide, or start with what's on your mind.{c.RESET}")
             print()
+
+        # Chief of Staff Strategic Brief
+        brief = generate_startup_brief()
+        if brief:
+            print(f"  {c.CYAN}{'─' * 56}{c.RESET}")
+            print(f"  {c.WHITE}{brief}{c.RESET}")
+            print()
     else:
         print(f"  {c.DIM}Ready.{c.RESET}")
         print()
@@ -511,6 +559,9 @@ def main():
             if cortex_result.get("entities", 0) > 0 or cortex_result.get("kaizen", 0) > 0:
                 print(f"  {c.MAGENTA}[CORTEX]{c.RESET} Extracted {cortex_result.get('entities', 0)} entities, "
                       f"{cortex_result.get('kaizen', 0)} Kaizen proposals\n")
+                # Refresh standing context when Cortex extracts new data
+                from engine.compiler import reset_standing_context
+                reset_standing_context()
 
         except KeyboardInterrupt:
             print(f"\n\n{c.YELLOW}Session interrupted.{c.RESET} Exiting...\n")
