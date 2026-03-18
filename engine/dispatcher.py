@@ -62,6 +62,9 @@ class Dispatcher:
             "vision_capture": self._handle_vision_capture,
             "general_chat": self._handle_general_chat,
             "strategy_session": self._handle_strategy_session,
+            "plan_update": self._handle_plan_update,
+            "regenerate_plan": self._handle_regenerate_plan,
+            "fill_entity_gap": self._handle_fill_entity_gap,
         }
 
     def dispatch(
@@ -1011,6 +1014,287 @@ Generate a focused strategic brief (3-5 items, natural language):"""
                 success=False,
                 message=f"Strategic briefing failed: {str(e)}",
                 data={"type": "strategy_session", "error": str(e)}
+            )
+
+    def _handle_plan_update(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Handle structured plan updates (Sprint 5).
+
+        Yellow Zone - requires approval before writing to dock.
+        Accepts specific updates or suggestions to the structured plan.
+        """
+        from engine.llm_client import call_llm
+        from engine.config_loader import get_persona
+        from engine.compiler import get_structured_plan, write_structured_plan
+        from engine.telemetry import log_event
+
+        persona = get_persona()
+        current_plan = get_structured_plan()
+
+        if not current_plan:
+            return DispatchResult(
+                success=False,
+                message="No structured plan exists. Use 'regenerate plan' to create one.",
+                data={"type": "plan_update", "error": "no_plan"}
+            )
+
+        task_context = (
+            "The operator wants to update the structured plan. "
+            "Apply their requested changes while maintaining the plan's structure. "
+            "Keep all existing sections but update the relevant content."
+        )
+
+        system_prompt = persona.build_system_prompt(
+            task_context=task_context,
+            include_state=True
+        )
+
+        prompt = f"""Current structured plan:
+{current_plan}
+
+---
+
+Operator's requested update: {raw_input}
+
+Apply the update and return the COMPLETE updated plan (not just the changes).
+Maintain the markdown structure. Update the "Last updated" timestamp to today."""
+
+        try:
+            updated_plan = call_llm(
+                prompt=prompt,
+                system=system_prompt,
+                tier=2,  # Sonnet for quality
+                intent="plan_update"
+            )
+
+            # Write the updated plan
+            if write_structured_plan(updated_plan.strip()):
+                # Reset standing context to pick up changes
+                from engine.compiler import reset_standing_context
+                reset_standing_context()
+
+                return DispatchResult(
+                    success=True,
+                    message="Structured plan updated successfully",
+                    data={
+                        "type": "plan_update",
+                        "status": "updated"
+                    }
+                )
+            else:
+                return DispatchResult(
+                    success=False,
+                    message="Failed to write updated plan",
+                    data={"type": "plan_update", "error": "write_failed"}
+                )
+
+        except Exception as e:
+            log_event(
+                source="dispatcher",
+                raw_transcript=raw_input[:200],
+                zone_context="yellow",
+                inferred={"error": str(e), "handler": "plan_update", "stage": "handler_error"}
+            )
+            return DispatchResult(
+                success=False,
+                message=f"Plan update failed: {str(e)}",
+                data={"type": "plan_update", "error": str(e)}
+            )
+
+    def _handle_regenerate_plan(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Handle full structured plan regeneration (Sprint 5).
+
+        Yellow Zone - requires approval before writing to dock.
+        Re-synthesizes the entire plan from current dock + telemetry state.
+        """
+        from engine.compiler import generate_structured_plan, write_structured_plan
+        from engine.telemetry import log_event
+
+        try:
+            new_plan = generate_structured_plan()
+
+            if not new_plan:
+                return DispatchResult(
+                    success=False,
+                    message="Plan generation failed - check telemetry for details",
+                    data={"type": "regenerate_plan", "error": "generation_failed"}
+                )
+
+            # Write the new plan
+            if write_structured_plan(new_plan):
+                # Reset standing context to pick up changes
+                from engine.compiler import reset_standing_context
+                reset_standing_context()
+
+                return DispatchResult(
+                    success=True,
+                    message="Structured plan regenerated successfully",
+                    data={
+                        "type": "regenerate_plan",
+                        "status": "regenerated"
+                    }
+                )
+            else:
+                return DispatchResult(
+                    success=False,
+                    message="Failed to write regenerated plan",
+                    data={"type": "regenerate_plan", "error": "write_failed"}
+                )
+
+        except Exception as e:
+            log_event(
+                source="dispatcher",
+                raw_transcript=raw_input[:200],
+                zone_context="yellow",
+                inferred={"error": str(e), "handler": "regenerate_plan", "stage": "handler_error"}
+            )
+            return DispatchResult(
+                success=False,
+                message=f"Plan regeneration failed: {str(e)}",
+                data={"type": "regenerate_plan", "error": str(e)}
+            )
+
+    def _handle_fill_entity_gap(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Handle entity gap filling (Sprint 5).
+
+        Yellow Zone - requires approval before modifying entity files.
+        Uses LLM to extract the entity name and field value from raw input,
+        then updates the entity file.
+        """
+        import json
+        import re
+        from engine.llm_client import call_llm
+        from engine.profile import get_entities_dir
+        from engine.telemetry import log_event
+
+        # Use LLM to extract entity and field info
+        prompt = f"""Extract entity update information from this request.
+Return JSON with:
+- entity_type: One of "players", "parents", "venues"
+- entity_name: Name of the entity (e.g., "martinez", "henderson-family")
+- field_name: Field to add (e.g., "email", "phone", "handicap")
+- field_value: Value to set
+
+Request: "{raw_input}"
+
+Return ONLY valid JSON, no explanations:"""
+
+        try:
+            response = call_llm(
+                prompt=prompt,
+                tier=1,  # Haiku for extraction
+                intent="entity_gap_extraction"
+            )
+
+            data = json.loads(response)
+            entity_type = data.get("entity_type", "")
+            entity_name = data.get("entity_name", "")
+            field_name = data.get("field_name", "")
+            field_value = data.get("field_value", "")
+
+            if not all([entity_type, entity_name, field_name, field_value]):
+                return DispatchResult(
+                    success=False,
+                    message="Could not extract entity update details. Try: 'add email for martinez family: email@example.com'",
+                    data={"type": "fill_entity_gap", "error": "extraction_incomplete"}
+                )
+
+            # Find the entity file
+            entities_dir = get_entities_dir()
+            entity_dir = entities_dir / entity_type
+
+            if not entity_dir.exists():
+                return DispatchResult(
+                    success=False,
+                    message=f"Entity type not found: {entity_type}",
+                    data={"type": "fill_entity_gap", "error": "type_not_found"}
+                )
+
+            # Normalize entity name for file lookup
+            normalized_name = entity_name.lower().replace(" ", "-")
+            entity_file = None
+
+            for f in entity_dir.glob("*.md"):
+                if normalized_name in f.stem.lower():
+                    entity_file = f
+                    break
+
+            if not entity_file:
+                return DispatchResult(
+                    success=False,
+                    message=f"Entity not found: {entity_name} in {entity_type}",
+                    data={"type": "fill_entity_gap", "error": "entity_not_found"}
+                )
+
+            # Read current content
+            content = entity_file.read_text(encoding="utf-8")
+
+            # Add the new field after the Profile section
+            field_line = f"- **{field_name}:** {field_value}"
+
+            # Check if field already exists
+            if f"**{field_name}:**" in content.lower():
+                # Update existing field
+                pattern = rf'(\*\*{re.escape(field_name)}:\*\*)\s*[^\n]*'
+                content = re.sub(pattern, f"**{field_name}:** {field_value}", content, flags=re.IGNORECASE)
+            else:
+                # Add new field after ## Profile section
+                if "## Profile" in content:
+                    content = content.replace("## Profile\n", f"## Profile\n{field_line}\n", 1)
+                elif "## Notes" in content:
+                    content = content.replace("## Notes", f"{field_line}\n\n## Notes", 1)
+                else:
+                    content += f"\n{field_line}\n"
+
+            # Write updated content
+            entity_file.write_text(content, encoding="utf-8")
+
+            # Reset standing context to pick up changes
+            from engine.compiler import reset_standing_context
+            reset_standing_context()
+
+            return DispatchResult(
+                success=True,
+                message=f"Updated {entity_name}: added {field_name}",
+                data={
+                    "type": "fill_entity_gap",
+                    "entity": f"{entity_type}/{entity_file.stem}",
+                    "field": field_name,
+                    "value": field_value
+                }
+            )
+
+        except json.JSONDecodeError:
+            return DispatchResult(
+                success=False,
+                message="Could not parse entity update request",
+                data={"type": "fill_entity_gap", "error": "parse_failed"}
+            )
+        except Exception as e:
+            log_event(
+                source="dispatcher",
+                raw_transcript=raw_input[:200],
+                zone_context="yellow",
+                inferred={"error": str(e), "handler": "fill_entity_gap", "stage": "handler_error"}
+            )
+            return DispatchResult(
+                success=False,
+                message=f"Entity update failed: {str(e)}",
+                data={"type": "fill_entity_gap", "error": str(e)}
             )
 
 

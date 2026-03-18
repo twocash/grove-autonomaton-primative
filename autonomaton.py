@@ -213,6 +213,8 @@ def generate_startup_brief() -> str:
     task_context = (
         "The operator just opened the system. Give a focused strategic brief: "
         "3-5 prioritized items based on what you know. Lead with urgency. "
+        "If there are entity gaps (missing contact info, missing data) that block "
+        "handlers, surface them clearly as blockers. "
         "Suggest specific commands for each item. Keep it to one short paragraph "
         "per item. Sound like a colleague, not a report."
     )
@@ -283,6 +285,15 @@ def process_pending_queue() -> int:
         if result == "1":
             print(f"  {c.GREEN}Accepted:{c.RESET} {proposal[:50]}...")
             remove_from_queue(item_id)
+
+            # Sprint 5: Handle plan_update proposals by refreshing standing context
+            proposal_type = item.get("proposal_type", "general")
+            if proposal_type == "plan_update":
+                # The proposal was accepted - refresh standing context
+                from engine.compiler import reset_standing_context
+                reset_standing_context()
+                print(f"  {c.DIM}(Standing context refreshed for plan update){c.RESET}")
+
             processed += 1
         elif result == "2":
             print(f"  {c.YELLOW}Dismissed:{c.RESET} {item_id}")
@@ -492,11 +503,52 @@ def main():
 
     print_banner(profile, dock_info, cortex_info)
 
+    # Check for structured plan — generate on first boot (Sprint 5)
+    from engine.profile import get_dock_dir
+    from engine.compiler import generate_structured_plan, write_structured_plan
+    from engine.ux import confirm_yellow_zone
+
+    c = Colors
+    plan_path = get_dock_dir() / "system" / "structured-plan.md"
+    if not plan_path.exists():
+        print(f"  {c.CYAN}[FIRST BOOT]{c.RESET} No structured plan found.")
+        print(f"  {c.DIM}Generating initial plan from dock context...{c.RESET}")
+        print()
+
+        plan_content = generate_structured_plan()
+        if plan_content:
+            # Show preview and request approval (Yellow Zone)
+            print(f"  {c.YELLOW}{'=' * 56}{c.RESET}")
+            print(f"  {c.BOLD}{c.YELLOW}STRUCTURED PLAN PREVIEW{c.RESET}")
+            print(f"  {c.YELLOW}{'=' * 56}{c.RESET}")
+            # Show first 1500 chars of plan
+            preview_lines = plan_content[:1500].split('\n')
+            for line in preview_lines:
+                print(f"  {c.DIM}{line}{c.RESET}")
+            if len(plan_content) > 1500:
+                print(f"  {c.DIM}... (truncated){c.RESET}")
+            print(f"  {c.YELLOW}{'=' * 56}{c.RESET}")
+            print()
+
+            approved = confirm_yellow_zone(
+                action_description="Write this structured plan to dock/system/structured-plan.md"
+            )
+            if approved:
+                if write_structured_plan(plan_content):
+                    print(f"  {c.GREEN}[PLAN CREATED]{c.RESET} Structured plan written to dock.")
+                    print(f"  {c.DIM}The Chief of Staff now has trajectory awareness.{c.RESET}")
+                else:
+                    print(f"  {c.RED}[ERROR]{c.RESET} Failed to write structured plan.")
+            else:
+                print(f"  {c.YELLOW}[DEFERRED]{c.RESET} Plan generation skipped.")
+            print()
+        else:
+            print(f"  {c.YELLOW}[JIDOKA]{c.RESET} Plan generation failed — check telemetry.")
+            print()
+
     # Process pending Kaizen items at startup (unless skipped)
     if not args.skip_queue and pending:
         process_pending_queue()
-
-    c = Colors
 
     # Welcome Briefing (replaces cold command list)
     if not args.skip_welcome:

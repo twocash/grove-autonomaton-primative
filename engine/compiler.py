@@ -177,6 +177,22 @@ def gather_state_snapshot() -> str:
             inferred={"error": str(e), "stage": "dock_read"}
         )
 
+    # --- Structured Plan Summary (Sprint 5) ---
+    try:
+        plan_path = dock_dir / "system" / "structured-plan.md"
+        if plan_path.exists():
+            plan_content = plan_path.read_text(encoding="utf-8")
+            # Extract key sections for compact summary
+            # Include first 1200 chars which covers Active Goals & Progress
+            sections.append(f"[structured-plan]\n{plan_content[:1200]}")
+    except Exception as e:
+        log_event(
+            source="state_snapshot",
+            raw_transcript="structured_plan_read",
+            zone_context="yellow",
+            inferred={"error": str(e), "stage": "structured_plan_read"}
+        )
+
     # --- Entity Inventory ---
     try:
         entities_dir = get_entities_dir()
@@ -260,6 +276,19 @@ def gather_state_snapshot() -> str:
     except Exception:
         sections.append("[session] Telemetry unavailable.")
 
+    # --- Entity Gaps (Sprint 5) ---
+    try:
+        gaps_summary = get_entity_gaps_summary()
+        if gaps_summary:
+            sections.append(gaps_summary)
+    except Exception as e:
+        log_event(
+            source="state_snapshot",
+            raw_transcript="entity_gaps",
+            zone_context="yellow",
+            inferred={"error": str(e), "stage": "entity_gaps"}
+        )
+
     if not sections:
         return ""
 
@@ -278,3 +307,352 @@ def reset_standing_context() -> None:
     """Reset cache (call after profile switch or dock changes)."""
     global _standing_context
     _standing_context = None
+
+
+# ============================================================================
+# Entity Gap Detection (Sprint 5: The Living Plan)
+# ============================================================================
+
+def detect_entity_gaps() -> list[dict]:
+    """
+    Detect missing entity fields required by handlers.
+
+    Cross-references:
+    - Handler requirements (inferred from common patterns)
+    - Entity fields (from entities/*.md files)
+
+    Returns:
+        List of gap dicts: {"entity": "...", "missing": "...", "handler": "...", "priority": "..."}
+    """
+    from engine.profile import get_entities_dir
+    import re
+
+    gaps = []
+    entities_dir = get_entities_dir()
+
+    if not entities_dir.exists():
+        return gaps
+
+    # Define required fields by entity type
+    # These are the fields handlers expect to find
+    required_fields = {
+        "parents": {
+            "email": {
+                "patterns": [r"\*\*email:\*\*", r"email:", r"contact:"],
+                "handler": "email_parent",
+                "priority": "high"
+            },
+            "phone": {
+                "patterns": [r"\*\*phone:\*\*", r"phone:"],
+                "handler": "sms_parent",
+                "priority": "medium"
+            }
+        },
+        "players": {
+            "handicap": {
+                "patterns": [r"\*\*handicap:\*\*", r"handicap:"],
+                "handler": "performance_report",
+                "priority": "low"
+            }
+        },
+        "venues": {
+            "address": {
+                "patterns": [r"\*\*address:\*\*", r"address:", r"location:"],
+                "handler": "calendar_schedule",
+                "priority": "medium"
+            }
+        }
+    }
+
+    # Scan entity directories
+    for entity_type, fields in required_fields.items():
+        type_dir = entities_dir / entity_type
+        if not type_dir.exists():
+            continue
+
+        for entity_file in type_dir.glob("*.md"):
+            try:
+                content = entity_file.read_text(encoding="utf-8").lower()
+                entity_name = entity_file.stem
+
+                for field_name, field_config in fields.items():
+                    # Check if any of the patterns match
+                    field_present = any(
+                        re.search(pattern, content, re.IGNORECASE)
+                        for pattern in field_config["patterns"]
+                    )
+
+                    if not field_present:
+                        gaps.append({
+                            "entity": f"{entity_type}/{entity_name}",
+                            "entity_file": str(entity_file),
+                            "missing": field_name,
+                            "handler": field_config["handler"],
+                            "priority": field_config["priority"]
+                        })
+
+            except Exception:
+                continue
+
+    # Sort by priority (high first)
+    priority_order = {"high": 0, "medium": 1, "low": 2}
+    gaps.sort(key=lambda g: priority_order.get(g.get("priority", "low"), 3))
+
+    return gaps
+
+
+def get_entity_gaps_summary() -> str:
+    """
+    Get a concise summary of entity gaps for standing context.
+
+    Returns:
+        String summary suitable for inclusion in standing context.
+    """
+    gaps = detect_entity_gaps()
+
+    if not gaps:
+        return ""
+
+    # Group by priority
+    high = [g for g in gaps if g.get("priority") == "high"]
+    medium = [g for g in gaps if g.get("priority") == "medium"]
+
+    summary_parts = []
+
+    if high:
+        entities = [g["entity"].split("/")[-1] for g in high]
+        summary_parts.append(f"HIGH: {', '.join(entities[:5])} missing contact info")
+
+    if medium:
+        entities = [g["entity"].split("/")[-1] for g in medium]
+        summary_parts.append(f"MEDIUM: {', '.join(entities[:5])} missing data")
+
+    if summary_parts:
+        return "[entity-gaps] " + "; ".join(summary_parts)
+
+    return ""
+
+
+# ============================================================================
+# Structured Plan Generation (Sprint 5: The Living Plan)
+# ============================================================================
+
+def generate_structured_plan() -> str:
+    """
+    Synthesize structured plan from dock + entities + telemetry.
+
+    Uses Tier 2 (Sonnet) to create a human-readable trajectory document
+    that tracks goal progress, identifies data gaps, and surfaces stale items.
+
+    Returns:
+        Markdown string ready for operator approval and file write.
+        Empty string on failure.
+    """
+    from engine.profile import get_dock_dir, get_entities_dir
+    from engine.llm_client import call_llm
+    from engine.telemetry import log_event, read_recent_events
+
+    dock_dir = get_dock_dir()
+    entities_dir = get_entities_dir()
+
+    # Gather inputs for synthesis
+    inputs = {}
+
+    # Load goals.md
+    goals_path = dock_dir / "goals.md"
+    if goals_path.exists():
+        try:
+            inputs["goals"] = goals_path.read_text(encoding="utf-8")
+        except Exception as e:
+            log_event(
+                source="plan_generation",
+                raw_transcript="goals_read",
+                zone_context="yellow",
+                inferred={"error": str(e), "stage": "goals_read"}
+            )
+            inputs["goals"] = ""
+    else:
+        inputs["goals"] = ""
+
+    # Load seasonal-context.md
+    seasonal_path = dock_dir / "seasonal-context.md"
+    if seasonal_path.exists():
+        try:
+            inputs["seasonal"] = seasonal_path.read_text(encoding="utf-8")
+        except Exception:
+            inputs["seasonal"] = ""
+    else:
+        inputs["seasonal"] = ""
+
+    # Entity inventory
+    entity_summary = []
+    if entities_dir.exists():
+        for type_dir in sorted(entities_dir.iterdir()):
+            if type_dir.is_dir() and not type_dir.name.startswith('.'):
+                files = list(type_dir.glob("*.md"))
+                names = [f.stem for f in files]
+                entity_summary.append(f"{type_dir.name}: {', '.join(names)}")
+    inputs["entities"] = "\n".join(entity_summary) if entity_summary else "No entities yet"
+
+    # Content pipeline status
+    seeds_dir = entities_dir / "content-seeds" if entities_dir.exists() else None
+    if seeds_dir and seeds_dir.exists():
+        seeds = list(seeds_dir.glob("*.md"))
+        inputs["content_seeds"] = f"{len(seeds)} content seeds"
+    else:
+        inputs["content_seeds"] = "No content seeds"
+
+    # Recent telemetry summary
+    try:
+        recent = read_recent_events(limit=20)
+        intents = [e.get("intent", "?") for e in recent if e.get("intent")]
+        inputs["recent_activity"] = f"Recent intents: {', '.join(intents[-10:])}" if intents else "No recent activity"
+    except Exception:
+        inputs["recent_activity"] = "Telemetry unavailable"
+
+    # Vision board aspirations
+    vision_path = dock_dir / "system" / "vision-board.md"
+    if vision_path.exists():
+        try:
+            inputs["vision"] = vision_path.read_text(encoding="utf-8")
+        except Exception:
+            inputs["vision"] = ""
+    else:
+        inputs["vision"] = ""
+
+    # Build synthesis prompt
+    prompt = f"""Generate a Structured Plan document that synthesizes the operator's goals with current system state.
+
+GOALS DOCUMENT:
+{inputs['goals'][:2000]}
+
+SEASONAL CONTEXT:
+{inputs['seasonal'][:1000]}
+
+ENTITY INVENTORY:
+{inputs['entities']}
+
+CONTENT PIPELINE:
+{inputs['content_seeds']}
+
+RECENT ACTIVITY:
+{inputs['recent_activity']}
+
+VISION BOARD (aspirations):
+{inputs['vision'][:500]}
+
+Generate a markdown document with these EXACT sections:
+
+# Structured Plan
+> Last updated: [today's date] (auto-generated, operator-approved)
+
+## Active Goals & Progress
+For each goal in the goals document:
+- **Target:** The goal target
+- **Current:** Best estimate of current state
+- **Trajectory:** On pace / behind / ahead
+- **Observation:** What the data shows
+- **Recommended action:** Specific next step
+
+## Data Gaps (System Needs)
+Table of missing entity data that blocks handlers:
+| What's Missing | Why It Matters | How to Fix |
+
+## Stale Items
+Goals or vision items not touched recently
+
+## What's Working
+Positive patterns from telemetry and content pipeline
+
+## Next Actions (Prioritized)
+1-4 prioritized actions based on urgency
+
+End with: *This plan is maintained by the Context Gardener...*
+
+Be specific. Reference actual entity names and goals. This must be human-readable and correctable.
+
+Generate the plan now:"""
+
+    try:
+        response = call_llm(
+            prompt=prompt,
+            tier=2,  # Sonnet for synthesis quality
+            intent="plan_generation"
+        )
+        return response.strip()
+    except Exception as e:
+        log_event(
+            source="plan_generation",
+            raw_transcript="llm_synthesis",
+            zone_context="yellow",
+            inferred={"error": str(e), "error_type": type(e).__name__, "stage": "synthesis"}
+        )
+        return ""
+
+
+def write_structured_plan(content: str) -> bool:
+    """
+    Write structured plan to dock/system/structured-plan.md.
+
+    This should only be called AFTER operator approval (Yellow Zone).
+
+    Args:
+        content: The plan markdown content to write
+
+    Returns:
+        True if written successfully, False otherwise
+    """
+    from engine.profile import get_dock_dir
+    from engine.telemetry import log_event
+
+    dock_dir = get_dock_dir()
+    plan_path = dock_dir / "system" / "structured-plan.md"
+
+    # Ensure directory exists
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        import hashlib
+        plan_hash = hashlib.md5(content.encode()).hexdigest()[:8]
+
+        plan_path.write_text(content, encoding="utf-8")
+        log_event(
+            source="plan_write",
+            raw_transcript="structured-plan.md",
+            zone_context="yellow",
+            inferred={
+                "status": "written",
+                "length": len(content),
+                "plan_hash": plan_hash,
+                "event_type": "plan_updated"
+            }
+        )
+        return True
+    except Exception as e:
+        log_event(
+            source="plan_write",
+            raw_transcript="structured-plan.md",
+            zone_context="yellow",
+            inferred={"error": str(e), "error_type": type(e).__name__}
+        )
+        return False
+
+
+def get_structured_plan() -> str:
+    """
+    Read the current structured plan from dock.
+
+    Returns:
+        Plan content as string, or empty string if not found.
+    """
+    from engine.profile import get_dock_dir
+
+    dock_dir = get_dock_dir()
+    plan_path = dock_dir / "system" / "structured-plan.md"
+
+    if plan_path.exists():
+        try:
+            return plan_path.read_text(encoding="utf-8")
+        except Exception:
+            return ""
+    return ""

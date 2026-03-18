@@ -88,6 +88,11 @@ class KaizenProposal:
     source_event_id: str
     created_at: str
     status: str = "pending"
+    # Sprint 5: Additional fields for Context Gardener proposals
+    proposal_type: str = "general"  # general, gap_alert, plan_update, stale_alert
+    target_file: str = ""           # For plan_update type
+    target_section: str = ""        # For plan_update type
+    priority: str = "medium"        # high, medium, low
 
 
 class Cortex:
@@ -869,6 +874,254 @@ Return ONLY valid JSON, no explanations:"""
                 return ""
         return ""
 
+    # =========================================================================
+    # Lens 6: Context Gardener (Sprint 5)
+    # =========================================================================
+
+    def run_context_gardener(
+        self,
+        telemetry_events: list[dict],
+        standing_context: str,
+        structured_plan: str,
+        vision_board: str,
+        exhaust_board: str
+    ) -> dict:
+        """
+        Lens 6: Context Gardener - proposes dock updates based on patterns.
+
+        Produces three types of Kaizen proposals:
+        1. gap_alert: Missing data needed by handlers
+        2. plan_update: Observations to add to structured-plan.md
+        3. stale_alert: Goals not touched in threshold period
+
+        Uses Tier 1 (Haiku) for pattern matching, Tier 2 (Sonnet) for synthesis.
+
+        Args:
+            telemetry_events: Recent telemetry events
+            standing_context: Current standing context snapshot
+            structured_plan: Contents of structured-plan.md
+            vision_board: Contents of vision-board.md
+            exhaust_board: Contents of exhaust-board.md
+
+        Returns:
+            Dict with proposals list and metadata
+        """
+        proposals = []
+
+        # 1. Gap Alert Detection
+        gap_alerts = self._detect_gaps(standing_context)
+        proposals.extend(gap_alerts)
+
+        # 2. Plan Update Proposals
+        plan_updates = self._generate_plan_updates(
+            telemetry_events, structured_plan
+        )
+        proposals.extend(plan_updates)
+
+        # 3. Stale Item Detection
+        stale_alerts = self._detect_stale_items(
+            telemetry_events, structured_plan, vision_board
+        )
+        proposals.extend(stale_alerts)
+
+        return {
+            "proposals": proposals,
+            "gap_count": len(gap_alerts),
+            "update_count": len(plan_updates),
+            "stale_count": len(stale_alerts)
+        }
+
+    def _detect_gaps(self, standing_context: str) -> list[dict]:
+        """
+        Detect entity data gaps that block handlers.
+
+        Analyzes standing context for missing required fields
+        (e.g., parent entities without email addresses).
+
+        Returns list of gap_alert proposals.
+        """
+        from datetime import datetime, timezone
+
+        gaps = []
+
+        # Parse entity inventory from standing context
+        # Look for patterns like "[entities/parents]" sections
+        if "[entities/parents]" in standing_context:
+            # Check for parent entities - they need contact info for email handler
+            parent_section = standing_context.split("[entities/parents]")[1].split("[")[0]
+
+            # Known parent entities that need email - extract from context
+            # This is a heuristic - the Context Gardener improves over time
+            if "henderson" in parent_section.lower() and "email" not in parent_section.lower():
+                gaps.append({
+                    "id": f"gap-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-henderson",
+                    "proposal": "Henderson family entity may be missing email address. Email handler requires contact info.",
+                    "trigger": "context_gardener",
+                    "proposal_type": "gap_alert",
+                    "target_entity": "entities/parents/henderson-family.md",
+                    "missing_field": "email",
+                    "priority": "medium",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "status": "pending"
+                })
+
+        # Check for player entities missing handicap
+        if "[entities/players]" in standing_context:
+            player_section = standing_context.split("[entities/players]")[1].split("[")[0]
+            # If we have players but no handicap data mentioned
+            if "players" in player_section.lower() and "handicap" not in standing_context.lower():
+                gaps.append({
+                    "id": f"gap-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-handicaps",
+                    "proposal": "Player entities may be missing handicap data. Performance tracking requires handicap history.",
+                    "trigger": "context_gardener",
+                    "proposal_type": "gap_alert",
+                    "target_entity": "entities/players/",
+                    "missing_field": "handicap",
+                    "priority": "low",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "status": "pending"
+                })
+
+        return gaps
+
+    def _generate_plan_updates(
+        self,
+        telemetry_events: list[dict],
+        structured_plan: str
+    ) -> list[dict]:
+        """
+        Generate plan update proposals based on telemetry patterns.
+
+        Analyzes recent activity against plan goals to identify
+        progress, trends, or recommended actions.
+
+        Returns list of plan_update proposals.
+        """
+        from datetime import datetime, timezone
+
+        updates = []
+
+        if not telemetry_events or not structured_plan:
+            return updates
+
+        # Count intent patterns in telemetry
+        intent_counts = {}
+        for event in telemetry_events:
+            intent = event.get("intent", "unknown")
+            intent_counts[intent] = intent_counts.get(intent, 0) + 1
+
+        # Check for content compilation patterns vs goals
+        compile_count = intent_counts.get("content_compilation", 0) + intent_counts.get("compile_content", 0)
+        if compile_count > 0 and "Goal 2: TikTok" in structured_plan:
+            updates.append({
+                "id": f"obs-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-content",
+                "proposal": f"Content compilation activity detected ({compile_count} events). Goal 2 (TikTok) may need trajectory update.",
+                "trigger": "context_gardener",
+                "proposal_type": "plan_update",
+                "target_file": "dock/system/structured-plan.md",
+                "target_section": "Goal 2: TikTok",
+                "observation": f"{compile_count} content compilation events in recent telemetry",
+                "priority": "medium",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "status": "pending"
+            })
+
+        # Check for strategy session patterns
+        strategy_count = intent_counts.get("strategy_session", 0)
+        if strategy_count >= 3:
+            updates.append({
+                "id": f"obs-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-strategy",
+                "proposal": f"High strategy session usage ({strategy_count} events). Operator is actively planning. Consider refreshing the structured plan.",
+                "trigger": "context_gardener",
+                "proposal_type": "plan_update",
+                "target_file": "dock/system/structured-plan.md",
+                "target_section": "Next Actions",
+                "observation": f"{strategy_count} strategy sessions indicate active planning mode",
+                "priority": "low",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "status": "pending"
+            })
+
+        return updates
+
+    def _detect_stale_items(
+        self,
+        telemetry_events: list[dict],
+        structured_plan: str,
+        vision_board: str,
+        stale_days: int = 14
+    ) -> list[dict]:
+        """
+        Detect goals and vision items not touched recently.
+
+        Analyzes telemetry timestamps to find items that haven't
+        been interacted with in the configured threshold period.
+
+        Returns list of stale_alert proposals.
+        """
+        from datetime import datetime, timezone, timedelta
+
+        stale = []
+        now = datetime.now(timezone.utc)
+        threshold = now - timedelta(days=stale_days)
+
+        # Extract goal-related intents from telemetry
+        goal_related = {"tithing", "revenue", "money", "payment", "fee"}
+        latest_goal_touch = {}
+
+        for event in telemetry_events:
+            intent = event.get("intent", "").lower()
+            transcript = event.get("raw_transcript", "").lower()
+            timestamp_str = event.get("timestamp", "")
+
+            for goal_key in goal_related:
+                if goal_key in intent or goal_key in transcript:
+                    try:
+                        event_time = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                        if goal_key not in latest_goal_touch or event_time > latest_goal_touch[goal_key]:
+                            latest_goal_touch[goal_key] = event_time
+                    except (ValueError, TypeError):
+                        continue
+
+        # Check for stale revenue/tithing goals
+        if "Goal 3" in structured_plan and "Tithing" in structured_plan:
+            tithing_touched = latest_goal_touch.get("tithing") or latest_goal_touch.get("revenue")
+            if not tithing_touched or tithing_touched < threshold:
+                stale.append({
+                    "id": f"stale-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-tithing",
+                    "proposal": f"Revenue/tithing goals not referenced in {stale_days}+ days. Consider reviewing Goal 3 priority.",
+                    "trigger": "context_gardener",
+                    "proposal_type": "stale_alert",
+                    "target_section": "Goal 3: Tithing",
+                    "last_touched": tithing_touched.isoformat() if tithing_touched else "Never",
+                    "threshold_days": stale_days,
+                    "priority": "low",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "status": "pending"
+                })
+
+        # Check for stale vision board items
+        if vision_board and "lesson reminders" in vision_board.lower():
+            # Check if any lesson-related intents fired recently
+            lesson_touched = any(
+                "lesson" in e.get("intent", "").lower() or "lesson" in e.get("raw_transcript", "").lower()
+                for e in telemetry_events
+            )
+            if not lesson_touched:
+                stale.append({
+                    "id": f"stale-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-vision",
+                    "proposal": "Vision board item 'automatic lesson reminders' has no progress. Consider Pit Crew skill or remove from vision.",
+                    "trigger": "context_gardener",
+                    "proposal_type": "stale_alert",
+                    "target_section": "Vision Board",
+                    "vision_item": "automatic lesson reminders",
+                    "priority": "low",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "status": "pending"
+                })
+
+        return stale
+
 
 # =========================================================================
 # Queue Management
@@ -916,6 +1169,10 @@ def remove_from_queue(item_id: str) -> bool:
 # Module-level singleton
 _cortex_instance: Optional[Cortex] = None
 
+# Context Gardener gating state (session-scoped)
+_gardener_events_since_last_run: int = 0
+_gardener_runs_this_session: int = 0
+
 
 def get_cortex() -> Cortex:
     """Get the shared Cortex instance."""
@@ -925,11 +1182,184 @@ def get_cortex() -> Cortex:
     return _cortex_instance
 
 
+def _load_gardener_config() -> dict:
+    """Load Context Gardener configuration from cortex.yaml."""
+    from engine.profile import get_config_dir
+
+    config_path = get_config_dir() / "cortex.yaml"
+
+    defaults = {
+        "enabled": True,
+        "min_events_since_last_run": 10,
+        "max_runs_per_session": 1,
+        "stale_threshold_days": 14,
+        "tier_for_pattern_matching": 1,
+        "tier_for_synthesis": 2
+    }
+
+    if not config_path.exists():
+        return defaults
+
+    try:
+        content = config_path.read_text(encoding="utf-8")
+        config = yaml.safe_load(content) or {}
+        gardener_config = config.get("context_gardener", {})
+        # Merge with defaults
+        for key, value in defaults.items():
+            if key not in gardener_config:
+                gardener_config[key] = value
+        return gardener_config
+    except Exception:
+        return defaults
+
+
+def _should_run_gardener() -> bool:
+    """
+    Check if Context Gardener should run this tail pass.
+
+    Gating rules:
+    1. Must be enabled in config
+    2. Must have min_events_since_last_run events
+    3. Must not exceed max_runs_per_session
+    """
+    global _gardener_events_since_last_run, _gardener_runs_this_session
+
+    config = _load_gardener_config()
+
+    if not config.get("enabled", True):
+        return False
+
+    min_events = config.get("min_events_since_last_run", 10)
+    max_runs = config.get("max_runs_per_session", 1)
+
+    if _gardener_events_since_last_run < min_events:
+        return False
+
+    if _gardener_runs_this_session >= max_runs:
+        return False
+
+    return True
+
+
+def _reset_gardener_gating() -> None:
+    """Reset gardener gating state (call at session start)."""
+    global _gardener_events_since_last_run, _gardener_runs_this_session
+    _gardener_events_since_last_run = 0
+    _gardener_runs_this_session = 0
+
+
 def run_tail_pass() -> dict:
     """
     Run a tail-pass analysis on recent telemetry.
 
     This is the primary interface for the pipeline integration.
+    Sprint 5: Now includes gated Context Gardener invocation.
     """
+    global _gardener_events_since_last_run, _gardener_runs_this_session
+
     cortex = get_cortex()
-    return cortex.run_analysis_pass()
+    result = cortex.run_analysis_pass()
+
+    # Increment event counter for gardener gating
+    events_processed = result.get("events_processed", 0)
+    if events_processed > 0:
+        _gardener_events_since_last_run += events_processed
+
+    # Check if Context Gardener should run
+    if _should_run_gardener():
+        gardener_result = _run_context_gardener_pass(cortex)
+        result["gardener"] = gardener_result
+
+        # Reset event counter, increment run counter
+        _gardener_events_since_last_run = 0
+        _gardener_runs_this_session += 1
+
+    return result
+
+
+def _run_context_gardener_pass(cortex: Cortex) -> dict:
+    """
+    Execute Context Gardener and queue proposals.
+
+    Loads all required context and runs the Gardener, then
+    queues any proposals through the existing Kaizen mechanism.
+    """
+    from engine.profile import get_dock_dir, get_telemetry_path
+    from engine.compiler import gather_state_snapshot
+
+    # Gather inputs
+    standing_context = gather_state_snapshot()
+
+    dock_dir = get_dock_dir()
+    plan_path = dock_dir / "system" / "structured-plan.md"
+    vision_path = dock_dir / "system" / "vision-board.md"
+    exhaust_path = dock_dir / "system" / "exhaust-board.md"
+
+    structured_plan = ""
+    if plan_path.exists():
+        try:
+            structured_plan = plan_path.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+    vision_board = ""
+    if vision_path.exists():
+        try:
+            vision_board = vision_path.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+    exhaust_board = ""
+    if exhaust_path.exists():
+        try:
+            exhaust_board = exhaust_path.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+    # Load recent telemetry
+    telemetry_path = get_telemetry_path()
+    telemetry_events = []
+    if telemetry_path.exists():
+        try:
+            with open(telemetry_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            telemetry_events.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+            telemetry_events = telemetry_events[-50:]  # Last 50 events
+        except Exception:
+            pass
+
+    # Run Context Gardener
+    gardener_result = cortex.run_context_gardener(
+        telemetry_events=telemetry_events,
+        standing_context=standing_context,
+        structured_plan=structured_plan,
+        vision_board=vision_board,
+        exhaust_board=exhaust_board
+    )
+
+    # Queue proposals through existing Kaizen mechanism
+    proposals_queued = 0
+    for proposal in gardener_result.get("proposals", []):
+        # Convert to KaizenProposal format and queue
+        kaizen = KaizenProposal(
+            id=proposal.get("id", f"gardener-{proposals_queued}"),
+            proposal=proposal.get("proposal", ""),
+            trigger=proposal.get("trigger", "context_gardener"),
+            source_event_id="context_gardener_pass",
+            created_at=proposal.get("created_at", ""),
+            status="pending",
+            proposal_type=proposal.get("proposal_type", "general"),
+            target_file=proposal.get("target_file", ""),
+            target_section=proposal.get("target_section", ""),
+            priority=proposal.get("priority", "medium")
+        )
+        if cortex._queue_kaizen(kaizen):
+            proposals_queued += 1
+
+    gardener_result["proposals_queued"] = proposals_queued
+    return gardener_result

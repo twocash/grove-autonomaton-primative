@@ -1,0 +1,50 @@
+# cortex.yaml
+# Configuration for the Cortex analytical engine (Layer 3)
+# Sprint 5: Context Gardener gating parameters
+
+# Context Gardener (Lens 6) Configuration
+context_gardener:
+  # Enable/disable the Context Gardener
+  enabled: true
+
+  # Minimum telemetry events since last run before triggering
+  # Prevents thrashing on low-activity sessions
+  min_events_since_last_run: 10
+
+  # Maximum runs per session
+  # Prevents Kaizen queue spam
+  max_runs_per_session: 1
+
+  # Days without interaction before flagging as stale
+  stale_threshold_days: 14
+
+  # LLM tier for pattern matching (gap detection, stale detection)
+  tier_for_pattern_matching: 1  # Haiku - fast/cheap
+
+  # LLM tier for synthesis (plan update proposals)
+  tier_for_synthesis: 2  # Sonnet - quality synthesis
+
+# Lens run order (for future configurability)
+lens_order:
+  - entity_extraction      # Lens 1
+  - content_seed_mining    # Lens 2
+  - pattern_analysis       # Lens 3
+  - ratchet_analysis       # Lens 4
+  - evolution_analysis     # Lens 5
+  - context_gardener       # Lens 6
+
+# Tail pass settings
+tail_pass:
+  # Run Cortex tail pass after every interaction
+  enabled: true
+
+  # Which lenses run on every tail pass (vs batch-only)
+  always_run:
+    - entity_extraction
+    - content_seed_mining
+
+  # These only run when explicitly triggered or via Context Gardener
+  batch_only:
+    - pattern_analysis
+    - ratchet_analysis
+    - evolution_analysis
