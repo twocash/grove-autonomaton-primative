@@ -1,0 +1,33 @@
+# tournament-prep skill
+name: "Tournament Prep"
+description: "Generate pre-tournament preparation packages with lineup, scouting cards, course strategy, and pregame message"
+version: "1.0"
+tier: 2
+zone: green
+domain: lessons
+intent_type: actionable
+
+triggers:
+  - "tournament prep"
+  - "match prep"
+  - "get ready for"
+  - "prepare for match"
+  - "prep for cathedral"
+  - "lineup for"
+
+inputs:
+  - seasonal-context (dock)
+  - player profiles (entities/players)
+  - venue profiles (entities/venues)
+  - goals (dock/goals.md)
+
+outputs:
+  - type: tournament_package
+    format: structured_text
+    destination: output/reports/
+
+telemetry_exhaust:
+  - Lineup decisions over time (who makes the cut, who doesn't)
+  - Player scouting accuracy (did the "watch for" tendencies actually show up)
+  - Pregame Word themes (which messages resonate, tracked via post-match reflections)
+  - Course strategy effectiveness (were the right holes identified as decision points)

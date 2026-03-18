@@ -32,151 +32,22 @@ Each entry follows this structure:
 
 <!-- New entries are appended below by the Architectural Judge -->
 
+### weekly-report - 2026-03-18
 
-### future-skill - 2026-03-17 23:41 UTC
-
-**Description:** Test future potential
-
-**Telemetry Unlocks:**
-- Enable predictive analytics via skill output patterns
-- Chain with notification-skill for proactive alerts
-
----
-
-### future-skill - 2026-03-17 23:42 UTC
-
-**Description:** Test future potential
+**Description:** Generate structured weekly practice plans integrating skill development, player pairings, and character formation lessons.
 
 **Telemetry Unlocks:**
-- Enable predictive analytics via skill output patterns
-- Chain with notification-skill for proactive alerts
+- Track which drills get repeated vs. dropped across weeks → surface effective drills
+- Monitor player pairing patterns → identify which combinations produce skill transfer
+- Count content seeds generated per practice plan → feed content compilation pipeline
+- Correlate practice focus areas with match performance → close the feedback loop
 
----
+### tournament-prep - 2026-03-18
 
-### tournament-prep - 2026-03-17 23:45 UTC
-
-**Description:** Prepare players for tournament
-
-**Telemetry Unlocks:**
-- Test unlock 1
-
----
-
-### test-skill - 2026-03-17 23:45 UTC
-
-**Description:** Test skill
+**Description:** Generate pre-tournament preparation packages with lineup, scouting cards, course strategy, and pregame message.
 
 **Telemetry Unlocks:**
-- Test unlock
-
----
-
-### test-skill - 2026-03-17 23:45 UTC
-
-**Description:** Test description
-
-**Telemetry Unlocks:**
-- Test unlock
-
----
-
-### test-skill - 2026-03-17 23:45 UTC
-
-**Description:** Test
-
-**Telemetry Unlocks:**
-
-
----
-
-### approved-skill - 2026-03-17 23:45 UTC
-
-**Description:** This skill was approved
-
-**Telemetry Unlocks:**
-- Test unlock
-
----
-
-### future-skill - 2026-03-17 23:45 UTC
-
-**Description:** Test future potential
-
-**Telemetry Unlocks:**
-- Enable predictive analytics via skill output patterns
-- Chain with notification-skill for proactive alerts
-
----
-
-### e2e-test - 2026-03-17 23:45 UTC
-
-**Description:** End to end test skill
-
-**Telemetry Unlocks:**
-- E2E test unlock
-
----
-
-### tournament-prep - 2026-03-17 23:46 UTC
-
-**Description:** Prepare players for tournament
-
-**Telemetry Unlocks:**
-- Test unlock 1
-
----
-
-### test-skill - 2026-03-17 23:46 UTC
-
-**Description:** Test skill
-
-**Telemetry Unlocks:**
-- Test unlock
-
----
-
-### test-skill - 2026-03-17 23:46 UTC
-
-**Description:** Test description
-
-**Telemetry Unlocks:**
-- Test unlock
-
----
-
-### test-skill - 2026-03-17 23:46 UTC
-
-**Description:** Test
-
-**Telemetry Unlocks:**
-
-
----
-
-### approved-skill - 2026-03-17 23:46 UTC
-
-**Description:** This skill was approved
-
-**Telemetry Unlocks:**
-- Test unlock
-
----
-
-### future-skill - 2026-03-17 23:46 UTC
-
-**Description:** Test future potential
-
-**Telemetry Unlocks:**
-- Enable predictive analytics via skill output patterns
-- Chain with notification-skill for proactive alerts
-
----
-
-### e2e-test - 2026-03-17 23:46 UTC
-
-**Description:** End to end test skill
-
-**Telemetry Unlocks:**
-- E2E test unlock
-
----
+- Track lineup decisions over time → surface player development arcs
+- Compare scouting card predictions ("watch for") with post-match telemetry → measure coaching accuracy
+- Catalog Pregame Word themes → identify which messages correlate with strong team performance
+- Monitor course strategy notes → build venue-specific playbooks over multiple seasons

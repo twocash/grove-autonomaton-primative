@@ -2,17 +2,13 @@
 
 > *A scratchpad for aspirations and future automation ideas*
 
-This board captures your casual wishes, dreams, and "wouldn't it be nice if..." thoughts. The Cortex (Lens 5: Personal Product Manager) reads this board alongside your actual behavior telemetry to identify when an aspiration aligns with a pattern worth automating.
-
-**How it works:**
-- Say things like "I wish I could..." or "Someday I want to..."
-- These aspirations are logged here automatically
-- When Lens 5 runs, it looks for intersections between your stated aspirations and your actual usage patterns
-- If a pattern matches an aspiration, it prioritizes building a skill for it
-
 ---
 
 ## Aspirations
 
 <!-- New aspirations are appended below automatically -->
 
+- [2026-03-05 08:30] I wish I could get a weekly text reminder of which content seeds are ready to compile. I always forget to check.
+- [2026-03-10 16:45] It would be cool if the system could generate a tournament prep checklist automatically when a match is within 7 days.
+- [2026-03-14 19:20] Someday I want automatic lesson reminders sent to parents 24 hours before a scheduled lesson.
+- [2026-03-17 07:15] I wish I had a way to track each player's scoring trends across matches — even just a simple spreadsheet I could glance at.
