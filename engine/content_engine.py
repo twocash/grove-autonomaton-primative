@@ -139,9 +139,14 @@ Include relevant hashtags at the end if appropriate for the platform.
 
 Your response should be the final draft text only, no explanations or metadata."""
 
+        # Apply Privacy Mask before sending to external LLM
+        # This ensures no student names are ever sent externally
+        from engine.compiler import apply_privacy_mask
+        masked_prompt = apply_privacy_mask(prompt)
+
         # Call Tier 2 (Sonnet) for quality content generation
         return call_llm(
-            prompt=prompt,
+            prompt=masked_prompt,
             tier=2,  # Sonnet for quality
             intent="content_compilation"
         )

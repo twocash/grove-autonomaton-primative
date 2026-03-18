@@ -1,77 +1,179 @@
 # pillars.yaml
 # Content pillars for The Coach Autonomaton
 # Domain: Catholic High School Golf Coach
+# Brand: @ChristInTheFairway
 
 # Pillar Definitions
 pillars:
-  surrender:
-    name: "Surrender to the Swing"
-    description: "Trust the process, release control, let faith guide the follow-through"
+  short_game_devotionals:
+    name: "Short-Game Devotionals"
+    description: "Quick faith lessons through the lens of chipping, putting, and the mental game"
     themes:
-      - trust
       - patience
-      - letting_go
-      - faith_in_practice
+      - precision
+      - trust
+      - quiet_focus
     hashtags:
-      - "#SurrenderToTheSwing"
-      - "#TrustTheProcess"
-      - "#FaithOnTheFairway"
+      - "#ShortGameSoul"
+      - "#PuttWithPurpose"
+      - "#ChipAndPray"
     content_types:
-      - devotional_reflection
-      - practice_meditation
-      - post_round_prayer
+      - 30_second_tip
+      - putting_meditation
+      - mental_game_faith
     scripture_anchors:
       - "Proverbs 3:5-6"
       - "Philippians 4:6-7"
 
+  chatard_stories:
+    name: "Real-Life Chatard Stories"
+    description: "Authentic moments from the Chatard golf program - the struggles, breakthroughs, and brotherhood"
+    themes:
+      - authenticity
+      - growth
+      - team_bond
+      - character_formation
+    hashtags:
+      - "#ChatardGolf"
+      - "#TrojanGolf"
+      - "#RealStories"
+    content_types:
+      - player_spotlight
+      - practice_moment
+      - tournament_narrative
+      - parent_testimonial
+    privacy_note: "Always use public_alias for student names"
+
+  golf_history_virtue:
+    name: "Golf History & Virtue"
+    description: "Lessons from the legends - how the game's traditions teach timeless virtues"
+    themes:
+      - tradition
+      - honor
+      - integrity
+      - excellence
+    hashtags:
+      - "#GolfHistory"
+      - "#VirtueOnTheCourse"
+      - "#LessonsFromLegends"
+    content_types:
+      - historical_parallel
+      - legend_quote
+      - rules_as_character
+
   swing_spiritual:
-    name: "The Spiritual Swing"
-    description: "Golf mechanics as metaphor for spiritual discipline"
+    name: "Swing Thoughts & Spiritual Parallels"
+    description: "The mechanics of the swing as metaphor for spiritual discipline"
     themes:
       - discipline
       - repetition
-      - humility
-      - growth_mindset
+      - letting_go
+      - trust_the_process
     hashtags:
       - "#SpiritualSwing"
+      - "#SwingThoughts"
       - "#GolfAndGrace"
-      - "#CoachWithPurpose"
     content_types:
       - technique_parable
-      - character_lesson
-      - virtue_drill
+      - grip_metaphor
+      - follow_through_faith
     scripture_anchors:
       - "Colossians 3:23"
       - "1 Corinthians 9:24-27"
 
-  team_communion:
-    name: "Team as Communion"
-    description: "Building community through shared struggle and celebration"
+  course_beauty:
+    name: "Course Beauty"
+    description: "The cathedral of creation - finding God in the landscape of the course"
     themes:
-      - brotherhood
-      - accountability
-      - service
-      - celebration
+      - creation
+      - gratitude
+      - presence
+      - wonder
     hashtags:
-      - "#TeamCommunion"
-      - "#BrothersOnTheCourse"
-      - "#CatholicGolf"
+      - "#CourseBeauty"
+      - "#GodsFairway"
+      - "#IndyGolf"
     content_types:
-      - team_highlight
-      - parent_appreciation
-      - tournament_recap
+      - sunrise_shot
+      - course_scenery
+      - nature_reflection
+      - quiet_moment
+
+  caddie_servant:
+    name: "Caddie as Servant"
+    description: "The spirituality of service - carrying another's bag, lifting another's game"
+    themes:
+      - service
+      - humility
+      - support
+      - sacrifice
+    hashtags:
+      - "#CaddieLife"
+      - "#ServantLeadership"
+      - "#CarryTheBag"
+    content_types:
+      - caddie_wisdom
+      - service_story
+      - teammate_support
     scripture_anchors:
-      - "Ecclesiastes 4:9-12"
-      - "Romans 12:4-5"
+      - "Mark 10:45"
+      - "Galatians 5:13"
+
+  failure_redemption:
+    name: "Failure & Redemption"
+    description: "The theology of the bad round - how we respond to failure reveals character"
+    themes:
+      - resilience
+      - grace
+      - forgiveness
+      - growth
+    hashtags:
+      - "#FailForward"
+      - "#RedemptionRound"
+      - "#GraceOnTheGreens"
+    content_types:
+      - comeback_story
+      - bad_hole_lesson
+      - grace_moment
+    scripture_anchors:
+      - "Romans 8:28"
+      - "Lamentations 3:22-23"
+
+  indy_catholic_golf:
+    name: "Local Indy Catholic Golf"
+    description: "Celebrating the Indianapolis Catholic golf community - courses, programs, people"
+    themes:
+      - community
+      - local_pride
+      - fellowship
+      - Catholic_identity
+    hashtags:
+      - "#IndyCatholicGolf"
+      - "#IndianapolisGolf"
+      - "#CatholicSchoolGolf"
+    content_types:
+      - course_spotlight
+      - community_event
+      - school_shoutout
+      - local_tournament
 
 # Content Calendar Defaults
 calendar:
   weekly_cadence:
-    monday: surrender
+    monday: short_game_devotionals
+    tuesday: chatard_stories
     wednesday: swing_spiritual
-    friday: team_communion
+    thursday: failure_redemption
+    friday: course_beauty
+    saturday: indy_catholic_golf
+    sunday: caddie_servant
 
   platform_priority:
     - tiktok
-    - x
     - instagram
+    - x
+
+  weekly_volume:
+    tiktok: 5
+    instagram: 3
+    x: 7

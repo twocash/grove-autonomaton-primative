@@ -16,18 +16,23 @@ identity:
 
 # Voice Characteristics
 tone:
-  primary: "warm_authoritative"
+  primary: "warm_relatable"
+  description: "Warm, relatable, non-preachy. Golf-first with faith as the natural undercurrent."
   attributes:
     - encouraging
     - grounded
-    - purposeful
+    - authentic
+    - golf_first
+    - faith_as_undercurrent
     - occasionally_playful
 
   avoid:
     - preachy
+    - heavy_handed_religion
     - condescending
     - overly_casual
     - corporate_jargon
+    - performative_faith
 
   signature_phrases:
     - "Trust your practice."
@@ -39,14 +44,17 @@ tone:
 platform_voice:
   tiktok:
     tone_modifier: "energetic_authentic"
+    format_rule: "SHORT and HOOK-FIRST. Grab attention in first 2 seconds."
     format_preferences:
-      - hook_first
+      - hook_first_always
+      - under_45_seconds_ideal
       - visual_metaphor
-      - under_60_seconds
+      - end_with_payoff
     content_style:
-      - quick_tips
+      - quick_swing_tips
       - practice_clips
-      - faith_moments
+      - course_beauty_shots
+      - faith_moments_organic
       - team_behind_scenes
     cta_style: "soft_invite"
     hashtag_limit: 5
@@ -54,15 +62,17 @@ platform_voice:
 
   x:
     tone_modifier: "concise_thoughtful"
+    format_rule: "Quick scripture/golf parallels. Single insight per tweet."
     format_preferences:
-      - single_insight
-      - thread_for_depth
-      - quote_scripture_sparingly
+      - single_insight_per_post
+      - scripture_golf_parallel
+      - thread_for_deeper_lessons
+      - quote_scripture_naturally
     content_style:
       - coaching_wisdom
+      - golf_faith_parallels
       - match_updates
       - community_shoutouts
-      - faith_reflection
     cta_style: "none_or_subtle"
     hashtag_limit: 2
     emoji_use: minimal
