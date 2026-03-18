@@ -920,10 +920,18 @@ Respond (1-2 sentences only):"""
             )
 
         except Exception as e:
+            from engine.telemetry import log_event
+            log_event(
+                source="dispatcher",
+                raw_transcript=raw_input[:200],
+                zone_context="yellow",
+                inferred={"error": str(e), "error_type": type(e).__name__,
+                          "handler": "general_chat", "fallback": True, "stage": "handler_error"}
+            )
             # Fallback response if LLM fails - use persona name
             fallback_msg = f"{persona.name} here. What do you need?"
             return DispatchResult(
-                success=True,
+                success=True,  # Still success - we have a usable response
                 message=fallback_msg,
                 data={
                     "type": "general_chat",

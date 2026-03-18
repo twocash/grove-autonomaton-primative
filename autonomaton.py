@@ -123,6 +123,7 @@ def generate_welcome_briefing() -> str:
     from engine.profile import get_skills_dir, get_dock_dir
     from engine.config_loader import get_persona
     from engine.llm_client import call_llm
+    from engine.telemetry import log_event
 
     # Load the welcome card prompt template
     skill_prompt_path = get_skills_dir() / "welcome-card" / "prompt.md"
@@ -131,7 +132,13 @@ def generate_welcome_briefing() -> str:
 
     try:
         skill_prompt = skill_prompt_path.read_text(encoding="utf-8")
-    except Exception:
+    except Exception as e:
+        log_event(
+            source="welcome_briefing",
+            raw_transcript=str(skill_prompt_path),
+            zone_context="yellow",
+            inferred={"error": str(e), "error_type": type(e).__name__, "stage": "prompt_load"}
+        )
         return ""
 
     # Load dock context for the briefing
@@ -144,7 +151,13 @@ def generate_welcome_briefing() -> str:
             try:
                 content = filepath.read_text(encoding="utf-8")
                 dock_context_parts.append(f"--- {filename} ---\n{content}")
-            except Exception:
+            except Exception as e:
+                log_event(
+                    source="welcome_briefing",
+                    raw_transcript=str(filepath),
+                    zone_context="yellow",
+                    inferred={"error": str(e), "error_type": type(e).__name__, "stage": "dock_context", "file": str(filepath)}
+                )
                 continue
 
     if not dock_context_parts:
@@ -178,7 +191,13 @@ Generate the welcome card now:"""
             intent="welcome_card"
         )
         return response.strip()
-    except Exception:
+    except Exception as e:
+        log_event(
+            source="welcome_briefing",
+            raw_transcript="welcome_card_generation",
+            zone_context="yellow",
+            inferred={"error": str(e), "error_type": type(e).__name__, "stage": "llm_generation"}
+        )
         return ""
 
 
@@ -445,13 +464,9 @@ def main():
             print(f"  {c.WHITE}{briefing}{c.RESET}")
             print()
         else:
-            # Fallback: context-aware cold start
-            from engine.telemetry import read_recent_events
-            recent_events = read_recent_events(limit=1)
-            if not recent_events:
-                print(f"  {c.GREEN}Welcome.{c.RESET} Type {c.CYAN}session zero{c.RESET} to begin, or {c.CYAN}help{c.RESET} for the operator guide.")
-            else:
-                print(f"  {c.DIM}Ready.{c.RESET}")
+            # Briefing failed — Jidoka: surface the failure, don't hide it
+            print(f"  {c.YELLOW}[JIDOKA]{c.RESET} Welcome briefing unavailable — check telemetry for details.")
+            print(f"  {c.DIM}Type {c.CYAN}help{c.RESET} for the operator guide, or start with what's on your mind.{c.RESET}")
             print()
     else:
         print(f"  {c.DIM}Ready.{c.RESET}")

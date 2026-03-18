@@ -66,6 +66,21 @@ CONSTRAINTS (you MUST follow these):
 _persona_cache: Optional[PersonaConfig] = None
 
 
+def _log_config_error(error: Exception, config_file: str, stage: str) -> None:
+    """Log config load errors to telemetry (handles circular import)."""
+    try:
+        from engine.telemetry import log_event
+        log_event(
+            source="config_loader",
+            raw_transcript=config_file,
+            zone_context="yellow",
+            inferred={"error": str(error), "error_type": type(error).__name__,
+                      "config_file": config_file, "stage": stage, "fallback": "defaults"}
+        )
+    except ImportError:
+        pass  # Telemetry not available during early bootstrap
+
+
 def load_persona() -> PersonaConfig:
     """
     Load persona.yaml from the active profile.
@@ -80,8 +95,8 @@ def load_persona() -> PersonaConfig:
 
     try:
         config_dir = get_config_dir()
-    except RuntimeError:
-        # No profile set - return defaults
+    except RuntimeError as e:
+        _log_config_error(e, "persona.yaml", "profile_resolution")
         return PersonaConfig()
 
     persona_path = config_dir / "persona.yaml"
@@ -93,7 +108,8 @@ def load_persona() -> PersonaConfig:
     try:
         with open(persona_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
-    except Exception:
+    except Exception as e:
+        _log_config_error(e, "persona.yaml", "yaml_parse")
         _persona_cache = PersonaConfig()
         return _persona_cache
 

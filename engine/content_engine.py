@@ -204,10 +204,16 @@ Your response should be the final draft text only, no explanations or metadata."
                     )
                     drafts.append(draft)
 
-                except Exception:
-                    # LLM failure - skip this draft but continue
-                    # Digital Jidoka: Log error, don't crash
-                    continue
+                except Exception as e:
+                    from engine.telemetry import log_event
+                    log_event(
+                        source="content_engine",
+                        raw_transcript=f"seed:{seed.name} platform:{platform}",
+                        zone_context="yellow",
+                        inferred={"error": str(e), "error_type": type(e).__name__,
+                                  "seed": seed.name, "platform": platform, "stage": "compilation_error"}
+                    )
+                    continue  # Skip this draft but continue batch
 
         return drafts
 

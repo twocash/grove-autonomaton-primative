@@ -375,8 +375,8 @@ JSON:"""
                 raw_transcript=user_input[:200],
                 zone_context="classification",
                 inferred={
-                    "classification_tier": 1,
-                    "model": "claude-haiku",
+                    "classification_tier": 2,
+                    "model": "claude-sonnet",
                     "latency_ms": latency_ms,
                     "input_text": user_input,
                     "output": classification
