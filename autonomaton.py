@@ -89,11 +89,16 @@ def parse_args():
         action="store_true",
         help="Skip processing pending Kaizen queue at startup"
     )
+    parser.add_argument(
+        "--skip-welcome",
+        action="store_true",
+        help="Skip the welcome card briefing at startup"
+    )
     return parser.parse_args()
 
 
 def print_banner(profile: str, dock_info: str, cortex_info: str):
-    """Display startup banner with profile, dock, and cortex status."""
+    """Display startup banner with profile and dock status. Minimal."""
     c = Colors
     print()
     print(f"{c.CYAN}{'=' * 60}{c.RESET}")
@@ -103,16 +108,78 @@ def print_banner(profile: str, dock_info: str, cortex_info: str):
     print(f"  {c.DIM}{dock_info}{c.RESET}")
     print(f"  {c.DIM}{cortex_info}{c.RESET}")
     print(f"{c.CYAN}{'=' * 60}{c.RESET}")
-    print(f"  {c.BOLD}Commands:{c.RESET}")
-    print(f"    {c.WHITE}exit/quit{c.RESET}          - End session")
-    print(f"    {c.YELLOW}compile content{c.RESET}    - Compile content seeds")
-    print(f"    {c.RED}build skill [name]{c.RESET} - Build new skill")
-    print(f"    {c.GREEN}skills{c.RESET}             - List deployed skills")
-    print(f"    {c.GREEN}dock{c.RESET}               - Show dock status")
-    print(f"    {c.GREEN}queue{c.RESET}              - Show pending Kaizen items")
-    print(f"    {c.DIM}verbose{c.RESET}            - Toggle verbose mode")
-    print(f"{c.CYAN}{'=' * 60}{c.RESET}")
     print()
+
+
+def generate_welcome_briefing() -> str:
+    """
+    Generate a contextual welcome briefing from the Chief of Staff.
+
+    Reads the welcome-card skill prompt, dock context, and persona
+    to produce a warm, specific opening that orients the operator.
+
+    Returns the briefing text, or a fallback message on failure.
+    """
+    from engine.profile import get_skills_dir, get_dock_dir
+    from engine.config_loader import get_persona
+    from engine.llm_client import call_llm
+
+    # Load the welcome card prompt template
+    skill_prompt_path = get_skills_dir() / "welcome-card" / "prompt.md"
+    if not skill_prompt_path.exists():
+        return ""
+
+    try:
+        skill_prompt = skill_prompt_path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+    # Load dock context for the briefing
+    dock_dir = get_dock_dir()
+    dock_context_parts = []
+
+    for filename in ["seasonal-context.md", "goals.md", "content-strategy.md"]:
+        filepath = dock_dir / filename
+        if filepath.exists():
+            try:
+                content = filepath.read_text(encoding="utf-8")
+                dock_context_parts.append(f"--- {filename} ---\n{content}")
+            except Exception:
+                continue
+
+    if not dock_context_parts:
+        dock_context = "[No dock context loaded yet.]"
+    else:
+        dock_context = "\n\n".join(dock_context_parts)
+
+    # Build persona system prompt
+    persona = get_persona()
+    system_prompt = persona.build_system_prompt(
+        "You are generating a startup welcome briefing. "
+        "Read the skill instructions carefully and follow them exactly."
+    )
+
+    # Build the user prompt
+    prompt = f"""{skill_prompt}
+
+---
+
+DOCK CONTEXT (use this to generate a specific, timely greeting):
+
+{dock_context}
+
+Generate the welcome card now:"""
+
+    try:
+        response = call_llm(
+            prompt=prompt,
+            system=system_prompt,
+            tier=1,  # Haiku for speed
+            intent="welcome_card"
+        )
+        return response.strip()
+    except Exception:
+        return ""
 
 
 def process_pending_queue() -> int:
@@ -371,19 +438,23 @@ def main():
 
     c = Colors
 
-    # Dynamic greeting based on telemetry history
-    from engine.telemetry import read_recent_events
-    recent_events = read_recent_events(limit=1)
-
-    if not recent_events:
-        # First Boot - welcoming message for new users
-        print(f"  {c.GREEN}System initialized.{c.RESET} Welcome to your sovereign cognitive engine.")
-        print(f"  Type {c.CYAN}session zero{c.RESET} to begin your configuration interview,")
-        print(f"  or type {c.CYAN}help{c.RESET} to read the operator guide.")
-        print()
+    # Welcome Briefing (replaces cold command list)
+    if not args.skip_welcome:
+        briefing = generate_welcome_briefing()
+        if briefing:
+            print(f"  {c.WHITE}{briefing}{c.RESET}")
+            print()
+        else:
+            # Fallback: context-aware cold start
+            from engine.telemetry import read_recent_events
+            recent_events = read_recent_events(limit=1)
+            if not recent_events:
+                print(f"  {c.GREEN}Welcome.{c.RESET} Type {c.CYAN}session zero{c.RESET} to begin, or {c.CYAN}help{c.RESET} for the operator guide.")
+            else:
+                print(f"  {c.DIM}Ready.{c.RESET}")
+            print()
     else:
-        # Routine Boot - crisp operational readiness
-        print(f"  {c.DIM}Engine online. Awaiting telemetry...{c.RESET}")
+        print(f"  {c.DIM}Ready.{c.RESET}")
         print()
 
     while True:

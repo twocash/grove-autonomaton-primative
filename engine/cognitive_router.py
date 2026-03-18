@@ -354,14 +354,13 @@ JSON:"""
 
             # Parse JSON response
             try:
-                # Clean up response - extract JSON if wrapped in markdown
+                # Robust JSON extraction — find JSON object regardless of wrapping
+                # Handles: clean JSON, markdown code blocks, prose preamble, etc.
                 json_str = response.strip()
-                if json_str.startswith("```"):
-                    # Remove markdown code blocks
-                    lines = json_str.split("\n")
-                    json_lines = [l for l in lines if not l.startswith("```")]
-                    json_str = "\n".join(json_lines)
-
+                start_idx = json_str.find('{')
+                end_idx = json_str.rfind('}')
+                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                    json_str = json_str[start_idx:end_idx + 1]
                 classification = json.loads(json_str)
             except json.JSONDecodeError:
                 # Fallback: try to extract just the intent

@@ -1,0 +1,25 @@
+# welcome-card skill
+name: "Welcome Card"
+description: "Generate a warm, contextual startup briefing when the system boots"
+version: "1.0"
+tier: 1
+zone: green
+domain: system
+intent_type: informational
+
+triggers: []  # Not triggered by user input — called at startup by the REPL
+
+inputs:
+  - seasonal-context (dock)
+  - goals (dock)
+  - persona (config)
+
+outputs:
+  - type: welcome_briefing
+    format: plain_text
+    destination: terminal_display
+
+telemetry_exhaust:
+  - Startup frequency (how often the operator opens the system)
+  - Time-of-day patterns (morning vs evening usage)
+  - Which dock context gets referenced (what the system thinks is most important)
