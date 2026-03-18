@@ -312,43 +312,211 @@ class InvariantPipeline:
 
     def _handle_clarification_jidoka(self) -> None:
         """
-        Handle ambiguous input by asking user to clarify their intent.
+        Handle ambiguous input with diagnostic + smart clarification.
 
-        Sprint 8: Instead of blanket yellow approval for unknown intents,
-        present options and let the user choose what they want to do.
+        Tier A: Show LLM's best guess with confidence
+        Tier B: Generate context-aware options if user rejects
         """
         from engine.cognitive_router import get_clarification_options, resolve_clarification
         from engine.ux import ask_jidoka
+        from engine.telemetry import log_event
 
-        options = get_clarification_options()
+        routing_info = self.context.entities.get("routing", {})
+        llm_metadata = routing_info.get("llm_metadata", {})
+        reasoning = llm_metadata.get("reasoning", "")
+        confidence = routing_info.get("confidence", 0.0)
 
-        # Present clarification options to user
-        # Note: ask_jidoka will sys.exit(0) on Ctrl+C, so no None handling needed
-        choice = ask_jidoka(
-            context_message="I'm not sure what you'd like to do. What were you looking for?",
-            options=options
-        )
+        # Tier A: Diagnostic — show LLM's best guess if available
+        if reasoning and confidence > 0.3:
+            options = {
+                "1": f"Yes — {reasoning[:60]}",
+                "2": "No, show me what I can do",
+                "3": "I'll rephrase"
+            }
+            choice = ask_jidoka(
+                context_message=f"I wasn't confident enough to act on that.\n"
+                              f"Best guess: \"{self.context.intent}\" ({confidence:.0%} confidence)",
+                options=options
+            )
 
-        # Resolve the clarification to a new routing result
-        resolved = resolve_clarification(choice, self.context.raw_input)
+            if choice == "1":
+                # User confirmed LLM's guess — proceed
+                self.context.approved = True
+                return
+            elif choice == "3":
+                # User wants to rephrase
+                self.context.approved = False
+                self.context.result = {
+                    "status": "cancelled",
+                    "message": "Go ahead — I'm listening."
+                }
+                return
+            # choice == "2" falls through to Tier B
 
-        # Update context with resolved routing
-        self.context.intent = resolved.intent
-        self.context.domain = resolved.domain
-        self.context.zone = resolved.zone
-        self.context.entities["routing"] = {
-            "tier": resolved.tier,
-            "confidence": resolved.confidence,
-            "handler": resolved.handler,
-            "handler_args": resolved.handler_args or {},
-            "extracted_args": resolved.extracted_args or {},
-            "intent_type": resolved.intent_type,
-            "action_required": resolved.action_required,
-            "llm_metadata": resolved.llm_metadata or {}
-        }
+        # Tier B: Smart options via LLM
+        smart_options = self._generate_smart_clarification(self.context.raw_input)
 
-        # Auto-approve since user explicitly chose
-        self.context.approved = True
+        if smart_options:
+            choice = ask_jidoka(
+                context_message="Here's what I can help with based on your input:",
+                options=smart_options["options"]
+            )
+
+            resolver = smart_options["resolvers"].get(choice)
+            if resolver is None:
+                # User chose "Something else"
+                self.context.approved = False
+                self.context.result = {
+                    "status": "cancelled",
+                    "message": "Go ahead — I'm listening."
+                }
+                return
+
+            # Update context with resolved routing
+            self.context.intent = resolver["intent"]
+            self.context.domain = resolver["domain"]
+            self.context.zone = resolver["zone"]
+            self.context.entities["routing"]["handler"] = resolver.get("handler")
+            self.context.entities["routing"]["handler_args"] = resolver.get("handler_args", {})
+            self.context.entities["routing"]["intent_type"] = resolver.get("intent_type", "actionable")
+            self.context.entities["routing"]["action_required"] = resolver.get("action_required", True)
+            self.context.approved = True
+        else:
+            # Tier B failed — log and fall back to generic options
+            log_event(
+                source="clarification_jidoka",
+                raw_transcript=self.context.raw_input[:200],
+                zone_context="yellow",
+                inferred={"fallback": "generic_options", "stage": "smart_clarification_failed"}
+            )
+            # Use existing generic options as last resort
+            options = get_clarification_options()
+            choice = ask_jidoka(
+                context_message="I'm not sure what you'd like to do. What were you looking for?",
+                options=options
+            )
+            resolved = resolve_clarification(choice, self.context.raw_input)
+
+            self.context.intent = resolved.intent
+            self.context.domain = resolved.domain
+            self.context.zone = resolved.zone
+            self.context.entities["routing"] = {
+                "tier": resolved.tier,
+                "confidence": resolved.confidence,
+                "handler": resolved.handler,
+                "handler_args": resolved.handler_args or {},
+                "extracted_args": resolved.extracted_args or {},
+                "intent_type": resolved.intent_type,
+                "action_required": resolved.action_required,
+                "llm_metadata": resolved.llm_metadata or {}
+            }
+            self.context.approved = True
+
+    def _generate_smart_clarification(self, user_input: str) -> dict | None:
+        """
+        Generate context-aware clarification options using Tier 2 LLM.
+
+        Returns dict with "options" and "resolvers", or None on failure.
+        """
+        from engine.llm_client import call_llm
+        from engine.cognitive_router import get_router
+        from engine.dock import query_dock
+        from engine.telemetry import log_event
+        import json
+
+        router = get_router()
+
+        # Build intent menu for LLM
+        intent_descriptions = []
+        for intent_name, route_config in router.routes.items():
+            desc = route_config.get("description", intent_name)
+            intent_descriptions.append(f"- {intent_name}: {desc[:80]}")
+
+        # Get brief dock context
+        dock_summary = query_dock(user_input, top_k=1)
+
+        prompt = f"""The user said: "{user_input}"
+
+The system couldn't confidently classify this. Generate exactly 3 options the user might have meant.
+
+Available intents:
+{chr(10).join(intent_descriptions[:15])}
+
+Current context:
+{dock_summary[:400] if dock_summary else "No dock context loaded."}
+
+Return ONLY valid JSON:
+{{
+  "1": {{"label": "<5-10 word action description>", "intent": "<intent_name>"}},
+  "2": {{"label": "<5-10 word action description>", "intent": "<intent_name>"}},
+  "3": {{"label": "<5-10 word action description>", "intent": "<intent_name>"}}
+}}
+
+Rules:
+- Labels should be actions: "Review today's priorities", "Check content pipeline"
+- Each must map to a real intent from the list
+- If conversational, include general_chat as one option
+
+JSON:"""
+
+        try:
+            response = call_llm(prompt=prompt, tier=2, intent="smart_clarification")
+
+            # Parse JSON
+            json_str = response.strip()
+            start_idx = json_str.find('{')
+            end_idx = json_str.rfind('}')
+            if start_idx != -1 and end_idx != -1:
+                json_str = json_str[start_idx:end_idx + 1]
+            parsed = json.loads(json_str)
+
+            options = {}
+            resolvers = {}
+
+            for key in ["1", "2", "3"]:
+                if key in parsed:
+                    opt = parsed[key]
+                    options[key] = opt["label"]
+                    intent_name = opt["intent"]
+                    if intent_name in router.routes:
+                        route = router.routes[intent_name]
+                        resolvers[key] = {
+                            "intent": intent_name,
+                            "domain": route.get("domain", "general"),
+                            "zone": route.get("zone", "green"),
+                            "handler": route.get("handler"),
+                            "handler_args": route.get("handler_args", {}),
+                            "intent_type": route.get("intent_type", "actionable"),
+                            "action_required": route.get("intent_type") != "conversational"
+                        }
+                    else:
+                        resolvers[key] = {
+                            "intent": "general_chat",
+                            "domain": "system",
+                            "zone": "green",
+                            "handler": "general_chat",
+                            "handler_args": {},
+                            "intent_type": "conversational",
+                            "action_required": False
+                        }
+
+            # Add "something else" option
+            options["4"] = "Something else — I'll rephrase"
+            resolvers["4"] = None
+
+            if len(options) < 2:
+                return None
+
+            return {"options": options, "resolvers": resolvers}
+
+        except Exception as e:
+            log_event(
+                source="smart_clarification",
+                raw_transcript=user_input[:200],
+                zone_context="yellow",
+                inferred={"error": str(e), "error_type": type(e).__name__, "stage": "generation_error"}
+            )
+            return None
 
     def _compute_effective_zone(self) -> str:
         """
