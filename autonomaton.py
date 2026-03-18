@@ -371,6 +371,21 @@ def main():
 
     c = Colors
 
+    # Dynamic greeting based on telemetry history
+    from engine.telemetry import read_recent_events
+    recent_events = read_recent_events(limit=1)
+
+    if not recent_events:
+        # First Boot - welcoming message for new users
+        print(f"  {c.GREEN}System initialized.{c.RESET} Welcome to your sovereign cognitive engine.")
+        print(f"  Type {c.CYAN}session zero{c.RESET} to begin your configuration interview,")
+        print(f"  or type {c.CYAN}help{c.RESET} to read the operator guide.")
+        print()
+    else:
+        # Routine Boot - crisp operational readiness
+        print(f"  {c.DIM}Engine online. Awaiting telemetry...{c.RESET}")
+        print()
+
     while True:
         try:
             # Read user input with colored prompt
