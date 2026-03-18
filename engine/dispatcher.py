@@ -58,6 +58,7 @@ class Dispatcher:
             "mcp_calendar": self._handle_mcp_calendar,
             "mcp_gmail": self._handle_mcp_gmail,
             "skill_executor": self._handle_skill_executor,
+            "cortex_batch": self._handle_cortex_batch,
         }
 
     def dispatch(
@@ -587,6 +588,210 @@ Return ONLY valid JSON, no explanations:"""
                 message=f"Email extraction failed: {e}",
                 data={"type": "mcp_action", "error": str(e)}
             )
+
+    def _handle_cortex_batch(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Handle Cortex batch analysis operations (Lenses 3, 4, 5).
+
+        Sprint 5: Evolutionary Cortex - batch-cycle analytical processes
+        that analyze telemetry to propose improvements, demotions, and new skills.
+
+        Yellow Zone - proposals require approval before implementation.
+        """
+        import json
+        from engine.cortex import Cortex
+        from engine.profile import get_telemetry_path, get_dock_dir
+
+        lens = routing_result.handler_args.get("lens", "unknown")
+        cortex = Cortex()
+
+        if lens == "pattern_analysis":
+            # Lens 3: Pattern Analysis
+            telemetry_events = self._load_recent_telemetry(limit=50)
+
+            result = cortex.run_pattern_analysis(telemetry_events)
+
+            patterns_count = len(result.get("patterns_detected", []))
+            proposals_count = len(result.get("kaizen_proposals", []))
+
+            return DispatchResult(
+                success=True,
+                message=f"Pattern analysis complete: {patterns_count} patterns, {proposals_count} proposals",
+                data={
+                    "type": "cortex_pattern_analysis",
+                    "lens": "pattern_analysis",
+                    "patterns_detected": result.get("patterns_detected", []),
+                    "kaizen_proposals": result.get("kaizen_proposals", [])
+                },
+                requires_approval=proposals_count > 0,
+                approval_context=self._format_kaizen_proposals(result.get("kaizen_proposals", []))
+            )
+
+        elif lens == "ratchet_analysis":
+            # Lens 4: Ratchet Analysis
+            llm_telemetry = self._load_llm_telemetry(limit=100)
+            routing_patterns = self._aggregate_routing_patterns()
+
+            result = cortex.run_ratchet_analysis(llm_telemetry, routing_patterns)
+
+            proposals_count = len(result.get("ratchet_proposals", []))
+            savings = result.get("total_potential_savings", "$0.00/month")
+
+            return DispatchResult(
+                success=True,
+                message=f"Ratchet analysis complete: {proposals_count} demotions proposed, {savings} potential savings",
+                data={
+                    "type": "cortex_ratchet_analysis",
+                    "lens": "ratchet_analysis",
+                    "ratchet_proposals": result.get("ratchet_proposals", []),
+                    "total_potential_savings": savings
+                },
+                requires_approval=proposals_count > 0,
+                approval_context=self._format_ratchet_proposals(result.get("ratchet_proposals", []))
+            )
+
+        elif lens == "evolution_analysis":
+            # Lens 5: Evolution / Personal Product Manager
+            telemetry_events = self._load_recent_telemetry(limit=50)
+            exhaust_board = self._load_exhaust_board()
+
+            result = cortex.run_evolution_analysis(telemetry_events, exhaust_board)
+
+            proposals_count = len(result.get("evolution_proposals", []))
+
+            return DispatchResult(
+                success=True,
+                message=f"Evolution analysis complete: {proposals_count} skill proposals",
+                data={
+                    "type": "cortex_evolution_analysis",
+                    "lens": "evolution_analysis",
+                    "evolution_proposals": result.get("evolution_proposals", [])
+                },
+                requires_approval=proposals_count > 0,
+                approval_context=self._format_evolution_proposals(result.get("evolution_proposals", []))
+            )
+
+        else:
+            return DispatchResult(
+                success=False,
+                message=f"Unknown cortex lens: {lens}",
+                data={"type": "cortex_error", "error": "unknown_lens"}
+            )
+
+    def _load_recent_telemetry(self, limit: int = 50) -> list[dict]:
+        """Load recent telemetry events for Cortex analysis."""
+        import json
+        from engine.profile import get_telemetry_path
+
+        telemetry_path = get_telemetry_path()
+        if not telemetry_path.exists():
+            return []
+
+        events = []
+        try:
+            with open(telemetry_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            events.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+        except Exception:
+            return []
+
+        return events[-limit:]
+
+    def _load_llm_telemetry(self, limit: int = 100) -> list[dict]:
+        """Load LLM-specific telemetry for ratchet analysis."""
+        # Filter telemetry for LLM calls
+        all_events = self._load_recent_telemetry(limit=limit * 2)
+        return [
+            e for e in all_events
+            if e.get("intent", "").startswith(("cortex_", "mcp_", "skill_"))
+            or "model" in e
+        ][-limit:]
+
+    def _aggregate_routing_patterns(self) -> list[dict]:
+        """Aggregate routing patterns for ratchet analysis."""
+        from collections import defaultdict
+
+        events = self._load_recent_telemetry(limit=500)
+
+        # Aggregate by intent
+        intent_stats = defaultdict(lambda: {"count": 0, "confidences": []})
+        for event in events:
+            intent = event.get("intent", "unknown")
+            confidence = event.get("confidence", 0.5)
+            intent_stats[intent]["count"] += 1
+            intent_stats[intent]["confidences"].append(confidence)
+
+        # Build aggregated patterns
+        patterns = []
+        for intent, stats in intent_stats.items():
+            if stats["count"] > 0:
+                avg_confidence = sum(stats["confidences"]) / len(stats["confidences"])
+                patterns.append({
+                    "intent": intent,
+                    "confidence": round(avg_confidence, 2),
+                    "count": stats["count"]
+                })
+
+        return sorted(patterns, key=lambda x: x["count"], reverse=True)
+
+    def _load_exhaust_board(self) -> str:
+        """Load the exhaust board content."""
+        from engine.profile import get_dock_dir
+
+        dock_dir = get_dock_dir()
+        exhaust_path = dock_dir / "system" / "exhaust-board.md"
+
+        if exhaust_path.exists():
+            try:
+                return exhaust_path.read_text(encoding="utf-8")
+            except Exception:
+                return "# Exhaust Board\n\nNo entries yet."
+        return "# Exhaust Board\n\nNo entries yet."
+
+    def _format_kaizen_proposals(self, proposals: list[dict]) -> str:
+        """Format Kaizen proposals for approval display."""
+        if not proposals:
+            return "No Kaizen proposals."
+
+        lines = ["KAIZEN PROPOSALS:"]
+        for p in proposals:
+            lines.append(f"  [{p.get('priority', '?').upper()}] {p.get('proposal', 'Unknown')}")
+            lines.append(f"        Trigger: {p.get('trigger', '?')}")
+        return "\n".join(lines)
+
+    def _format_ratchet_proposals(self, proposals: list[dict]) -> str:
+        """Format Ratchet proposals for approval display."""
+        if not proposals:
+            return "No Ratchet proposals."
+
+        lines = ["RATCHET DEMOTIONS:"]
+        for p in proposals:
+            lines.append(f"  [{p.get('intent', '?')}] {p.get('proposed_action', 'Unknown')}")
+            lines.append(f"        Confidence: {p.get('confidence', 0):.0%}, Samples: {p.get('sample_count', 0)}")
+        return "\n".join(lines)
+
+    def _format_evolution_proposals(self, proposals: list[dict]) -> str:
+        """Format Evolution proposals for approval display."""
+        if not proposals:
+            return "No Evolution proposals."
+
+        lines = ["SKILL PROPOSALS (Pit Crew Work Orders):"]
+        for p in proposals:
+            lines.append(f"  [{p.get('skill_name', '?')}] {p.get('description', 'Unknown')}")
+            spec = p.get('spec', {})
+            lines.append(f"        Zone: {spec.get('zone', '?')}, Tier: {spec.get('tier', '?')}")
+            if p.get('pit_crew_ready'):
+                lines.append("        Status: READY FOR PIT CREW")
+        return "\n".join(lines)
 
 
 # =========================================================================
