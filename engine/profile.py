@@ -45,6 +45,13 @@ def set_profile(profile_name: str, repo_root: Optional[Path] = None) -> None:
     # Ensure profile directory exists
     _profile_base_path.mkdir(parents=True, exist_ok=True)
 
+    # Reset config caches when profile changes
+    try:
+        from engine.config_loader import reset_persona_cache
+        reset_persona_cache()
+    except ImportError:
+        pass  # config_loader not available yet
+
 
 def get_profile() -> str:
     """Get the active profile name."""

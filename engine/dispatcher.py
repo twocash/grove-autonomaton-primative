@@ -875,11 +875,17 @@ Return ONLY valid JSON, no explanations:"""
         """
         Handle conversational greetings and basic chat (Sprint 7.5).
 
-        Green Zone - Chief of Staff persona responds warmly and professionally.
+        Green Zone - Persona responds according to config/persona.yaml.
         Uses Tier 1 (Haiku) for low latency responses.
+
+        Implements Invariant #2: Config Over Code - persona loaded from YAML.
         """
         from engine.llm_client import call_llm
         from engine.profile import get_dock_dir
+        from engine.config_loader import get_persona
+
+        # Load persona from config
+        persona = get_persona()
 
         # Load dock context for mission awareness
         dock_dir = get_dock_dir()
@@ -904,18 +910,18 @@ Return ONLY valid JSON, no explanations:"""
             except Exception:
                 pass
 
-        system_prompt = """You are the Autonomaton engine, acting as a confident, strategic Chief of Staff.
-The user is just saying hello or asking a basic question.
-Respond briefly (1-2 sentences), warmly, and professionally.
-If there is mission context provided, you may acknowledge it naturally, but do not take any system actions.
-Be warm but purposeful - you are here to serve the mission."""
+        # Build system prompt from persona config
+        task_context = """The user is just saying hello or asking a basic question.
+If there is mission context provided, you may acknowledge it naturally, but do not take any system actions."""
+
+        system_prompt = persona.build_system_prompt(task_context)
 
         prompt = f"""User message: {raw_input}
 
 Mission Context (if available):
 {mission_context if mission_context else "No specific mission loaded yet."}
 
-Respond as the Chief of Staff (1-2 sentences only):"""
+Respond (1-2 sentences only):"""
 
         try:
             response = call_llm(
@@ -935,13 +941,14 @@ Respond as the Chief of Staff (1-2 sentences only):"""
             )
 
         except Exception as e:
-            # Fallback response if LLM fails
+            # Fallback response if LLM fails - use persona name
+            fallback_msg = f"{persona.name} here. What do you need?"
             return DispatchResult(
                 success=True,
-                message="Hello! I'm your Autonomaton, ready to serve. How can I help?",
+                message=fallback_msg,
                 data={
                     "type": "general_chat",
-                    "response": "Hello! I'm your Autonomaton, ready to serve. How can I help?",
+                    "response": fallback_msg,
                     "fallback": True
                 }
             )

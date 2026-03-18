@@ -212,7 +212,9 @@ def translate_action_for_approval(payload: dict) -> str:
     Translate a raw action payload into conversational language.
 
     Uses Tier 1 (Haiku) LLM for low latency.
-    Chief of Staff persona explains what the system wants to do.
+    Persona from config/persona.yaml explains what the system wants to do.
+
+    Implements Invariant #2: Config Over Code - persona loaded from YAML.
 
     Args:
         payload: Raw action payload with intent, handler, handler_args, etc.
@@ -222,14 +224,18 @@ def translate_action_for_approval(payload: dict) -> str:
     """
     import json
     from engine.llm_client import call_llm
+    from engine.config_loader import get_persona
 
+    persona = get_persona()
     payload_str = json.dumps(payload, indent=2, default=str)
 
-    system_prompt = """You are the Autonomaton engine acting as a Chief of Staff.
-The system has halted to ask the boss for approval.
+    # Build system prompt from persona config with Jidoka-specific context
+    task_context = """The system has halted to ask the boss for approval.
 Read this technical payload and explain to the boss in 1-2 conversational sentences
 what the system wants to do and why it needs permission.
-Be clear, concise, and professional. Do not include technical jargon."""
+Be clear, concise, and avoid technical jargon."""
+
+    system_prompt = persona.build_system_prompt(task_context)
 
     prompt = f"""Technical payload requiring approval:
 
@@ -260,12 +266,14 @@ def format_jidoka_display(conversational: str, raw_payload: dict) -> str:
         Formatted string for display
     """
     import json
+    from engine.config_loader import get_persona
 
+    persona = get_persona()
     payload_str = json.dumps(raw_payload, indent=2, default=str)
 
     output_lines = [
         "",
-        f"{_c.BOLD}Chief of Staff:{_c.RESET}",
+        f"{_c.BOLD}{persona.name}:{_c.RESET}",
         f"  {conversational}",
         "",
         f"{_c.DIM}─── RAW SYSTEM PAYLOAD ───{_c.RESET}",
