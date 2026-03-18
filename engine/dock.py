@@ -179,7 +179,11 @@ class LocalDock:
         """
         Extract meaningful keywords from text.
 
-        Filters out common stopwords and short words.
+        Filters out common stopwords, short words, and conversational words.
+
+        Sprint 8: Added conversational stopwords as defense-in-depth.
+        Even if conversational input accidentally reaches dock.query(),
+        these words won't trigger irrelevant context retrieval.
         """
         # Common stopwords to filter
         stopwords = {
@@ -200,6 +204,31 @@ class LocalDock:
             'her', 'it', 'its', 'they', 'them', 'their', 'show', 'get',
             'want', 'help', 'please', 'tell', 'give'
         }
+
+        # Sprint 8: Conversational stopwords (defense-in-depth)
+        # These words indicate greetings/small talk and should not trigger
+        # dock retrieval even if conversational input reaches this function.
+        conversational_stopwords = {
+            # Greetings
+            'hello', 'hi', 'hey', 'howdy', 'greetings', 'hola',
+            'morning', 'afternoon', 'evening', 'night',
+            # Acknowledgments
+            'thanks', 'thank', 'ok', 'okay', 'sure', 'alright', 'yep',
+            'yeah', 'yes', 'no', 'nope', 'got', 'cool', 'great', 'good',
+            'nice', 'awesome', 'perfect', 'excellent', 'fine', 'right',
+            # Farewells
+            'bye', 'goodbye', 'later', 'see', 'talk', 'soon', 'cya',
+            # Pleasantries
+            'how', 'doing', 'going', 'feeling', 'today', 'hope',
+            'glad', 'happy', 'welcome', 'pleasure', 'meet',
+            # Conversational fillers
+            'well', 'anyway', 'actually', 'basically', 'literally',
+            'honestly', 'really', 'pretty', 'quite', 'kind',
+            # Commands that don't need dock
+            'start', 'begin', 'lets', 'ready', 'go', 'started'
+        }
+
+        stopwords.update(conversational_stopwords)
 
         # Tokenize and filter
         words = re.findall(r'\b[a-zA-Z]+\b', text.lower())

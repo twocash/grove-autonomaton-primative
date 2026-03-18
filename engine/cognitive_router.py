@@ -8,9 +8,16 @@ Implements two-tier intent classification:
 Architectural Invariants Enforced:
 - #2 Config Over Code: Domain logic loaded from routing.config YAML
 - #3 Zone Governance: Every intent has declared zone from config
-- #4 Digital Jidoka: Unknown intents default to yellow zone (halt for approval)
+- #4 Digital Jidoka: Unknown intents trigger clarification, not blanket approval
+
+Sprint 8: Enriched LLM classification with structured output for Ratchet data.
+- LLM returns intent_type, action_required, entities, content_seeds, sentiment
+- Every LLM classification logged to telemetry for Ratchet analysis
+- Clarification Jidoka for truly ambiguous input (confidence < 0.5)
 """
 
+import json
+import time
 import yaml
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -25,6 +32,11 @@ class RoutingResult:
     Result of cognitive routing.
 
     Contains all information needed for pipeline governance and dispatch.
+
+    Sprint 8 additions:
+    - intent_type: conversational, informational, actionable
+    - action_required: Whether this needs execution (vs just conversation)
+    - llm_metadata: Rich extraction from LLM classification (entities, seeds, sentiment)
     """
     intent: str
     domain: str
@@ -34,6 +46,10 @@ class RoutingResult:
     handler: Optional[str] = None
     handler_args: dict = field(default_factory=dict)
     extracted_args: dict = field(default_factory=dict)
+    # Sprint 8: Enriched routing metadata
+    intent_type: str = "actionable"  # conversational, informational, actionable
+    action_required: bool = True  # False for conversational = skip approval UX
+    llm_metadata: dict = field(default_factory=dict)  # entities, content_seeds, sentiment
 
 
 class CognitiveRouter:
@@ -48,7 +64,8 @@ class CognitiveRouter:
     Tier 1 (LLM Escalation):
     - Activated when Tier 0 confidence < 0.7
     - Uses Haiku for cost efficiency
-    - Given list of valid intents to choose from
+    - Returns structured JSON with intent_type, action_required, entities, etc.
+    - Every call logged to telemetry for Ratchet analysis
 
     Matching Strategy:
     1. Exact match on keywords (confidence: 1.0)
@@ -56,21 +73,15 @@ class CognitiveRouter:
     3. Contains match (confidence: 0.5)
     4. LLM classification for low confidence inputs
 
-    Unknown inputs default to yellow zone per Digital Jidoka principle.
+    Unknown inputs with low confidence trigger clarification Jidoka.
     """
 
     # Confidence threshold for LLM escalation
     LLM_ESCALATION_THRESHOLD = 0.7
 
-    # Default result for unknown intents - MUST be yellow zone
-    DEFAULT_RESULT = RoutingResult(
-        intent="unknown",
-        domain="general",
-        zone="yellow",  # Invariant #4: Ambiguity requires human approval
-        tier=2,
-        confidence=0.0,
-        handler=None
-    )
+    # Confidence threshold for clarification Jidoka
+    # Below this, we ask the user what they want instead of guessing
+    CLARIFICATION_THRESHOLD = 0.5
 
     def __init__(self):
         self.routes: dict = {}
@@ -129,7 +140,7 @@ class CognitiveRouter:
 
         Returns:
             RoutingResult with intent, domain, zone, tier, confidence,
-            and handler information for dispatch.
+            handler information, intent_type, and action_required.
         """
         if not self._loaded:
             self.load_config()
@@ -139,7 +150,7 @@ class CognitiveRouter:
 
         normalized_input = user_input.lower().strip()
 
-        # Empty input defaults to unknown/yellow
+        # Empty input defaults to unknown
         if not normalized_input:
             return self._create_default_result()
 
@@ -196,6 +207,16 @@ class CognitiveRouter:
             route_config.get("extract_args", [])
         )
 
+        # Get intent_type from config, default based on zone
+        intent_type = route_config.get("intent_type")
+        if not intent_type:
+            # Infer from zone if not specified
+            zone = route_config.get("zone", "yellow")
+            intent_type = "actionable" if zone in ("yellow", "red") else "informational"
+
+        # action_required is False for conversational intents
+        action_required = intent_type != "conversational"
+
         return RoutingResult(
             intent=intent_name,
             domain=route_config.get("domain", "general"),
@@ -204,11 +225,19 @@ class CognitiveRouter:
             confidence=confidence,
             handler=route_config.get("handler"),
             handler_args=route_config.get("handler_args", {}),
-            extracted_args=extracted_args
+            extracted_args=extracted_args,
+            intent_type=intent_type,
+            action_required=action_required,
+            llm_metadata={}
         )
 
     def _create_default_result(self) -> RoutingResult:
-        """Create a fresh default result (unknown intent, yellow zone)."""
+        """
+        Create a default result for unknown intents.
+
+        Note: Unknown intents now trigger clarification Jidoka
+        instead of blanket yellow zone approval.
+        """
         return RoutingResult(
             intent="unknown",
             domain="general",
@@ -217,7 +246,10 @@ class CognitiveRouter:
             confidence=0.0,
             handler=None,
             handler_args={},
-            extracted_args={}
+            extracted_args={},
+            intent_type="actionable",
+            action_required=True,  # Will trigger clarification Jidoka
+            llm_metadata={}
         )
 
     def _extract_arguments(self, user_input: str, extract_specs: list) -> dict:
@@ -244,16 +276,15 @@ class CognitiveRouter:
 
         return extracted
 
-    # Intents that should ONLY match via keywords, not LLM escalation
-    # This protects Green Zone conversational fallbacks from being used
-    # as catch-alls for ambiguous input (would bypass Jidoka)
-    KEYWORD_ONLY_INTENTS = {"general_chat"}
-
     def _escalate_to_llm(self, user_input: str) -> Optional[RoutingResult]:
         """
-        Escalate to Tier 1 LLM for intent classification.
+        Escalate to Tier 1 LLM for structured intent classification.
 
-        Called when Tier 0 keyword matching has low confidence.
+        Sprint 8: Returns enriched structured JSON with:
+        - intent, intent_type, domain, confidence
+        - action_required, entities_mentioned, content_seeds, sentiment
+
+        Every classification is logged to telemetry for Ratchet analysis.
 
         Args:
             user_input: The ambiguous user input
@@ -263,41 +294,54 @@ class CognitiveRouter:
         """
         try:
             from engine.llm_client import call_llm
+            from engine.telemetry import log_event
         except ImportError:
-            # LLM client not available
             return None
 
-        # Build list of valid intents from config
-        # Exclude keyword-only intents (like general_chat) to prevent
-        # LLM from bypassing Jidoka by classifying unknowns as Green Zone
-        valid_intents = [
-            intent for intent in self.routes.keys()
-            if intent not in self.KEYWORD_ONLY_INTENTS
-        ]
+        # Build list of valid intents from config (ALL intents now, including general_chat)
+        valid_intents = list(self.routes.keys())
         if not valid_intents:
             return None
 
-        # Create classification prompt
+        # Create intent descriptions for LLM context
         intent_descriptions = []
         for intent_name, route_config in self.routes.items():
             desc = route_config.get("description", intent_name)
-            keywords = route_config.get("keywords", [])
-            keyword_str = ", ".join(keywords[:3]) if keywords else "none"
+            intent_type = route_config.get("intent_type", "actionable")
+            zone = route_config.get("zone", "yellow")
             intent_descriptions.append(
-                f"- {intent_name}: {desc} (keywords: {keyword_str})"
+                f"- {intent_name} (type: {intent_type}, zone: {zone}): {desc}"
             )
 
-        prompt = f"""Classify this user input into one of the following intents.
-Return ONLY the intent name, nothing else.
+        # Structured classification prompt
+        prompt = f"""Classify this user input and return a JSON object.
 
 Valid intents:
 {chr(10).join(intent_descriptions)}
 
-If the input doesn't clearly match any intent, respond with "unknown".
-
 User input: "{user_input}"
 
-Intent:"""
+Return ONLY valid JSON with these fields:
+{{
+  "intent": "<intent_name or 'unknown'>",
+  "intent_type": "<conversational|informational|actionable>",
+  "confidence": <0.0-1.0>,
+  "reasoning": "<brief explanation>",
+  "action_required": <true|false>,
+  "entities_mentioned": ["<any names, places, dates mentioned>"],
+  "content_seeds": ["<any quotable/notable phrases>"],
+  "sentiment": "<positive|neutral|negative>"
+}}
+
+Rules:
+- If it's a greeting, acknowledgment, or small talk → intent_type: "conversational", action_required: false
+- If it's asking about status or information → intent_type: "informational"
+- If it requires the system to DO something → intent_type: "actionable", action_required: true
+- If unclear, set intent to "unknown" and confidence below 0.5
+
+JSON:"""
+
+        start_time = time.time()
 
         try:
             response = call_llm(
@@ -306,10 +350,57 @@ Intent:"""
                 intent="intent_classification"
             )
 
-            # Parse response
-            classified_intent = response.strip().lower()
+            latency_ms = int((time.time() - start_time) * 1000)
 
-            # Validate against declared intents
+            # Parse JSON response
+            try:
+                # Clean up response - extract JSON if wrapped in markdown
+                json_str = response.strip()
+                if json_str.startswith("```"):
+                    # Remove markdown code blocks
+                    lines = json_str.split("\n")
+                    json_lines = [l for l in lines if not l.startswith("```")]
+                    json_str = "\n".join(json_lines)
+
+                classification = json.loads(json_str)
+            except json.JSONDecodeError:
+                # Fallback: try to extract just the intent
+                classified_intent = response.strip().lower()
+                if classified_intent in valid_intents:
+                    classification = {"intent": classified_intent, "confidence": 0.6}
+                else:
+                    classification = {"intent": "unknown", "confidence": 0.3}
+
+            # Log classification to telemetry for Ratchet
+            log_event(
+                source="cognitive_router",
+                raw_transcript=user_input[:200],
+                zone_context="classification",
+                inferred={
+                    "classification_tier": 1,
+                    "model": "claude-haiku",
+                    "latency_ms": latency_ms,
+                    "input_text": user_input,
+                    "output": classification
+                }
+            )
+
+            # Extract fields from classification
+            classified_intent = classification.get("intent", "unknown").lower()
+            confidence = float(classification.get("confidence", 0.5))
+            intent_type = classification.get("intent_type", "actionable")
+            action_required = classification.get("action_required", True)
+
+            # Build llm_metadata for downstream use
+            llm_metadata = {
+                "reasoning": classification.get("reasoning", ""),
+                "entities_mentioned": classification.get("entities_mentioned", []),
+                "content_seeds": classification.get("content_seeds", []),
+                "sentiment": classification.get("sentiment", "neutral"),
+                "classification_confidence": confidence
+            }
+
+            # Validate intent against declared routes
             if classified_intent in valid_intents:
                 route_config = self.routes[classified_intent]
                 return RoutingResult(
@@ -317,18 +408,130 @@ Intent:"""
                     domain=route_config.get("domain", "general"),
                     zone=route_config.get("zone", "yellow"),
                     tier=route_config.get("tier", 2),
-                    confidence=0.75,  # LLM classification confidence
+                    confidence=confidence,
                     handler=route_config.get("handler"),
                     handler_args=route_config.get("handler_args", {}),
-                    extracted_args={}
+                    extracted_args={},
+                    intent_type=intent_type,
+                    action_required=action_required,
+                    llm_metadata=llm_metadata
                 )
 
-            # LLM returned unknown or invalid intent
+            # LLM returned unknown - pass through metadata for clarification
+            return RoutingResult(
+                intent="unknown",
+                domain="general",
+                zone="yellow",
+                tier=2,
+                confidence=confidence,
+                handler=None,
+                handler_args={},
+                extracted_args={},
+                intent_type=intent_type,
+                action_required=action_required,
+                llm_metadata=llm_metadata
+            )
+
+        except Exception as e:
+            # Log failure
+            try:
+                log_event(
+                    source="cognitive_router",
+                    raw_transcript=user_input[:200],
+                    zone_context="classification_error",
+                    inferred={
+                        "error": str(e),
+                        "error_type": type(e).__name__
+                    }
+                )
+            except Exception:
+                pass
             return None
 
-        except Exception:
-            # LLM call failed - fall back to default behavior
-            return None
+
+# =========================================================================
+# Clarification Jidoka
+# =========================================================================
+
+def get_clarification_options() -> dict:
+    """
+    Get the standard clarification options for ambiguous input.
+
+    Returns options dict for ask_jidoka.
+    """
+    return {
+        "1": "Draft or compile content",
+        "2": "Schedule something",
+        "3": "Check on status/information",
+        "4": "Just chatting"
+    }
+
+
+def resolve_clarification(choice: str, original_input: str) -> RoutingResult:
+    """
+    Resolve a clarification choice to a RoutingResult.
+
+    Args:
+        choice: The user's choice ("1", "2", "3", or "4")
+        original_input: The original ambiguous input
+
+    Returns:
+        RoutingResult based on clarification
+    """
+    if choice == "1":
+        # Content work
+        return RoutingResult(
+            intent="content_draft",
+            domain="content",
+            zone="green",
+            tier=1,
+            confidence=1.0,
+            handler=None,
+            intent_type="actionable",
+            action_required=True,
+            llm_metadata={"clarified_from": original_input}
+        )
+    elif choice == "2":
+        # Scheduling
+        return RoutingResult(
+            intent="calendar_schedule",
+            domain="lessons",
+            zone="yellow",
+            tier=2,
+            confidence=1.0,
+            handler="mcp_calendar",
+            handler_args={"server": "google_calendar", "capability": "create_event"},
+            intent_type="actionable",
+            action_required=True,
+            llm_metadata={"clarified_from": original_input}
+        )
+    elif choice == "3":
+        # Status/information
+        return RoutingResult(
+            intent="dock_status",
+            domain="system",
+            zone="green",
+            tier=1,
+            confidence=1.0,
+            handler="status_display",
+            handler_args={"display_type": "dock"},
+            intent_type="informational",
+            action_required=False,
+            llm_metadata={"clarified_from": original_input}
+        )
+    else:
+        # Just chatting (default)
+        return RoutingResult(
+            intent="general_chat",
+            domain="system",
+            zone="green",
+            tier=1,
+            confidence=1.0,
+            handler="general_chat",
+            intent_type="conversational",
+            action_required=False,
+            llm_metadata={"clarified_from": original_input}
+        )
 
 
 # =========================================================================
@@ -361,7 +564,8 @@ def classify_intent(user_input: str) -> RoutingResult:
         user_input: Raw user input string
 
     Returns:
-        RoutingResult with intent, domain, zone, and dispatch info
+        RoutingResult with intent, domain, zone, dispatch info,
+        intent_type, action_required, and llm_metadata
     """
     router = get_router()
     return router.classify(user_input)

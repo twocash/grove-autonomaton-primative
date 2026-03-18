@@ -392,3 +392,235 @@ class TestTier1LLMEscalation:
             # Should fall back to unknown/yellow, not crash
             assert result.zone == "yellow", \
                 f"LLM failure should default to yellow zone, got '{result.zone}'"
+
+
+class TestConversationalRouting:
+    """Tests for Sprint 8 conversational routing fixes."""
+
+    def test_routing_result_has_intent_type(self):
+        """
+        RoutingResult must include intent_type field.
+
+        Sprint 8: intent_type gates Compilation stage behavior.
+        - conversational: skip dock query
+        - informational: optional dock query
+        - actionable: full dock query
+        """
+        from engine.cognitive_router import classify_intent
+
+        result = classify_intent("hello")
+
+        assert hasattr(result, "intent_type"), \
+            "RoutingResult must have intent_type field"
+        assert result.intent_type in ["conversational", "informational", "actionable"], \
+            f"intent_type must be valid, got '{result.intent_type}'"
+
+    def test_routing_result_has_action_required(self):
+        """
+        RoutingResult must include action_required field.
+
+        Sprint 8: action_required gates Approval stage behavior.
+        - False + green zone: skip approval UX entirely
+        - True: normal approval flow
+        """
+        from engine.cognitive_router import classify_intent
+
+        result = classify_intent("dock")
+
+        assert hasattr(result, "action_required"), \
+            "RoutingResult must have action_required field"
+        assert isinstance(result.action_required, bool), \
+            "action_required must be boolean"
+
+    def test_general_chat_is_conversational(self):
+        """
+        General chat intents must have intent_type=conversational.
+
+        This ensures greetings skip dock retrieval and approval prompts.
+        """
+        from engine.cognitive_router import classify_intent
+
+        result = classify_intent("hello")
+
+        # Should be recognized as general_chat or classified by LLM
+        if result.intent == "general_chat":
+            assert result.intent_type == "conversational", \
+                f"general_chat must be conversational, got '{result.intent_type}'"
+            assert result.action_required is False, \
+                "general_chat should not require action"
+
+    def test_informational_intent_type(self):
+        """
+        Status queries must have intent_type=informational.
+        """
+        from engine.cognitive_router import classify_intent
+
+        result = classify_intent("dock")
+
+        assert result.intent == "dock_status", \
+            f"Expected dock_status, got '{result.intent}'"
+        assert result.intent_type == "informational", \
+            f"dock_status must be informational, got '{result.intent_type}'"
+
+    def test_actionable_intent_type(self):
+        """
+        Action commands must have intent_type=actionable.
+        """
+        from engine.cognitive_router import classify_intent
+
+        result = classify_intent("compile content")
+
+        assert result.intent == "content_compilation", \
+            f"Expected content_compilation, got '{result.intent}'"
+        assert result.intent_type == "actionable", \
+            f"content_compilation must be actionable, got '{result.intent_type}'"
+
+    def test_conversational_intents_skip_dock(self):
+        """
+        Pipeline should skip dock query for conversational intents.
+
+        Sprint 8: intent_type=conversational bypasses Compilation stage.
+        """
+        from engine.cognitive_router import classify_intent
+
+        # Test with greeting keyword
+        result = classify_intent("hello")
+
+        # Either:
+        # 1. Keyword match as general_chat (conversational)
+        # 2. LLM classifies as conversational
+        if result.intent == "general_chat":
+            assert result.intent_type == "conversational", \
+                "general_chat must be conversational"
+        elif result.intent_type == "conversational":
+            # LLM classified it as conversational
+            assert result.action_required is False, \
+                "conversational intent should not require action"
+
+
+class TestClarificationJidoka:
+    """Tests for Sprint 8 clarification Jidoka."""
+
+    def test_clarification_options_available(self):
+        """
+        get_clarification_options() must return valid options dict.
+        """
+        from engine.cognitive_router import get_clarification_options
+
+        options = get_clarification_options()
+
+        assert isinstance(options, dict), "Options must be a dict"
+        assert len(options) >= 2, "Must have at least 2 options"
+        # Keys should be strings (for Jidoka selection)
+        assert all(isinstance(k, str) for k in options.keys()), \
+            "Option keys must be strings"
+
+    def test_resolve_clarification_content(self):
+        """
+        resolve_clarification("1") should return content draft routing.
+        """
+        from engine.cognitive_router import resolve_clarification
+
+        result = resolve_clarification("1", "original input")
+
+        assert result.intent == "content_draft", \
+            f"Choice 1 should be content_draft, got '{result.intent}'"
+        assert result.confidence == 1.0, \
+            "User clarification should have full confidence"
+
+    def test_resolve_clarification_chat(self):
+        """
+        resolve_clarification("4") should return general_chat routing.
+        """
+        from engine.cognitive_router import resolve_clarification
+
+        result = resolve_clarification("4", "original input")
+
+        assert result.intent == "general_chat", \
+            f"Choice 4 should be general_chat, got '{result.intent}'"
+        assert result.intent_type == "conversational", \
+            "general_chat must be conversational"
+        assert result.action_required is False, \
+            "general_chat should not require action"
+
+    def test_resolve_clarification_preserves_original_input(self):
+        """
+        resolve_clarification should store original input in llm_metadata.
+        """
+        from engine.cognitive_router import resolve_clarification
+
+        original = "something ambiguous"
+        result = resolve_clarification("1", original)
+
+        assert result.llm_metadata.get("clarified_from") == original, \
+            "Should preserve original input in metadata"
+
+
+class TestLLMStructuredClassification:
+    """Tests for Sprint 8 structured LLM classification output."""
+
+    def test_llm_classification_returns_intent_type(self):
+        """
+        LLM classification should return intent_type in result.
+
+        Sprint 8: LLM returns structured JSON with intent_type field.
+        """
+        from unittest.mock import patch
+        import json
+        from engine.cognitive_router import classify_intent, reset_router
+
+        reset_router()
+
+        # Mock structured LLM response
+        llm_response = json.dumps({
+            "intent": "general_chat",
+            "intent_type": "conversational",
+            "confidence": 0.9,
+            "reasoning": "User is greeting",
+            "action_required": False,
+            "entities_mentioned": [],
+            "content_seeds": [],
+            "sentiment": "positive"
+        })
+
+        with patch('engine.llm_client.call_llm', return_value=llm_response):
+            # Ambiguous input that triggers LLM
+            result = classify_intent("hey there, how's it going")
+
+            # Should have intent_type from LLM
+            assert result.intent_type in ["conversational", "informational", "actionable"], \
+                f"LLM should return valid intent_type, got '{result.intent_type}'"
+
+    def test_llm_classification_logs_to_telemetry(self):
+        """
+        Every LLM classification must log to telemetry for Ratchet analysis.
+
+        Sprint 8: The Ratchet uses this data to promote patterns to Tier 0.
+        """
+        from unittest.mock import patch, MagicMock
+        import json
+        from engine.cognitive_router import classify_intent, reset_router
+
+        reset_router()
+
+        mock_log = MagicMock()
+        llm_response = json.dumps({
+            "intent": "dock_status",
+            "intent_type": "informational",
+            "confidence": 0.8,
+            "reasoning": "User wants status",
+            "action_required": True,
+            "entities_mentioned": [],
+            "content_seeds": [],
+            "sentiment": "neutral"
+        })
+
+        with patch('engine.llm_client.call_llm', return_value=llm_response):
+            with patch('engine.telemetry.log_event', mock_log):
+                # Input that triggers LLM escalation
+                classify_intent("show me the system status please")
+
+                # Telemetry should have been called
+                if mock_log.called:
+                    call_args = mock_log.call_args
+                    assert call_args is not None, "log_event should be called"

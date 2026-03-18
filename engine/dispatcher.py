@@ -874,7 +874,11 @@ Return ONLY valid JSON, no explanations:"""
         raw_input: str
     ) -> DispatchResult:
         """
-        Handle conversational greetings and basic chat (Sprint 7.5).
+        Handle conversational greetings and basic chat.
+
+        Sprint 8: Simplified handler - NO dock context loading.
+        Conversational intents skip dock in Compilation stage, so we just
+        respond with persona-driven conversation.
 
         Green Zone - Persona responds according to config/persona.yaml.
         Uses Tier 1 (Haiku) for low latency responses.
@@ -882,45 +886,19 @@ Return ONLY valid JSON, no explanations:"""
         Implements Invariant #2: Config Over Code - persona loaded from YAML.
         """
         from engine.llm_client import call_llm
-        from engine.profile import get_dock_dir
         from engine.config_loader import get_persona
 
         # Load persona from config
         persona = get_persona()
 
-        # Load dock context for mission awareness
-        dock_dir = get_dock_dir()
-        mission_context = ""
-
-        goals_path = dock_dir / "goals.md"
-        if goals_path.exists():
-            try:
-                goals_content = goals_path.read_text(encoding="utf-8")
-                # Extract first few lines for context
-                lines = goals_content.split("\n")[:10]
-                mission_context = "\n".join(lines)
-            except Exception:
-                pass
-
-        business_path = dock_dir / "business-plan.md"
-        if business_path.exists() and not mission_context:
-            try:
-                business_content = business_path.read_text(encoding="utf-8")
-                lines = business_content.split("\n")[:10]
-                mission_context = "\n".join(lines)
-            except Exception:
-                pass
-
         # Build system prompt from persona config
-        task_context = """The user is just saying hello or asking a basic question.
-If there is mission context provided, you may acknowledge it naturally, but do not take any system actions."""
+        # Sprint 8: No dock context - just pure conversational response
+        task_context = """The user is saying hello or making casual conversation.
+Respond naturally and briefly. No system actions, no strategic context needed."""
 
         system_prompt = persona.build_system_prompt(task_context)
 
-        prompt = f"""User message: {raw_input}
-
-Mission Context (if available):
-{mission_context if mission_context else "No specific mission loaded yet."}
+        prompt = f"""User: {raw_input}
 
 Respond (1-2 sentences only):"""
 

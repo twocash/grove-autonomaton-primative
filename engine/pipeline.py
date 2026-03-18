@@ -178,13 +178,18 @@ class InvariantPipeline:
         self.context.zone = routing_result.zone  # Override caller's zone
 
         # Store routing metadata for Stage 5 dispatcher
+        # Sprint 8: Include intent_type, action_required, llm_metadata for
+        # Compilation gating and Approval UX decisions
         self.context.entities = {
             "routing": {
                 "tier": routing_result.tier,
                 "confidence": routing_result.confidence,
                 "handler": routing_result.handler,
                 "handler_args": routing_result.handler_args or {},
-                "extracted_args": routing_result.extracted_args or {}
+                "extracted_args": routing_result.extracted_args or {},
+                "intent_type": routing_result.intent_type,
+                "action_required": routing_result.action_required,
+                "llm_metadata": routing_result.llm_metadata or {}
             }
         }
 
@@ -193,9 +198,24 @@ class InvariantPipeline:
         Stage 3: Compilation
         Query the dock (RAG) and draft proposed actions.
 
+        Sprint 8: Compilation Gating
+        - conversational intents: Skip dock query entirely (no context needed)
+        - informational intents: Optional dock query (lightweight context)
+        - actionable intents: Full dock query (strategic context)
+
         The dock provides strategic context from local knowledge files.
         This context informs the proposed action sent to Approval.
         """
+        # Get intent_type from routing metadata
+        routing_info = self.context.entities.get("routing", {})
+        intent_type = routing_info.get("intent_type", "actionable")
+
+        # Conversational intents skip dock entirely
+        if intent_type == "conversational":
+            self.context.dock_context = []
+            self.context.proposed_action = self.context.raw_input
+            return
+
         # Import here to avoid circular dependency at module load
         from engine.dock import query_dock
 
@@ -219,6 +239,14 @@ class InvariantPipeline:
         Stage 4: Approval
         Apply governance checks based on zone classification.
 
+        Sprint 8: action_required Check
+        - If action_required=False AND zone=green: auto-approve, no UX
+        - This allows conversational intents to skip approval prompts entirely
+
+        Sprint 8: Clarification Jidoka
+        - If intent is unknown with low confidence: ask user to clarify
+        - This prevents blanket yellow approval for ambiguous input
+
         SPRINT 3.5: Unified Governance
         For MCP handlers, compute effective zone by combining:
         - Router zone (from intent classification)
@@ -231,11 +259,34 @@ class InvariantPipeline:
         Yellow zone: Require Jidoka confirmation
         Red zone: Require explicit approval with context
         """
+        from engine.cognitive_router import (
+            get_clarification_options,
+            resolve_clarification,
+            CognitiveRouter
+        )
+
+        # Get routing metadata for action_required check
+        routing_info = self.context.entities.get("routing", {})
+        action_required = routing_info.get("action_required", True)
+        confidence = routing_info.get("confidence", 0.0)
+
         # Compute effective zone for MCP actions
         effective_zone = self._compute_effective_zone()
 
         # Update context with effective zone
         self.context.zone = effective_zone
+
+        # Sprint 8: Clarification Jidoka for unknown intents
+        if (self.context.intent == "unknown" and
+            confidence < CognitiveRouter.CLARIFICATION_THRESHOLD):
+            # Ask user to clarify instead of blanket yellow approval
+            self._handle_clarification_jidoka()
+            return
+
+        # Sprint 8: Skip approval UX for non-actionable green zone intents
+        if not action_required and effective_zone == "green":
+            self.context.approved = True
+            return
 
         if effective_zone == "green":
             # Green zone: Autonomous execution allowed
@@ -258,6 +309,46 @@ class InvariantPipeline:
             self.context.approved = confirm_yellow_zone(
                 action_description=f"[UNKNOWN ZONE: {effective_zone}] {self.context.proposed_action}"
             )
+
+    def _handle_clarification_jidoka(self) -> None:
+        """
+        Handle ambiguous input by asking user to clarify their intent.
+
+        Sprint 8: Instead of blanket yellow approval for unknown intents,
+        present options and let the user choose what they want to do.
+        """
+        from engine.cognitive_router import get_clarification_options, resolve_clarification
+        from engine.ux import ask_jidoka
+
+        options = get_clarification_options()
+
+        # Present clarification options to user
+        # Note: ask_jidoka will sys.exit(0) on Ctrl+C, so no None handling needed
+        choice = ask_jidoka(
+            context_message="I'm not sure what you'd like to do. What were you looking for?",
+            options=options
+        )
+
+        # Resolve the clarification to a new routing result
+        resolved = resolve_clarification(choice, self.context.raw_input)
+
+        # Update context with resolved routing
+        self.context.intent = resolved.intent
+        self.context.domain = resolved.domain
+        self.context.zone = resolved.zone
+        self.context.entities["routing"] = {
+            "tier": resolved.tier,
+            "confidence": resolved.confidence,
+            "handler": resolved.handler,
+            "handler_args": resolved.handler_args or {},
+            "extracted_args": resolved.extracted_args or {},
+            "intent_type": resolved.intent_type,
+            "action_required": resolved.action_required,
+            "llm_metadata": resolved.llm_metadata or {}
+        }
+
+        # Auto-approve since user explicitly chose
+        self.context.approved = True
 
     def _compute_effective_zone(self) -> str:
         """
