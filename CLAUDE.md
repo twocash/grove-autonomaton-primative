@@ -201,6 +201,27 @@ To create a new Autonomaton domain:
 
 ---
 
+### Invariant #11: Ambient Evolution (Sprint 6.5)
+
+**The Vision Board enables requirements gathering without formal specification.**
+
+Users express aspirations casually:
+- "I wish I could track my tournament anxiety"
+- "Someday I want automatic lesson reminders"
+- "It would be cool if the system sent weekly reports"
+
+These are captured to `dock/system/vision-board.md` via the `vision_capture` handler (Green Zone).
+
+**Lens 5 (Personal Product Manager)** reads both:
+1. **Telemetry** - What the operator actually does
+2. **Vision Board** - What the operator wishes they could do
+
+When actual behavior aligns with a stated aspiration, Lens 5 marks the proposal with `vision_match: true` and prioritizes it for Pit Crew generation.
+
+**This is ambient evolution** - the system grows to meet the operator's needs without requiring technical specifications.
+
+---
+
 ## The Three-Layer Architecture
 
 ### Layer 1: The Dock (Strategic Memory)
@@ -284,4 +305,4 @@ profiles/
 
 ---
 
-*This architecture was forged through six sprints of disciplined, test-driven development.*
+*This architecture was forged through six sprints of disciplined, test-driven development. Sprint 6.5 added Ambient Evolution via the Vision Board.*
