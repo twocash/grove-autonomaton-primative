@@ -32,16 +32,19 @@ from engine.profile import (
 )
 
 
-def ask_entity_validation(
+def create_entity_validation_proposal(
     entity_name: str,
     entity_type: str,
     context: str
-) -> str:
+) -> dict:
     """
-    Ask operator to validate a new entity (Jidoka).
+    Create an entity validation proposal for the Kaizen queue.
 
-    This is a Digital Jidoka halt - the system stops and asks
-    the human operator to confirm before creating a new entity.
+    The Cortex is a pure analytical layer. It NEVER prompts the operator
+    directly. All proposals go to the queue and are processed through
+    the pipeline at startup or via the 'queue' command.
+
+    Invariant #6: Stage 4 is the ONLY layer permitted to prompt for approval.
 
     Args:
         entity_name: The extracted entity name
@@ -49,23 +52,23 @@ def ask_entity_validation(
         context: Surrounding context from transcript
 
     Returns:
-        User choice: "1" (approve), "2" (reject), "3" (edit)
+        Proposal dict for queue insertion
     """
-    print(f"\n  [JIDOKA] New entity detected: {entity_name}")
-    print(f"  Type: {entity_type}")
-    print(f"  Context: ...{context}...")
-    print()
-    print("  Options:")
-    print("    1. Approve - Create entity profile")
-    print("    2. Reject - This is not a real entity")
-    print("    3. Skip - Decide later")
-    print()
+    import uuid
+    from datetime import datetime, timezone
 
-    try:
-        choice = input("  Choice [1/2/3]: ").strip()
-        return choice if choice in ("1", "2", "3") else "3"
-    except (KeyboardInterrupt, EOFError):
-        return "3"
+    return {
+        "id": f"entity-{uuid.uuid4().hex[:8]}",
+        "trigger": "entity_extraction",
+        "proposal_type": "entity_validation",
+        "proposal": f"New {entity_type} detected: {entity_name}",
+        "entity_name": entity_name,
+        "entity_type": entity_type,
+        "context": context[:200],
+        "priority": "medium",
+        "created": datetime.now(timezone.utc).isoformat(),
+        "status": "pending"
+    }
 
 
 @dataclass
@@ -361,31 +364,61 @@ class Cortex:
 
     def _validate_new_entity(self, entity: ExtractedEntity) -> bool:
         """
-        Validate a new entity with Jidoka approval.
+        Queue new entity for validation via Kaizen queue.
 
-        Only called for entities with is_new=True.
+        The Cortex NEVER prompts directly (Invariant #6 compliance).
+        All entity proposals go to the queue and are processed through
+        the pipeline at startup or via the 'queue' command.
 
         Args:
             entity: The entity to validate
 
         Returns:
-            True if approved, False if rejected/skipped
+            False (entity not created yet - deferred to queue processing)
         """
-        result = ask_entity_validation(
+        # Create proposal dict for the queue (purity-audit-v1)
+        proposal = create_entity_validation_proposal(
             entity_name=entity.name,
             entity_type=entity.entity_type,
             context=entity.context
         )
 
-        if result == "1":
-            # Approved - create the profile
-            return self._create_entity_profile(entity)
-        elif result == "2":
-            # Rejected - do nothing
+        # Write to queue using existing mechanism
+        self._queue_entity_proposal(proposal)
+
+        # Return False - entity creation deferred to queue processing
+        return False
+
+    def _queue_entity_proposal(self, proposal: dict) -> bool:
+        """
+        Add an entity validation proposal to the pending queue.
+
+        Similar to _queue_kaizen but for dict-based proposals.
+        """
+        queue_dir = get_queue_dir()
+        pending_path = get_pending_queue_path()
+        queue_dir.mkdir(parents=True, exist_ok=True)
+
+        # Load existing queue
+        pending = []
+        if pending_path.exists():
+            content = pending_path.read_text(encoding="utf-8")
+            if content.strip():
+                pending = yaml.safe_load(content) or []
+
+        # Check for duplicates by ID
+        existing_ids = {p.get("id") for p in pending}
+        if proposal.get("id") in existing_ids:
             return False
-        else:
-            # Skipped - defer for later
-            return False
+
+        # Add the proposal
+        pending.append(proposal)
+
+        # Save the queue
+        with open(pending_path, "w", encoding="utf-8") as f:
+            yaml.dump(pending, f, default_flow_style=False, sort_keys=False)
+
+        return True
 
     def _create_entity_profile(self, entity: ExtractedEntity) -> bool:
         """
