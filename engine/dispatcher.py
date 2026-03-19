@@ -66,6 +66,11 @@ class Dispatcher:
             "regenerate_plan": self._handle_regenerate_plan,
             "fill_entity_gap": self._handle_fill_entity_gap,
             "ratchet_interpreter": self._handle_ratchet_interpreter,
+            # Internal startup handlers (purity-audit-v1)
+            "welcome_card": self._handle_welcome_card,
+            "startup_brief": self._handle_startup_brief,
+            "generate_plan": self._handle_generate_plan,
+            "clear_cache": self._handle_clear_cache,
         }
 
     def dispatch(
@@ -1507,6 +1512,276 @@ Return ONLY valid JSON, no explanations:"""
         else:
             # Generic fallback
             return result
+
+    # =========================================================================
+    # Internal Startup Handlers (purity-audit-v1)
+    # These were moved from autonomaton.py to route through the pipeline.
+    # =========================================================================
+
+    def _handle_welcome_card(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Generate contextual welcome briefing at startup.
+
+        Moved from autonomaton.py to route through the pipeline.
+        Green Zone - informational, no side effects.
+        """
+        from engine.profile import get_skills_dir, get_dock_dir
+        from engine.config_loader import get_persona
+        from engine.llm_client import call_llm
+        from engine.telemetry import log_event
+
+        # Load the welcome card prompt template
+        skill_prompt_path = get_skills_dir() / "welcome-card" / "prompt.md"
+        if not skill_prompt_path.exists():
+            return DispatchResult(
+                success=False,
+                message="Welcome card skill not found.",
+                data={"type": "welcome_card", "error": "skill_not_found"}
+            )
+
+        try:
+            skill_prompt = skill_prompt_path.read_text(encoding="utf-8")
+        except Exception as e:
+            log_event(
+                source="welcome_card",
+                raw_transcript=str(skill_prompt_path),
+                zone_context="green",
+                inferred={"error": str(e), "stage": "prompt_load"}
+            )
+            return DispatchResult(
+                success=False,
+                message=f"Failed to load welcome card prompt: {e}",
+                data={"type": "welcome_card", "error": "prompt_load_failed"}
+            )
+
+        # Load dock context for the briefing
+        dock_dir = get_dock_dir()
+        dock_context_parts = []
+
+        for filename in ["seasonal-context.md", "goals.md", "content-strategy.md"]:
+            filepath = dock_dir / filename
+            if filepath.exists():
+                try:
+                    content = filepath.read_text(encoding="utf-8")
+                    dock_context_parts.append(f"--- {filename} ---\n{content}")
+                except Exception as e:
+                    log_event(
+                        source="welcome_card",
+                        raw_transcript=str(filepath),
+                        zone_context="green",
+                        inferred={"error": str(e), "stage": "dock_context"}
+                    )
+                    continue
+
+        if not dock_context_parts:
+            dock_context = "[No dock context loaded yet.]"
+        else:
+            dock_context = "\n\n".join(dock_context_parts)
+
+        # Build persona system prompt with standing context
+        persona = get_persona()
+        system_prompt = persona.build_system_prompt(
+            "You are generating a startup welcome briefing. "
+            "Read the skill instructions carefully and follow them exactly.",
+            include_state=True
+        )
+
+        # Build the user prompt
+        prompt = f"""{skill_prompt}
+
+---
+
+DOCK CONTEXT (use this to generate a specific, timely greeting):
+
+{dock_context}
+
+Generate the welcome card now:"""
+
+        try:
+            response = call_llm(
+                prompt=prompt,
+                system=system_prompt,
+                tier=2,
+                intent="welcome_card"
+            )
+            return DispatchResult(
+                success=True,
+                message=response.strip(),
+                data={"type": "welcome_card", "response": response.strip()}
+            )
+        except Exception as e:
+            log_event(
+                source="welcome_card",
+                raw_transcript="",
+                zone_context="green",
+                inferred={"error": str(e), "stage": "llm_generation"}
+            )
+            return DispatchResult(
+                success=False,
+                message=f"Welcome briefing generation failed: {e}",
+                data={"type": "welcome_card", "error": str(e)}
+            )
+
+    def _handle_startup_brief(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Generate Chief of Staff strategic brief at startup.
+
+        Moved from autonomaton.py to route through the pipeline.
+        Green Zone - informational, no side effects.
+        """
+        from engine.config_loader import get_persona
+        from engine.llm_client import call_llm
+        from engine.telemetry import log_event
+
+        persona = get_persona()
+
+        task_context = (
+            "The operator just opened the system. Give a focused strategic brief: "
+            "3-5 prioritized items based on what you know. Lead with urgency. "
+            "If there are entity gaps (missing contact info, missing data) that block "
+            "handlers, surface them clearly as blockers. "
+            "Suggest specific commands for each item. Keep it to one short paragraph "
+            "per item. Sound like a colleague, not a report."
+        )
+
+        system_prompt = persona.build_system_prompt(
+            task_context=task_context,
+            include_state=True
+        )
+
+        prompt = "Generate the startup strategic brief now:"
+
+        try:
+            response = call_llm(
+                prompt=prompt,
+                system=system_prompt,
+                tier=2,
+                intent="startup_brief"
+            )
+            return DispatchResult(
+                success=True,
+                message=response.strip(),
+                data={"type": "startup_brief", "response": response.strip()}
+            )
+        except Exception as e:
+            log_event(
+                source="startup_brief",
+                raw_transcript="startup",
+                zone_context="green",
+                inferred={"error": str(e), "error_type": type(e).__name__}
+            )
+            return DispatchResult(
+                success=False,
+                message=f"Strategic brief generation failed: {e}",
+                data={"type": "startup_brief", "error": str(e)}
+            )
+
+    def _handle_generate_plan(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Generate structured plan from dock context (first boot).
+
+        Yellow Zone - creates/modifies a system file.
+        Pipeline Stage 4 handles approval. If approved, this handler
+        generates and writes the plan to dock/system/structured-plan.md.
+        """
+        from engine.compiler import generate_structured_plan, write_structured_plan
+        from engine.telemetry import log_event
+
+        try:
+            # Generate the plan using existing compiler function
+            plan_content = generate_structured_plan()
+
+            if not plan_content:
+                return DispatchResult(
+                    success=False,
+                    message="Failed to generate structured plan - no content returned.",
+                    data={"type": "generate_plan", "error": "no_content"}
+                )
+
+            # Write the plan to dock/system/structured-plan.md
+            write_structured_plan(plan_content)
+
+            return DispatchResult(
+                success=True,
+                message="Structured plan generated and saved to dock/system/structured-plan.md",
+                data={
+                    "type": "generate_plan",
+                    "plan_preview": plan_content[:500] + "..." if len(plan_content) > 500 else plan_content
+                }
+            )
+        except Exception as e:
+            log_event(
+                source="generate_plan",
+                raw_transcript=raw_input[:200],
+                zone_context="yellow",
+                inferred={"error": str(e), "error_type": type(e).__name__}
+            )
+            return DispatchResult(
+                success=False,
+                message=f"Plan generation failed: {e}",
+                data={"type": "generate_plan", "error": str(e)}
+            )
+
+    def _handle_clear_cache(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Clear the pattern cache. Yellow Zone — modifies system behavior.
+
+        The pattern cache stores confirmed LLM classifications for Tier 0 lookup.
+        Clearing it resets the Ratchet - all classifications revert to LLM.
+        """
+        import yaml
+        from engine.profile import get_config_dir
+
+        cache_path = get_config_dir() / "pattern_cache.yaml"
+
+        if not cache_path.exists():
+            return DispatchResult(
+                success=True,
+                message="Pattern cache is already empty.",
+                data={"type": "cache_clear", "entries_cleared": 0}
+            )
+
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            count = len(data.get("cache", {}))
+            data["cache"] = {}
+            with open(cache_path, "w", encoding="utf-8") as f:
+                yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+            # Reset router cache
+            from engine.cognitive_router import get_router
+            router = get_router()
+            if hasattr(router, 'pattern_cache'):
+                router.pattern_cache = {}
+
+            return DispatchResult(
+                success=True,
+                message=f"Pattern cache cleared. {count} entries removed.",
+                data={"type": "cache_clear", "entries_cleared": count}
+            )
+        except Exception as e:
+            return DispatchResult(
+                success=False,
+                message=f"Failed to clear cache: {e}",
+                data={"type": "cache_clear", "error": str(e)}
+            )
 
 
 # =========================================================================

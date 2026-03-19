@@ -111,139 +111,6 @@ def print_banner(profile: str, dock_info: str, cortex_info: str):
     print()
 
 
-def generate_welcome_briefing() -> str:
-    """
-    Generate a contextual welcome briefing from the Chief of Staff.
-
-    Reads the welcome-card skill prompt, dock context, and persona
-    to produce a warm, specific opening that orients the operator.
-
-    Returns the briefing text, or a fallback message on failure.
-    """
-    from engine.profile import get_skills_dir, get_dock_dir
-    from engine.config_loader import get_persona
-    from engine.llm_client import call_llm
-    from engine.telemetry import log_event
-
-    # Load the welcome card prompt template
-    skill_prompt_path = get_skills_dir() / "welcome-card" / "prompt.md"
-    if not skill_prompt_path.exists():
-        return ""
-
-    try:
-        skill_prompt = skill_prompt_path.read_text(encoding="utf-8")
-    except Exception as e:
-        log_event(
-            source="welcome_briefing",
-            raw_transcript=str(skill_prompt_path),
-            zone_context="yellow",
-            inferred={"error": str(e), "error_type": type(e).__name__, "stage": "prompt_load"}
-        )
-        return ""
-
-    # Load dock context for the briefing
-    dock_dir = get_dock_dir()
-    dock_context_parts = []
-
-    for filename in ["seasonal-context.md", "goals.md", "content-strategy.md"]:
-        filepath = dock_dir / filename
-        if filepath.exists():
-            try:
-                content = filepath.read_text(encoding="utf-8")
-                dock_context_parts.append(f"--- {filename} ---\n{content}")
-            except Exception as e:
-                log_event(
-                    source="welcome_briefing",
-                    raw_transcript=str(filepath),
-                    zone_context="yellow",
-                    inferred={"error": str(e), "error_type": type(e).__name__, "stage": "dock_context", "file": str(filepath)}
-                )
-                continue
-
-    if not dock_context_parts:
-        dock_context = "[No dock context loaded yet.]"
-    else:
-        dock_context = "\n\n".join(dock_context_parts)
-
-    # Build persona system prompt with standing context
-    persona = get_persona()
-    system_prompt = persona.build_system_prompt(
-        "You are generating a startup welcome briefing. "
-        "Read the skill instructions carefully and follow them exactly.",
-        include_state=True
-    )
-
-    # Build the user prompt
-    prompt = f"""{skill_prompt}
-
----
-
-DOCK CONTEXT (use this to generate a specific, timely greeting):
-
-{dock_context}
-
-Generate the welcome card now:"""
-
-    try:
-        response = call_llm(
-            prompt=prompt,
-            system=system_prompt,
-            tier=2,  # Sonnet — welcome needs to feel human, not template-filled
-            intent="welcome_card"
-        )
-        return response.strip()
-    except Exception as e:
-        log_event(
-            source="welcome_briefing",
-            raw_transcript="welcome_card_generation",
-            zone_context="yellow",
-            inferred={"error": str(e), "error_type": type(e).__name__, "stage": "llm_generation"}
-        )
-        return ""
-
-
-def generate_startup_brief() -> str:
-    """Generate Chief of Staff strategic brief for startup."""
-    from engine.config_loader import get_persona
-    from engine.llm_client import call_llm
-    from engine.telemetry import log_event
-
-    persona = get_persona()
-
-    task_context = (
-        "The operator just opened the system. Give a focused strategic brief: "
-        "3-5 prioritized items based on what you know. Lead with urgency. "
-        "If there are entity gaps (missing contact info, missing data) that block "
-        "handlers, surface them clearly as blockers. "
-        "Suggest specific commands for each item. Keep it to one short paragraph "
-        "per item. Sound like a colleague, not a report."
-    )
-
-    system_prompt = persona.build_system_prompt(
-        task_context=task_context,
-        include_state=True
-    )
-
-    prompt = "Generate the startup strategic brief now:"
-
-    try:
-        response = call_llm(
-            prompt=prompt,
-            system=system_prompt,
-            tier=2,
-            intent="startup_brief"
-        )
-        return response.strip()
-    except Exception as e:
-        log_event(
-            source="startup_brief",
-            raw_transcript="startup",
-            zone_context="yellow",
-            inferred={"error": str(e), "error_type": type(e).__name__}
-        )
-        return ""
-
-
 def process_pending_queue() -> int:
     """
     Process pending Kaizen items at startup using Jidoka UX.
@@ -504,9 +371,8 @@ def main():
     print_banner(profile, dock_info, cortex_info)
 
     # Check for structured plan — generate on first boot (Sprint 5)
+    # Now routed through the pipeline (purity-audit-v1)
     from engine.profile import get_dock_dir
-    from engine.compiler import generate_structured_plan, write_structured_plan
-    from engine.ux import confirm_yellow_zone
 
     c = Colors
     plan_path = get_dock_dir() / "system" / "structured-plan.md"
@@ -515,59 +381,65 @@ def main():
         print(f"  {c.DIM}Generating initial plan from dock context...{c.RESET}")
         print()
 
-        plan_content = generate_structured_plan()
-        if plan_content:
-            # Show preview and request approval (Yellow Zone)
-            print(f"  {c.YELLOW}{'=' * 56}{c.RESET}")
-            print(f"  {c.BOLD}{c.YELLOW}STRUCTURED PLAN PREVIEW{c.RESET}")
-            print(f"  {c.YELLOW}{'=' * 56}{c.RESET}")
-            # Show first 1500 chars of plan
-            preview_lines = plan_content[:1500].split('\n')
-            for line in preview_lines:
-                print(f"  {c.DIM}{line}{c.RESET}")
-            if len(plan_content) > 1500:
-                print(f"  {c.DIM}... (truncated){c.RESET}")
-            print(f"  {c.YELLOW}{'=' * 56}{c.RESET}")
-            print()
-
-            approved = confirm_yellow_zone(
-                action_description="Write this structured plan to dock/system/structured-plan.md"
-            )
-            if approved:
-                if write_structured_plan(plan_content):
-                    print(f"  {c.GREEN}[PLAN CREATED]{c.RESET} Structured plan written to dock.")
-                    print(f"  {c.DIM}The Chief of Staff now has trajectory awareness.{c.RESET}")
-                else:
-                    print(f"  {c.RED}[ERROR]{c.RESET} Failed to write structured plan.")
-            else:
+        # Route through pipeline - Stage 4 handles Yellow zone approval,
+        # Stage 5 dispatcher handler does LLM call and file write
+        plan_context = run_pipeline(
+            raw_input="generate plan",
+            source="system_startup"
+        )
+        if plan_context.executed:
+            result = plan_context.result or {}
+            if result.get("data", {}).get("plan_written"):
+                print(f"  {c.GREEN}[PLAN CREATED]{c.RESET} Structured plan written to dock.")
+                print(f"  {c.DIM}The Chief of Staff now has trajectory awareness.{c.RESET}")
+            elif not plan_context.approved:
                 print(f"  {c.YELLOW}[DEFERRED]{c.RESET} Plan generation skipped.")
-            print()
+            else:
+                print(f"  {c.YELLOW}[JIDOKA]{c.RESET} Plan generation failed — check telemetry.")
         else:
-            print(f"  {c.YELLOW}[JIDOKA]{c.RESET} Plan generation failed — check telemetry.")
-            print()
+            print(f"  {c.YELLOW}[DEFERRED]{c.RESET} Plan generation skipped.")
+        print()
 
     # Process pending Kaizen items at startup (unless skipped)
     if not args.skip_queue and pending:
         process_pending_queue()
 
     # Welcome Briefing (replaces cold command list)
+    # Now routed through the pipeline (purity-audit-v1)
     if not args.skip_welcome:
-        briefing = generate_welcome_briefing()
-        if briefing:
-            print(f"  {c.WHITE}{briefing}{c.RESET}")
-            print()
+        # Route welcome_card through pipeline
+        welcome_context = run_pipeline(
+            raw_input="welcome_card",
+            source="system_startup"
+        )
+        if welcome_context.executed:
+            result = welcome_context.result or {}
+            briefing = result.get("message", "")
+            if briefing:
+                print(f"  {c.WHITE}{briefing}{c.RESET}")
+                print()
+            else:
+                # Briefing failed — Jidoka: surface the failure, don't hide it
+                print(f"  {c.YELLOW}[JIDOKA]{c.RESET} Welcome briefing unavailable — check telemetry for details.")
+                print(f"  {c.DIM}Type {c.CYAN}help{c.RESET} for the operator guide, or start with what's on your mind.{c.RESET}")
+                print()
         else:
-            # Briefing failed — Jidoka: surface the failure, don't hide it
             print(f"  {c.YELLOW}[JIDOKA]{c.RESET} Welcome briefing unavailable — check telemetry for details.")
             print(f"  {c.DIM}Type {c.CYAN}help{c.RESET} for the operator guide, or start with what's on your mind.{c.RESET}")
             print()
 
-        # Chief of Staff Strategic Brief
-        brief = generate_startup_brief()
-        if brief:
-            print(f"  {c.CYAN}{'─' * 56}{c.RESET}")
-            print(f"  {c.WHITE}{brief}{c.RESET}")
-            print()
+        # Chief of Staff Strategic Brief - route through pipeline
+        brief_context = run_pipeline(
+            raw_input="startup_brief",
+            source="system_startup"
+        )
+        if brief_context.executed:
+            result = brief_context.result or {}
+            brief = result.get("message", "")
+            if brief:
+                print(f"  {c.CYAN}{'─' * 56}{c.RESET}")
+                print(f"  {c.WHITE}{brief}{c.RESET}")
+                print()
     else:
         print(f"  {c.DIM}Ready.{c.RESET}")
         print()
