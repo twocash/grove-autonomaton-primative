@@ -63,8 +63,23 @@ CONSTRAINTS (you MUST follow these):
                 state = get_standing_context()
                 if state:
                     prompt += f"\n\n{state}"
-            except Exception:
-                pass  # Standing context is enrichment, not critical path
+            except Exception as e:
+                # Standing context is enrichment, not critical path.
+                # But surface the failure so it's debuggable (Purity v2).
+                try:
+                    from engine.telemetry import log_event
+                    log_event(
+                        source="config_loader",
+                        raw_transcript="standing_context_load",
+                        zone_context="yellow",
+                        inferred={
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                            "stage": "standing_context_enrichment"
+                        }
+                    )
+                except Exception:
+                    pass  # Telemetry itself failed — truly nothing we can do
 
         if task_context:
             prompt += f"\n\nTask Context:\n{task_context}"

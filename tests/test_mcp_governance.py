@@ -125,20 +125,22 @@ class TestJidokaEnforcement:
         assert context.zone == "yellow"
 
     def test_red_zone_triggers_jidoka_via_pipeline(self):
-        """Red zone actions should trigger Jidoka with RED ZONE prefix via pipeline."""
+        """Red zone actions should trigger confirm_red_zone_with_context via pipeline (Purity v2)."""
         from engine.pipeline import run_pipeline
         from engine.profile import set_profile
 
         set_profile("coach_demo")
 
-        # Red zone command (build skill)
-        with patch('engine.pipeline.confirm_yellow_zone', return_value=True) as mock_jidoka:
+        # Red zone command (build skill) - Purity v2: uses confirm_red_zone_with_context
+        with patch('engine.pipeline.confirm_red_zone_with_context', return_value=True) as mock_red_jidoka:
             context = run_pipeline(raw_input="build skill test-skill", source="test")
 
-        # Jidoka should be called with RED ZONE prefix
-        mock_jidoka.assert_called_once()
-        call_args = mock_jidoka.call_args
-        assert "[RED ZONE]" in call_args.kwargs.get("action_description", "")
+        # Red zone Jidoka should be called
+        mock_red_jidoka.assert_called_once()
+        call_args = mock_red_jidoka.call_args
+        # Purity v2: red zone uses confirm_red_zone_with_context with action_description and payload
+        assert "action_description" in call_args.kwargs
+        assert "payload" in call_args.kwargs
         assert context.zone == "red"
 
     def test_yellow_zone_rejection_blocks_execution_via_pipeline(self):

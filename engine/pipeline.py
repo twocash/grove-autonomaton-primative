@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Any
 
 from engine.telemetry import log_event
-from engine.ux import confirm_yellow_zone
+from engine.ux import confirm_yellow_zone, confirm_red_zone_with_context
 
 
 @dataclass
@@ -128,15 +128,18 @@ class InvariantPipeline:
         Log a pipeline failure to telemetry.
 
         Sprint 3.5: No ghost failures - every crash leaves an audit trail.
+        Purity v2: Flat fields for grep-able audit trail.
         """
+        routing_info = self.context.entities.get("routing", {})
         log_event(
             source="pipeline_failure",
             raw_transcript=self.context.raw_input[:200] if self.context.raw_input else "",
             zone_context=self.context.zone,
+            intent=self.context.intent,
+            tier=routing_info.get("tier"),
             inferred={
                 "error": str(exception),
                 "error_type": type(exception).__name__,
-                "intent": self.context.intent,
                 "domain": self.context.domain,
                 "stage": self._get_current_stage()
             }
@@ -153,6 +156,29 @@ class InvariantPipeline:
         if not hasattr(self.context, 'approved') or self.context.approved is None:
             return "approval"
         return "execution"
+
+    def _log_pipeline_completion(self) -> None:
+        """Log pipeline completion with flat routing fields for auditability.
+
+        Purity v2: First-class routing fields make pipeline decisions grep-able
+        without parsing the inferred dict.
+        """
+        routing_info = self.context.entities.get("routing", {})
+
+        log_event(
+            source=self.context.source,
+            raw_transcript=self.context.raw_input[:200],
+            zone_context=self.context.zone,
+            intent=self.context.intent,
+            tier=routing_info.get("tier"),
+            confidence=routing_info.get("confidence"),
+            human_feedback="approved" if self.context.approved else "rejected",
+            inferred={
+                "stage": "pipeline_complete",
+                "handler": routing_info.get("handler"),
+                "intent_type": routing_info.get("intent_type"),
+            }
+        )
 
     def _run_telemetry(self) -> None:
         """
@@ -334,9 +360,18 @@ class InvariantPipeline:
             )
 
         elif effective_zone == "red":
-            # Red zone: Explicit approval with full context
-            self.context.approved = confirm_yellow_zone(
-                action_description=f"[RED ZONE] {self.context.proposed_action or 'Unknown action'}"
+            # Red zone: Explicit approval with full context (Purity v2)
+            routing_info = self.context.entities.get("routing", {})
+            payload = {
+                "action": self.context.proposed_action or "Unknown action",
+                "intent": self.context.intent,
+                "handler": routing_info.get("handler"),
+                "handler_args": routing_info.get("handler_args", {}),
+                "extracted_args": routing_info.get("extracted_args", {}),
+            }
+            self.context.approved = confirm_red_zone_with_context(
+                action_description=self.context.proposed_action or "Unknown action",
+                payload=payload
             )
 
         else:
@@ -637,8 +672,10 @@ JSON:"""
                 "data": {"type": "passthrough"}
             }
 
+        # Purity v2: Log completion with flat routing fields for auditability
         # THE RATCHET: Cache confirmed LLM classifications for Tier 0 lookup (purity-audit-v1)
         if self.context.executed:
+            self._log_pipeline_completion()
             self._write_to_pattern_cache()
 
     def _write_to_pattern_cache(self) -> None:
@@ -878,11 +915,21 @@ def run_pipeline_with_mcp(
         )
     )
 
-    # Execute stages in strict sequence
-    pipeline._run_telemetry()
-    pipeline._run_recognition()
-    pipeline._run_compilation()
-    pipeline._run_approval()
-    pipeline._run_execution()
+    # Execute stages in strict sequence with exception handling (Purity v2)
+    try:
+        pipeline._run_telemetry()
+        pipeline._run_recognition()
+        pipeline._run_compilation()
+        pipeline._run_approval()
+        pipeline._run_execution()
+    except Exception as e:
+        # Log failure to telemetry — zero ghost failures
+        pipeline._log_pipeline_failure(e)
+        pipeline.context.executed = False
+        pipeline.context.result = {
+            "status": "failed",
+            "message": f"Pipeline failure: {str(e)}",
+            "error_type": type(e).__name__
+        }
 
     return pipeline.context

@@ -262,6 +262,40 @@ TELEMETRY: Every classification logged
 
 ---
 
+### Handler Interface Contract
+
+Handlers are registered in `engine/dispatcher.py` and invoked by the
+pipeline's Stage 5 (Execution). All handlers follow the same interface:
+
+**Signature:**
+```python
+def _handle_{name}(self, routing_result: RoutingResult, raw_input: str) -> DispatchResult
+```
+
+**Contract:**
+1. Handlers receive a `RoutingResult` (from Stage 2) and the raw input string.
+2. Handlers return a `DispatchResult` with `success`, `message`, and `data`.
+3. Handlers NEVER prompt the operator directly. Approval happens in Stage 4.
+4. Handlers NEVER call `call_llm()` without a clear `intent` parameter for telemetry.
+5. Handler `data` dicts MUST include a `type` field for display routing.
+6. Failures return `DispatchResult(success=False, ...)` — never raise exceptions.
+
+**Core handlers** (built into the engine):
+- `status_display` — Green zone, informational
+- `content_engine` — Yellow zone, actionable
+- `pit_crew` — Red zone, system modification
+- `general_chat` — Green zone, conversational
+- `strategy_session` — Green zone, actionable
+- `skill_executor` — Zone from config, executes Pit Crew generated skills
+- `cortex_batch` — Yellow zone, analytical lenses
+
+**Extension point:** New domain-specific capabilities should be built as
+skills (via Pit Crew) routed through `skill_executor`, not as new core
+handlers. This keeps the engine domain-agnostic. Core handlers change
+only when the engine's structural capabilities change.
+
+---
+
 ## The Three-Layer Architecture
 
 ### Layer 1: The Dock (Strategic Memory)

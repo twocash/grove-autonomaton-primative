@@ -119,64 +119,36 @@ class TestCortexLens1EntityExtraction:
             assert entities[0].is_new is True, \
                 "New entity must be marked is_new=True"
 
-    def test_new_entity_triggers_jidoka(self):
+    def test_new_entity_creates_queue_proposal(self):
         """
-        New entities (is_new=True) must trigger Jidoka validation.
+        New entities (is_new=True) must create a queue proposal.
 
-        The system should halt and ask the operator to confirm
-        before creating a new entity profile.
+        Post v1: Entity validation uses queue-based proposals instead of
+        direct I/O. The Cortex creates proposals, operators approve via queue.
         """
-        from engine.cortex import Cortex, ExtractedEntity
-        from engine.ratchet import RatchetResult
+        from engine.cortex import create_entity_validation_proposal
 
-        mock_entities = [
-            ExtractedEntity(
-                name="Unknown Person",
-                entity_type="player",
-                source_event_id="test-event",
-                confidence=0.8,
-                context="Unknown Person mentioned",
-                is_new=True
-            )
-        ]
-
-        mock_result = RatchetResult(
-            result=mock_entities,
-            source="pipeline",
-            confidence=0.8,
-            latency_ms=100,
-            label="entity_extraction"
+        # Create proposal for new entity
+        proposal = create_entity_validation_proposal(
+            entity_name="Unknown Person",
+            entity_type="player",
+            context="Unknown Person mentioned in practice"
         )
 
-        jidoka_called = []
+        # Proposal must be properly structured
+        assert isinstance(proposal, dict), "Proposal must be a dict"
+        assert proposal["proposal_type"] == "entity_validation"
+        assert proposal["entity_name"] == "Unknown Person"
+        assert proposal["entity_type"] == "player"
+        assert "id" in proposal, "Proposal must have an ID"
+        assert "created" in proposal, "Proposal must have timestamp"
 
-        def mock_jidoka(**kwargs):
-            jidoka_called.append(kwargs)
-            return "1"  # Approve
-
-        with patch('engine.ratchet.ratchet_classify', return_value=mock_result):
-            with patch('engine.cortex.ask_entity_validation', side_effect=mock_jidoka) as mock_ask:
-                cortex = Cortex()
-
-                event = {
-                    "id": "test-event",
-                    "raw_transcript": "Unknown Person mentioned",
-                    "source": "operator_session"
-                }
-
-                entities = cortex._extract_entities(event)
-
-                # Should call validation for new entities
-                if entities and entities[0].is_new:
-                    cortex._validate_new_entity(entities[0])
-                    assert len(jidoka_called) > 0, \
-                        "New entity should trigger Jidoka validation"
-
-    def test_existing_entity_skips_jidoka(self):
+    def test_existing_entity_no_proposal_needed(self):
         """
-        Existing entities (is_new=False) should skip Jidoka validation.
+        Existing entities (is_new=False) don't need queue proposals.
 
-        Only new entities need operator confirmation.
+        Post v1: Only new entities need operator confirmation via queue.
+        Existing entities are already validated.
         """
         from engine.cortex import Cortex, ExtractedEntity
         from engine.ratchet import RatchetResult
@@ -201,21 +173,20 @@ class TestCortexLens1EntityExtraction:
         )
 
         with patch('engine.ratchet.ratchet_classify', return_value=mock_result):
-            with patch('engine.cortex.ask_entity_validation') as mock_ask:
-                cortex = Cortex()
+            cortex = Cortex()
 
-                event = {
-                    "id": "test-event",
-                    "raw_transcript": "Known Player mentioned",
-                    "source": "operator_session"
-                }
+            event = {
+                "id": "test-event",
+                "raw_transcript": "Known Player mentioned",
+                "source": "operator_session"
+            }
 
-                entities = cortex._extract_entities(event)
+            entities = cortex._extract_entities(event)
 
-                # Existing entity should not trigger validation
-                assert len(entities) == 1
-                assert entities[0].is_new is False
-                # validate_new_entity should not be called for existing entities
+            # Existing entity should not need validation
+            assert len(entities) == 1
+            assert entities[0].is_new is False
+            # No proposal needed for existing entities
 
 
 class TestCortexLens2ContentSeedMining:

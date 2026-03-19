@@ -29,14 +29,14 @@ from engine.profile import get_telemetry_dir
 # Model Configuration
 # =========================================================================
 
-TIER_MODELS = {
+# Hardcoded fallback defaults (Purity v2: system never crashes on missing config)
+_DEFAULT_TIER_MODELS = {
     1: "claude-3-haiku-20240307",
     2: "claude-3-5-sonnet-20241022",
     3: "claude-3-opus-20240229",  # Apex tier for Pit Crew and Architectural Judge
 }
 
-# Pricing per million tokens (as of 2024)
-MODEL_PRICING = {
+_DEFAULT_MODEL_PRICING = {
     "claude-3-haiku-20240307": {
         "input": 0.25,   # $0.25 per million input tokens
         "output": 1.25,  # $1.25 per million output tokens
@@ -51,7 +51,113 @@ MODEL_PRICING = {
     },
 }
 
-DEFAULT_MAX_TOKENS = 1024
+_DEFAULT_MAX_TOKENS = 1024
+
+# Cached config (loaded once per session)
+_models_config_cache = None
+
+
+def _load_models_config() -> dict:
+    """
+    Load model configuration from the active profile's models.yaml.
+
+    Falls back to hardcoded defaults if config is missing or invalid.
+    Purity v2: System never crashes on missing config.
+
+    Returns dict with keys: 'tiers', 'pricing', 'default_max_tokens'
+    """
+    global _models_config_cache
+
+    if _models_config_cache is not None:
+        return _models_config_cache
+
+    defaults = {
+        "tiers": _DEFAULT_TIER_MODELS,
+        "pricing": _DEFAULT_MODEL_PRICING,
+        "default_max_tokens": _DEFAULT_MAX_TOKENS,
+    }
+
+    try:
+        from engine.profile import get_config_dir
+        import yaml
+
+        config_dir = get_config_dir()
+        models_path = config_dir / "models.yaml"
+
+        if not models_path.exists():
+            _models_config_cache = defaults
+            return defaults
+
+        with open(models_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+
+        if not isinstance(config, dict):
+            _models_config_cache = defaults
+            return defaults
+
+        # Parse tiers - convert string keys to int
+        tiers = {}
+        if "tiers" in config and isinstance(config["tiers"], dict):
+            for tier_key, model_id in config["tiers"].items():
+                try:
+                    tier_int = int(tier_key)
+                    tiers[tier_int] = str(model_id)
+                except (ValueError, TypeError):
+                    pass
+
+        # Parse pricing
+        pricing = {}
+        if "pricing" in config and isinstance(config["pricing"], dict):
+            for model_id, prices in config["pricing"].items():
+                if isinstance(prices, dict):
+                    pricing[str(model_id)] = {
+                        "input": float(prices.get("input", 0.25)),
+                        "output": float(prices.get("output", 1.25)),
+                    }
+
+        # Parse default_max_tokens
+        default_max_tokens = int(config.get("default_max_tokens", _DEFAULT_MAX_TOKENS))
+
+        # Use loaded values if valid, otherwise fall back to defaults
+        _models_config_cache = {
+            "tiers": tiers if tiers else _DEFAULT_TIER_MODELS,
+            "pricing": pricing if pricing else _DEFAULT_MODEL_PRICING,
+            "default_max_tokens": default_max_tokens,
+        }
+
+        return _models_config_cache
+
+    except Exception:
+        # Any error: use defaults (Purity v2: no crashes on config issues)
+        _models_config_cache = defaults
+        return defaults
+
+
+def get_model_for_tier(tier: int) -> str:
+    """Get the model ID for a given tier."""
+    config = _load_models_config()
+    return config["tiers"].get(tier, config["tiers"].get(1, _DEFAULT_TIER_MODELS[1]))
+
+
+def get_model_pricing(model: str) -> dict:
+    """Get pricing info for a model."""
+    config = _load_models_config()
+    return config["pricing"].get(model, _DEFAULT_MODEL_PRICING.get(
+        model, {"input": 0.25, "output": 1.25}
+    ))
+
+
+def get_default_max_tokens() -> int:
+    """Get the default max tokens setting."""
+    config = _load_models_config()
+    return config["default_max_tokens"]
+
+
+# Reset config cache (for testing or profile switch)
+def reset_models_config() -> None:
+    """Reset the models config cache (call after profile switch)."""
+    global _models_config_cache
+    _models_config_cache = None
 
 
 # =========================================================================
@@ -157,7 +263,7 @@ def _calculate_cost(model: str, tokens_in: int, tokens_out: int) -> float:
 
     Returns cost in USD.
     """
-    pricing = MODEL_PRICING.get(model, MODEL_PRICING["claude-3-haiku-20240307"])
+    pricing = get_model_pricing(model)
 
     input_cost = (tokens_in / 1_000_000) * pricing["input"]
     output_cost = (tokens_out / 1_000_000) * pricing["output"]
@@ -174,7 +280,7 @@ def call_llm(
     tier: int = 1,
     intent: str = "unknown",
     system: Optional[str] = None,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
+    max_tokens: Optional[int] = None,
 ) -> str:
     """
     Call the LLM with the given prompt.
@@ -184,7 +290,7 @@ def call_llm(
         tier: Model tier (1=Haiku for speed, 2=Sonnet for quality)
         intent: The intent being served (for telemetry)
         system: Optional system prompt
-        max_tokens: Maximum response tokens
+        max_tokens: Maximum response tokens (defaults to config value)
 
     Returns:
         The text content of the response
@@ -194,7 +300,9 @@ def call_llm(
 
     INVARIANT: Every call logs telemetry with model, tokens, cost, intent.
     """
-    model = TIER_MODELS.get(tier, TIER_MODELS[1])
+    model = get_model_for_tier(tier)
+    if max_tokens is None:
+        max_tokens = get_default_max_tokens()
 
     # Build messages
     messages = [{"role": "user", "content": prompt}]

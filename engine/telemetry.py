@@ -59,6 +59,11 @@ class TelemetryEvent:
 
     Optional Fields:
         - inferred: Dict of inferred data (default empty dict)
+        - intent: Classified intent name (first-class for auditability)
+        - tier: LLM tier used (0=cache, 1=haiku, 2=sonnet, 3=opus)
+        - confidence: Classification confidence (0.0-1.0)
+        - cost_usd: LLM cost for this operation
+        - human_feedback: Operator response ("approved", "rejected", "clarified")
     """
     source: str
     raw_transcript: str
@@ -66,6 +71,14 @@ class TelemetryEvent:
     id: str = field(default_factory=_generate_id)
     timestamp: str = field(default_factory=_generate_timestamp)
     inferred: dict = field(default_factory=dict)
+
+    # Routing metadata — first-class for auditability
+    # These fields make routing decisions grep-able without parsing inferred.
+    intent: Optional[str] = None
+    tier: Optional[int] = None
+    confidence: Optional[float] = None
+    cost_usd: Optional[float] = None
+    human_feedback: Optional[str] = None  # "approved", "rejected", "clarified"
 
     def __post_init__(self):
         """Validate fields after initialization."""
@@ -100,7 +113,7 @@ class TelemetryEvent:
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        return {
+        event = {
             "id": self.id,
             "timestamp": self.timestamp,
             "source": self.source,
@@ -108,6 +121,18 @@ class TelemetryEvent:
             "zone_context": self.zone_context,
             "inferred": self.inferred
         }
+        # Flat routing fields — included when set, omitted when None
+        if self.intent is not None:
+            event["intent"] = self.intent
+        if self.tier is not None:
+            event["tier"] = self.tier
+        if self.confidence is not None:
+            event["confidence"] = self.confidence
+        if self.cost_usd is not None:
+            event["cost_usd"] = self.cost_usd
+        if self.human_feedback is not None:
+            event["human_feedback"] = self.human_feedback
+        return event
 
 
 # =========================================================================
@@ -118,7 +143,12 @@ def create_event(
     source: str,
     raw_transcript: str,
     zone_context: str = "green",
-    inferred: Optional[dict] = None
+    inferred: Optional[dict] = None,
+    intent: Optional[str] = None,
+    tier: Optional[int] = None,
+    confidence: Optional[float] = None,
+    cost_usd: Optional[float] = None,
+    human_feedback: Optional[str] = None,
 ) -> dict:
     """
     Create a telemetry event conforming to the required schema.
@@ -131,6 +161,11 @@ def create_event(
         raw_transcript: The raw user input or system message
         zone_context: Zone classification (green, yellow, red)
         inferred: Dict of inferred data (default empty)
+        intent: Classified intent name (flat field for auditability)
+        tier: LLM tier used (0=cache, 1=haiku, 2=sonnet, 3=opus)
+        confidence: Classification confidence (0.0-1.0)
+        cost_usd: LLM cost for this operation
+        human_feedback: Operator response ("approved", "rejected", "clarified")
 
     Returns:
         Dict conforming to telemetry schema
@@ -149,7 +184,12 @@ def create_event(
         source=source,
         raw_transcript=raw_transcript,
         zone_context=zone_context,
-        inferred=inferred if inferred is not None else {}
+        inferred=inferred if inferred is not None else {},
+        intent=intent,
+        tier=tier,
+        confidence=confidence,
+        cost_usd=cost_usd,
+        human_feedback=human_feedback,
     )
 
     return event.to_dict()
@@ -159,7 +199,12 @@ def log_event(
     source: str,
     raw_transcript: str,
     zone_context: str = "green",
-    inferred: Optional[dict] = None
+    inferred: Optional[dict] = None,
+    intent: Optional[str] = None,
+    tier: Optional[int] = None,
+    confidence: Optional[float] = None,
+    cost_usd: Optional[float] = None,
+    human_feedback: Optional[str] = None,
 ) -> dict:
     """
     Append a telemetry event to the JSONL file.
@@ -172,6 +217,11 @@ def log_event(
         raw_transcript: The raw user input or system message
         zone_context: Zone classification (green, yellow, red)
         inferred: Dict of inferred data (default empty)
+        intent: Classified intent name (flat field for auditability)
+        tier: LLM tier used (0=cache, 1=haiku, 2=sonnet, 3=opus)
+        confidence: Classification confidence (0.0-1.0)
+        cost_usd: LLM cost for this operation
+        human_feedback: Operator response ("approved", "rejected", "clarified")
 
     Returns:
         The logged event dict for pipeline continuity
@@ -184,7 +234,12 @@ def log_event(
         source=source,
         raw_transcript=raw_transcript,
         zone_context=zone_context,
-        inferred=inferred
+        inferred=inferred,
+        intent=intent,
+        tier=tier,
+        confidence=confidence,
+        cost_usd=cost_usd,
+        human_feedback=human_feedback,
     )
 
     # Get profile-aware telemetry path

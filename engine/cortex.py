@@ -242,6 +242,7 @@ class Cortex:
                 source="cortex:entity_extraction",
                 raw_transcript=transcript[:200],
                 zone_context="yellow",
+                intent="entity_extraction",
                 inferred={
                     "error": str(e),
                     "error_type": type(e).__name__,

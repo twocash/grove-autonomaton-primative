@@ -943,6 +943,7 @@ Respond (1-2 sentences only):"""
                 source="dispatcher",
                 raw_transcript=raw_input[:200],
                 zone_context="yellow",
+                intent="general_chat",
                 inferred={"error": str(e), "error_type": type(e).__name__,
                           "handler": "general_chat", "fallback": True, "stage": "handler_error"}
             )
@@ -1014,6 +1015,7 @@ Generate a focused strategic brief (3-5 items, natural language):"""
                 source="dispatcher",
                 raw_transcript=raw_input[:200],
                 zone_context="yellow",
+                intent="strategy_session",
                 inferred={"error": str(e), "handler": "strategy_session", "stage": "handler_error"}
             )
             return DispatchResult(
@@ -1103,6 +1105,7 @@ Maintain the markdown structure. Update the "Last updated" timestamp to today.""
                 source="dispatcher",
                 raw_transcript=raw_input[:200],
                 zone_context="yellow",
+                intent="plan_update",
                 inferred={"error": str(e), "handler": "plan_update", "stage": "handler_error"}
             )
             return DispatchResult(
@@ -1161,6 +1164,7 @@ Maintain the markdown structure. Update the "Last updated" timestamp to today.""
                 source="dispatcher",
                 raw_transcript=raw_input[:200],
                 zone_context="yellow",
+                intent="regenerate_plan",
                 inferred={"error": str(e), "handler": "regenerate_plan", "stage": "handler_error"}
             )
             return DispatchResult(
@@ -1295,6 +1299,7 @@ Return ONLY valid JSON, no explanations:"""
                 source="dispatcher",
                 raw_transcript=raw_input[:200],
                 zone_context="yellow",
+                intent="fill_entity_gap",
                 inferred={"error": str(e), "handler": "fill_entity_gap", "stage": "handler_error"}
             )
             return DispatchResult(
@@ -1406,6 +1411,7 @@ Return ONLY valid JSON, no explanations:"""
                 source="dispatcher",
                 raw_transcript=raw_input[:200],
                 zone_context="yellow",
+                intent="ratchet_interpreter",
                 inferred={
                     "error": str(e),
                     "handler": "ratchet_interpreter",
@@ -1423,6 +1429,7 @@ Return ONLY valid JSON, no explanations:"""
                 source="dispatcher",
                 raw_transcript=raw_input[:200],
                 zone_context="yellow",
+                intent="ratchet_interpreter",
                 inferred={
                     "error": str(e),
                     "error_type": type(e).__name__,
@@ -1550,6 +1557,7 @@ Return ONLY valid JSON, no explanations:"""
                 source="welcome_card",
                 raw_transcript=str(skill_prompt_path),
                 zone_context="green",
+                intent="welcome_card",
                 inferred={"error": str(e), "stage": "prompt_load"}
             )
             return DispatchResult(
@@ -1573,6 +1581,7 @@ Return ONLY valid JSON, no explanations:"""
                         source="welcome_card",
                         raw_transcript=str(filepath),
                         zone_context="green",
+                        intent="welcome_card",
                         inferred={"error": str(e), "stage": "dock_context"}
                     )
                     continue
@@ -1618,6 +1627,7 @@ Generate the welcome card now:"""
                 source="welcome_card",
                 raw_transcript="",
                 zone_context="green",
+                intent="welcome_card",
                 inferred={"error": str(e), "stage": "llm_generation"}
             )
             return DispatchResult(
@@ -1676,6 +1686,7 @@ Generate the welcome card now:"""
                 source="startup_brief",
                 raw_transcript="startup",
                 zone_context="green",
+                intent="startup_brief",
                 inferred={"error": str(e), "error_type": type(e).__name__}
             )
             return DispatchResult(
@@ -1727,6 +1738,7 @@ Generate the welcome card now:"""
                 source="generate_plan",
                 raw_transcript=raw_input[:200],
                 zone_context="yellow",
+                intent="generate_plan",
                 inferred={"error": str(e), "error_type": type(e).__name__}
             )
             return DispatchResult(

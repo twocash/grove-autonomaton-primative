@@ -226,6 +226,60 @@ class TestTelemetrySchemaIntegrity:
         assert "zone_context" in event
 
 
+class TestFlatRoutingFields:
+    """Tests for flat routing fields (Purity v2)."""
+
+    def test_telemetry_event_flat_routing_fields(self):
+        """Flat routing fields appear in output when set."""
+        from engine.telemetry import TelemetryEvent
+        event = TelemetryEvent(
+            source="test",
+            raw_transcript="hello",
+            zone_context="green",
+            intent="strategy_session",
+            tier=2,
+            confidence=0.85,
+            cost_usd=0.012,
+            human_feedback="approved"
+        )
+        d = event.to_dict()
+        assert d["intent"] == "strategy_session"
+        assert d["tier"] == 2
+        assert d["confidence"] == 0.85
+        assert d["cost_usd"] == 0.012
+        assert d["human_feedback"] == "approved"
+
+    def test_telemetry_event_omits_none_fields(self):
+        """None routing fields are omitted from dict output."""
+        from engine.telemetry import TelemetryEvent
+        event = TelemetryEvent(
+            source="test",
+            raw_transcript="hello",
+            zone_context="green"
+        )
+        d = event.to_dict()
+        assert "intent" not in d
+        assert "tier" not in d
+        assert "confidence" not in d
+        assert "cost_usd" not in d
+        assert "human_feedback" not in d
+
+    def test_log_event_accepts_flat_fields(self):
+        """log_event() accepts and persists flat routing fields."""
+        from engine.telemetry import create_event
+        event = create_event(
+            source="test",
+            raw_transcript="hello",
+            zone_context="green",
+            intent="general_chat",
+            tier=1,
+            confidence=0.95
+        )
+        assert event["intent"] == "general_chat"
+        assert event["tier"] == 1
+        assert event["confidence"] == 0.95
+
+
 class TestTelemetryInferredField:
     """Tests for the optional inferred field."""
 

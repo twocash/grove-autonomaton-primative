@@ -183,18 +183,19 @@ class CognitiveRouter:
         if intent not in self.routes and intent != "unknown":
             return None  # Stale cache entry — route was removed
 
-        # Log cache hit for Ratchet telemetry (Task B.5)
+        # Log cache hit for Ratchet telemetry (Task B.5, Purity v2 flat fields)
         try:
             from engine.telemetry import log_event
             log_event(
                 source="cognitive_router",
                 raw_transcript=user_input[:200],
                 zone_context=entry.get("zone", "green"),
+                intent=intent,
+                tier=0,
+                confidence=min(0.7 + (entry.get("confirmed_count", 1) * 0.05), 0.99),
                 inferred={
-                    "classification_tier": 0,
                     "cache_hit": True,
                     "cache_hash": input_hash,
-                    "cached_intent": intent,
                     "confirmed_count": entry.get("confirmed_count", 1),
                     "cost_saved": "tier_2_call_avoided"
                 }
@@ -467,12 +468,14 @@ class CognitiveRouter:
             return None
 
         except Exception as e:
-            # Log failure
+            # Log failure with flat fields (Purity v2)
             try:
                 log_event(
                     source="cognitive_router",
                     raw_transcript=user_input[:200],
                     zone_context="yellow",
+                    intent="unknown",
+                    tier=2,
                     inferred={
                         "error": str(e),
                         "error_type": type(e).__name__,
