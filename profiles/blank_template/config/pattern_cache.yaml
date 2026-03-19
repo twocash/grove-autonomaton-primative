@@ -1,0 +1,19 @@
+# pattern_cache.yaml
+# The Ratchet: Confirmed LLM classifications cached as Tier 0 lookups.
+# This file is operator-inspectable and editable. Delete entries to force
+# re-classification. Delete the file to reset the Ratchet entirely.
+#
+# Schema:
+#   {input_hash}:
+#     intent: string        # Classified intent name
+#     domain: string        # Domain from classification
+#     zone: string          # Zone from classification
+#     handler: string|null  # Handler name
+#     handler_args: dict    # Handler arguments
+#     intent_type: string   # conversational|informational|actionable
+#     confirmed_count: int  # Times this classification was confirmed
+#     last_confirmed: string # ISO-8601 timestamp
+#     original_input: string # First input that created this entry (for debugging)
+#     confidence: float     # Confidence at cache time (always >= 0.7)
+
+cache: {}

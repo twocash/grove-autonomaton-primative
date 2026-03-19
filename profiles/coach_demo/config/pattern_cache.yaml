@@ -1,0 +1,14 @@
+cache:
+  45733d652ddcb495:
+    intent: ratchet_intent_classify
+    domain: system
+    zone: green
+    handler: ratchet_interpreter
+    handler_args:
+      classifier: intent
+      prompt_template: classify_intent
+    intent_type: actionable
+    confirmed_count: 1
+    last_confirmed: '2026-03-19T00:22:39.653607+00:00'
+    original_input: show me the system status please
+    confidence: 1.0

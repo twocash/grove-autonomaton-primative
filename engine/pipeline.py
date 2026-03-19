@@ -637,6 +637,96 @@ JSON:"""
                 "data": {"type": "passthrough"}
             }
 
+        # THE RATCHET: Cache confirmed LLM classifications for Tier 0 lookup (purity-audit-v1)
+        if self.context.executed:
+            self._write_to_pattern_cache()
+
+    def _write_to_pattern_cache(self) -> None:
+        """Write confirmed LLM classification to pattern cache.
+
+        THE RATCHET WRITE PATH:
+        When an LLM-classified intent is approved AND executed successfully,
+        cache the classification so it resolves at Tier 0 next time.
+
+        Only caches when:
+        - Classification came from LLM (tier >= 2 in routing metadata)
+        - Action was approved (Stage 4 passed)
+        - Action was executed successfully (Stage 5 succeeded)
+        - Zone is NOT red (red zone actions should always require human judgment)
+        """
+        import hashlib
+        import yaml
+        from datetime import datetime, timezone
+        from engine.profile import get_config_dir
+
+        routing_info = self.context.entities.get("routing", {})
+        tier = routing_info.get("tier", 0)
+        llm_metadata = routing_info.get("llm_metadata", {})
+
+        # Only cache LLM classifications that were confirmed by execution
+        if tier < 2:
+            return  # Already Tier 0/1 — no demotion needed
+        if not self.context.approved:
+            return
+        if not self.context.executed:
+            return
+        if self.context.zone == "red":
+            return  # Red zone: always require human judgment
+        if llm_metadata.get("source") == "pattern_cache":
+            return  # Already from cache — don't re-cache
+
+        input_hash = hashlib.sha256(
+            self.context.raw_input.lower().strip().encode()
+        ).hexdigest()[:16]
+
+        try:
+            cache_path = get_config_dir() / "pattern_cache.yaml"
+        except RuntimeError:
+            return  # No profile set
+
+        try:
+            if cache_path.exists():
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+            else:
+                data = {}
+
+            cache = data.get("cache", {})
+
+            existing = cache.get(input_hash)
+            if existing:
+                # Increment confirmation count
+                existing["confirmed_count"] = existing.get("confirmed_count", 1) + 1
+                existing["last_confirmed"] = datetime.now(timezone.utc).isoformat()
+            else:
+                # New cache entry
+                cache[input_hash] = {
+                    "intent": self.context.intent,
+                    "domain": self.context.domain,
+                    "zone": self.context.zone,
+                    "handler": routing_info.get("handler"),
+                    "handler_args": routing_info.get("handler_args", {}),
+                    "intent_type": routing_info.get("intent_type", "actionable"),
+                    "confirmed_count": 1,
+                    "last_confirmed": datetime.now(timezone.utc).isoformat(),
+                    "original_input": self.context.raw_input[:100],
+                    "confidence": routing_info.get("confidence", 0.0),
+                }
+
+            data["cache"] = cache
+
+            with open(cache_path, "w", encoding="utf-8") as f:
+                yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+        except Exception as e:
+            # Cache write failure is non-fatal — log and continue
+            log_event(
+                source="pattern_cache",
+                raw_transcript=self.context.raw_input[:200],
+                zone_context="green",
+                inferred={"error": str(e), "stage": "cache_write"}
+            )
+
     def _execute_via_dispatcher(self, routing_info: dict) -> None:
         """
         Execute action via the dispatcher.

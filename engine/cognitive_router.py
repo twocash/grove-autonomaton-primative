@@ -87,6 +87,9 @@ class CognitiveRouter:
         self.routes: dict = {}
         self.tiers: dict = {}
         self._loaded = False
+        # Pattern cache for the Ratchet (purity-audit-v1)
+        self.pattern_cache: dict = {}
+        self._cache_loaded = False
 
     def load_config(self) -> bool:
         """
@@ -130,6 +133,88 @@ class CognitiveRouter:
         self.routes = {}
         self.tiers = {}
         return self.load_config()
+
+    def load_cache(self) -> bool:
+        """Load pattern_cache.yaml from active profile.
+
+        The pattern cache stores confirmed LLM classifications as Tier 0
+        deterministic lookups. This is the Ratchet: every confirmed
+        classification becomes free on repeat.
+        """
+        try:
+            cache_path = get_config_dir() / "pattern_cache.yaml"
+        except RuntimeError:
+            return False
+        if not cache_path.exists():
+            self.pattern_cache = {}
+            self._cache_loaded = True
+            return True
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            self.pattern_cache = data.get("cache", {})
+            self._cache_loaded = True
+            return True
+        except Exception:
+            self.pattern_cache = {}
+            self._cache_loaded = True
+            return False
+
+    def _check_pattern_cache(self, user_input: str) -> Optional[RoutingResult]:
+        """Check if input matches a cached LLM classification.
+
+        Returns RoutingResult at Tier 0 if cache hit, None if miss.
+        This is the Ratchet read path: confirmed patterns skip the LLM.
+        """
+        if not self._cache_loaded:
+            self.load_cache()
+
+        import hashlib
+        input_hash = hashlib.sha256(
+            user_input.lower().strip().encode()
+        ).hexdigest()[:16]
+
+        entry = self.pattern_cache.get(input_hash)
+        if entry is None:
+            return None
+
+        # Validate the cached intent still exists in routing config
+        intent = entry.get("intent", "unknown")
+        if intent not in self.routes and intent != "unknown":
+            return None  # Stale cache entry — route was removed
+
+        # Log cache hit for Ratchet telemetry (Task B.5)
+        try:
+            from engine.telemetry import log_event
+            log_event(
+                source="cognitive_router",
+                raw_transcript=user_input[:200],
+                zone_context=entry.get("zone", "green"),
+                inferred={
+                    "classification_tier": 0,
+                    "cache_hit": True,
+                    "cache_hash": input_hash,
+                    "cached_intent": intent,
+                    "confirmed_count": entry.get("confirmed_count", 1),
+                    "cost_saved": "tier_2_call_avoided"
+                }
+            )
+        except Exception:
+            pass  # Telemetry failure is non-fatal for cache reads
+
+        return RoutingResult(
+            intent=intent,
+            domain=entry.get("domain", "general"),
+            zone=entry.get("zone", "yellow"),
+            tier=0,  # THE RATCHET: Tier 0, zero cost
+            confidence=min(0.7 + (entry.get("confirmed_count", 1) * 0.05), 0.99),
+            handler=entry.get("handler"),
+            handler_args=entry.get("handler_args", {}),
+            extracted_args={},
+            intent_type=entry.get("intent_type", "actionable"),
+            action_required=entry.get("intent_type") != "conversational",
+            llm_metadata={"source": "pattern_cache", "cache_hash": input_hash}
+        )
 
     def classify(self, user_input: str) -> RoutingResult:
         """
@@ -190,8 +275,13 @@ class CognitiveRouter:
                     if best_match is None or confidence > best_match[2]:
                         best_match = (intent_name, route_config, confidence)
 
-        # If no match or low confidence, try LLM escalation
+        # If no match or low confidence: cache check, then LLM escalation
         if best_match is None or best_match[2] < self.LLM_ESCALATION_THRESHOLD:
+            # THE RATCHET: Check pattern cache before calling LLM (purity-audit-v1)
+            cache_result = self._check_pattern_cache(user_input)
+            if cache_result is not None:
+                return cache_result
+            # Cache miss — escalate to LLM
             llm_result = self._escalate_to_llm(user_input)
             if llm_result is not None:
                 return llm_result
