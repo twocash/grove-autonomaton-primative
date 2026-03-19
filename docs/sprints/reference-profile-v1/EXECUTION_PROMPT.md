@@ -232,6 +232,7 @@ in the section after the existing system intents:
 - `voice.yaml` — copy as-is
 - `pillars.yaml` — copy as-is
 - `mcp.config` — copy as-is
+- `models.yaml` — copy as-is (Purity v2: model config externalized)
 
 **Step 6:** Create `config/pattern_cache.yaml`:
 ```yaml
@@ -321,11 +322,16 @@ event_id = context.telemetry_event.get("id", "unknown")[:8]
 source = context.source
 
 # Stage 2: Recognition
+# Purity v2: tier, confidence, cost_usd are now flat telemetry fields (authoritative)
+# context.entities["routing"] still needed for: handler, intent_type, llm_metadata
 routing = context.entities.get("routing", {})
-tier = routing.get("tier", 0)
-confidence = routing.get("confidence", 0.0)
 intent_type = routing.get("intent_type", "unknown")
 llm_metadata = routing.get("llm_metadata", {})
+
+# Use flat telemetry fields when available (Purity v2)
+tier = context.telemetry_event.get("tier", routing.get("tier", 0))
+confidence = context.telemetry_event.get("confidence", routing.get("confidence", 0.0))
+cost_usd = context.telemetry_event.get("cost_usd")
 
 # Determine classification method
 if llm_metadata.get("source") == "pattern_cache":
@@ -333,7 +339,7 @@ if llm_metadata.get("source") == "pattern_cache":
     cost_str = "$0.00"
 elif tier >= 2 and not llm_metadata.get("forced_route"):
     method = "LLM"
-    cost_str = f"~${0.003:.3f}"  # Tier 2 estimate; refine if flat telemetry lands
+    cost_str = f"${cost_usd:.4f}" if cost_usd else "~$0.003"
 elif llm_metadata.get("forced_route"):
     method = "forced"
     cost_str = "$0.00"
