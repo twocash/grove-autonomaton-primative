@@ -1,0 +1,44 @@
+# tips.yaml — Contextual Tips for Reference Profile
+# Each tip fires once per session based on trigger conditions.
+# The tip engine evaluates triggers against PipelineContext after each run.
+
+tips:
+  - id: first_greeting
+    trigger:
+      after_intent: "general_chat"
+    text: "Try something the system won't recognize to see what happens."
+
+  - id: first_llm
+    trigger:
+      after_tier: 2
+    text: "That used the LLM. Try the exact same phrase again."
+
+  - id: ratchet_seen
+    trigger:
+      after_cache_hit: true
+    text: "Type `show cache` to see what the Ratchet stored."
+
+  - id: after_cache_inspect
+    trigger:
+      after_intent: "show_cache"
+    text: "Try `clear cache` to see what happens when the zone changes."
+
+  - id: first_yellow
+    trigger:
+      after_zone: "yellow"
+    text: "Type `show telemetry` to see the full audit trail."
+
+  - id: after_telemetry
+    trigger:
+      after_intent: "show_telemetry"
+    text: "Type `show engine` to see the source code manifest."
+
+  - id: after_engine
+    trigger:
+      after_intent: "show_engine"
+    text: "Type `session zero` to start building your own Autonomaton."
+
+  - id: after_session_zero
+    trigger:
+      after_intent: "session_zero"
+    text: "To build your own, copy this profile directory and customize."

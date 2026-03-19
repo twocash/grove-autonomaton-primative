@@ -94,10 +94,15 @@ def parse_args():
         action="store_true",
         help="Skip the welcome card briefing at startup"
     )
+    parser.add_argument(
+        "--glass",
+        action="store_true",
+        help="Enable glass pipeline display for any profile"
+    )
     return parser.parse_args()
 
 
-def print_banner(profile: str, dock_info: str, cortex_info: str):
+def print_banner(profile: str, dock_info: str, cortex_info: str, glass_enabled: bool = False):
     """Display startup banner with profile and dock status. Minimal."""
     c = Colors
     print()
@@ -107,7 +112,17 @@ def print_banner(profile: str, dock_info: str, cortex_info: str):
     print(f"{c.CYAN}{'=' * 60}{c.RESET}")
     print(f"  {c.DIM}{dock_info}{c.RESET}")
     print(f"  {c.DIM}{cortex_info}{c.RESET}")
+    if glass_enabled:
+        print(f"  {c.MAGENTA}Glass Pipeline: ACTIVE{c.RESET}")
     print(f"{c.CYAN}{'=' * 60}{c.RESET}")
+
+    # Reference profile intro block
+    if profile == "reference":
+        print()
+        print(f"  {c.DIM}This is the naked engine. No domain. No context. No skills.{c.RESET}")
+        print(f"  {c.DIM}Every pipeline stage will announce itself as it runs.{c.RESET}")
+        print(f"  {c.DIM}Type anything to see the architecture in motion.{c.RESET}")
+
     print()
 
 
@@ -357,6 +372,28 @@ def main():
     from engine.dock import get_dock
     from engine.cortex import run_tail_pass, load_pending_queue
 
+    # Load profile config (presentation layer flags)
+    from engine.config_loader import load_profile_config
+    profile_config = load_profile_config()
+
+    # Glass pipeline: enabled by profile.yaml OR --glass CLI flag
+    glass_enabled = profile_config["display"]["glass_pipeline"] or args.glass
+    glass_level = profile_config["display"]["glass_level"]
+
+    # Tips engine: enabled by profile.yaml
+    tips_enabled = profile_config["display"]["tips"]
+    tip_engine = None
+    if tips_enabled:
+        from engine.glass import TipEngine
+        tip_engine = TipEngine()
+
+    # Startup gating: profile.yaml flags OR CLI flags (either can suppress)
+    startup_config = profile_config["startup"]
+    skip_welcome = startup_config["skip_welcome"] or args.skip_welcome
+    skip_queue = startup_config["skip_queue"] or args.skip_queue
+    skip_plan = startup_config["skip_plan_generation"]
+    skip_brief = startup_config["skip_startup_brief"]
+
     verbose = args.verbose
     profile = get_profile()
 
@@ -368,7 +405,7 @@ def main():
     pending = load_pending_queue()
     cortex_info = f"Cortex: {len(pending)} pending Kaizen item(s)"
 
-    print_banner(profile, dock_info, cortex_info)
+    print_banner(profile, dock_info, cortex_info, glass_enabled)
 
     # Check for structured plan — generate on first boot (Sprint 5)
     # Now routed through the pipeline (purity-audit-v1)
@@ -376,7 +413,7 @@ def main():
 
     c = Colors
     plan_path = get_dock_dir() / "system" / "structured-plan.md"
-    if not plan_path.exists():
+    if not skip_plan and not plan_path.exists():
         print(f"  {c.CYAN}[FIRST BOOT]{c.RESET} No structured plan found.")
         print(f"  {c.DIM}Generating initial plan from dock context...{c.RESET}")
         print()
@@ -385,7 +422,8 @@ def main():
         # Stage 5 dispatcher handler does LLM call and file write
         plan_context = run_pipeline(
             raw_input="generate plan",
-            source="system_startup"
+            source="system_startup",
+            force_route="generate_plan"
         )
         if plan_context.executed:
             result = plan_context.result or {}
@@ -401,16 +439,17 @@ def main():
         print()
 
     # Process pending Kaizen items at startup (unless skipped)
-    if not args.skip_queue and pending:
+    if not skip_queue and pending:
         process_pending_queue()
 
     # Welcome Briefing (replaces cold command list)
     # Now routed through the pipeline (purity-audit-v1)
-    if not args.skip_welcome:
+    if not skip_welcome:
         # Route welcome_card through pipeline
         welcome_context = run_pipeline(
             raw_input="welcome_card",
-            source="system_startup"
+            source="system_startup",
+            force_route="welcome_card"
         )
         if welcome_context.executed:
             result = welcome_context.result or {}
@@ -429,17 +468,19 @@ def main():
             print()
 
         # Chief of Staff Strategic Brief - route through pipeline
-        brief_context = run_pipeline(
-            raw_input="startup_brief",
-            source="system_startup"
-        )
-        if brief_context.executed:
-            result = brief_context.result or {}
-            brief = result.get("message", "")
-            if brief:
-                print(f"  {c.CYAN}{'─' * 56}{c.RESET}")
-                print(f"  {c.WHITE}{brief}{c.RESET}")
-                print()
+        if not skip_brief:
+            brief_context = run_pipeline(
+                raw_input="startup_brief",
+                source="system_startup",
+                force_route="startup_brief"
+            )
+            if brief_context.executed:
+                result = brief_context.result or {}
+                brief = result.get("message", "")
+                if brief:
+                    print(f"  {c.CYAN}{'─' * 56}{c.RESET}")
+                    print(f"  {c.WHITE}{brief}{c.RESET}")
+                    print()
     else:
         print(f"  {c.DIM}Ready.{c.RESET}")
         print()
@@ -475,8 +516,22 @@ def main():
                 source="operator_session"
             )
 
+            # Glass pipeline display (if enabled)
+            if glass_enabled:
+                from engine.glass import display_glass_pipeline, display_ratchet_announcement
+                ratchet_msg = display_glass_pipeline(context, glass_level)
+                if ratchet_msg:
+                    display_ratchet_announcement(ratchet_msg)
+
             # Display results based on dispatch data type
             display_result(context, verbose)
+
+            # Contextual tips (if enabled)
+            if tip_engine:
+                tip_text = tip_engine.evaluate(context)
+                if tip_text:
+                    from engine.glass import display_tip
+                    display_tip(tip_text)
 
             # Run Cortex tail-pass analysis (Layer 3)
             cortex_result = run_tail_pass()

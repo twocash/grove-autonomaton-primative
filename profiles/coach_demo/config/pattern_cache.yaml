@@ -1,4 +1,79 @@
 cache:
+  33262c4a3964e7c1:
+    intent: content_compilation
+    domain: content
+    zone: yellow
+    handler: content_engine
+    handler_args:
+      action: compile
+    intent_type: actionable
+    confirmed_count: 53
+    last_confirmed: '2026-03-19T05:18:06.321181+00:00'
+    original_input: compile content
+    confidence: 1.0
+  f915e934396d09fe:
+    intent: calendar_schedule
+    domain: lessons
+    zone: yellow
+    handler: mcp_calendar
+    handler_args:
+      server: google_calendar
+      capability: create_event
+    intent_type: actionable
+    confirmed_count: 30
+    last_confirmed: '2026-03-19T05:07:21.755722+00:00'
+    original_input: schedule a lesson with Henderson for tomorrow at 3pm
+    confidence: 0.9
+  02348f8c104e760e:
+    intent: email_parent
+    domain: players
+    zone: yellow
+    handler: mcp_gmail
+    handler_args:
+      server: gmail
+      capability: send_email
+    intent_type: actionable
+    confirmed_count: 15
+    last_confirmed: '2026-03-19T05:07:21.898658+00:00'
+    original_input: email Henderson's parent about today's progress
+    confidence: 0.9
+  3ddf31460608454e:
+    intent: calendar_schedule
+    domain: lessons
+    zone: yellow
+    handler: mcp_calendar
+    handler_args:
+      server: google_calendar
+      capability: create_event
+    intent_type: actionable
+    confirmed_count: 35
+    last_confirmed: '2026-03-19T05:07:22.024163+00:00'
+    original_input: schedule a lesson with Test
+    confidence: 0.9
+  77443df17cadbf86:
+    intent: content_compilation
+    domain: content
+    zone: yellow
+    handler: content_engine
+    handler_args:
+      action: compile
+    intent_type: actionable
+    confirmed_count: 10
+    last_confirmed: '2026-03-19T03:59:37.677039+00:00'
+    original_input: 'compile content with special chars: @#$%'
+    confidence: 0.9
+  0054cdc6aba392e6:
+    intent: session_zero
+    domain: system
+    zone: yellow
+    handler: session_zero_handler
+    handler_args:
+      skill_name: session-zero-intake
+    intent_type: actionable
+    confirmed_count: 20
+    last_confirmed: '2026-03-19T03:59:38.198933+00:00'
+    original_input: session zero
+    confidence: 1.0
   45733d652ddcb495:
     intent: ratchet_intent_classify
     domain: system
@@ -9,6 +84,41 @@ cache:
       prompt_template: classify_intent
     intent_type: actionable
     confirmed_count: 1
-    last_confirmed: '2026-03-19T00:22:39.653607+00:00'
+    last_confirmed: '2026-03-19T04:46:17.290795+00:00'
     original_input: show me the system status please
+    confidence: 1.0
+  c69987ceb3309113:
+    intent: welcome_card
+    domain: system
+    zone: green
+    handler: welcome_card
+    handler_args: {}
+    intent_type: informational
+    confirmed_count: 2
+    last_confirmed: '2026-03-19T05:29:21.116447+00:00'
+    original_input: welcome_card
+    confidence: 1.0
+  45032a8dcaee0a8b:
+    intent: startup_brief
+    domain: system
+    zone: green
+    handler: startup_brief
+    handler_args: {}
+    intent_type: informational
+    confirmed_count: 2
+    last_confirmed: '2026-03-19T05:29:37.265803+00:00'
+    original_input: startup_brief
+    confidence: 1.0
+  ed343a513afc4fd1:
+    intent: ratchet_intent_classify
+    domain: system
+    zone: green
+    handler: ratchet_interpreter
+    handler_args:
+      classifier: intent
+      prompt_template: classify_intent
+    intent_type: actionable
+    confirmed_count: 2
+    last_confirmed: '2026-03-19T05:18:13.851638+00:00'
+    original_input: xyzzy random unknown command
     confidence: 1.0

@@ -1,0 +1,29 @@
+# pillars.yaml
+# Content pillars for this Autonomaton
+# Domain: [YOUR DOMAIN HERE]
+
+# Pillar Definitions
+# Define your content themes/pillars here
+pillars:
+  # Example pillar (uncomment and customize):
+  # my_pillar:
+  #   name: "My Pillar Name"
+  #   description: "Description of this content theme"
+  #   themes:
+  #     - theme_1
+  #     - theme_2
+  #   hashtags:
+  #     - "#MyHashtag"
+  #   content_types:
+  #     - blog_post
+  #     - social_update
+
+# Content Calendar Defaults (if using content engine)
+# calendar:
+#   weekly_cadence:
+#     monday: pillar_1
+#     wednesday: pillar_2
+#     friday: pillar_3
+#   platform_priority:
+#     - platform_1
+#     - platform_2

@@ -1,0 +1,4 @@
+# Pattern Cache — The Ratchet
+# Confirmed LLM classifications cached as Tier 0 lookups.
+# This file starts empty. The Ratchet populates it through use.
+cache: {}

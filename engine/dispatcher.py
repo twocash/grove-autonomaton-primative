@@ -71,6 +71,9 @@ class Dispatcher:
             "startup_brief": self._handle_startup_brief,
             "generate_plan": self._handle_generate_plan,
             "clear_cache": self._handle_clear_cache,
+            # Reference profile handlers (reference-profile-v1)
+            "show_file": self._handle_show_file,
+            "show_engine_manifest": self._handle_show_engine_manifest,
         }
 
     def dispatch(
@@ -1795,6 +1798,143 @@ Generate the welcome card now:"""
                 message=f"Failed to clear cache: {e}",
                 data={"type": "cache_clear", "error": str(e)}
             )
+
+    # =========================================================================
+    # Reference Profile Handlers (Sprint: reference-profile-v1)
+    # =========================================================================
+
+    def _handle_show_file(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Display contents of a profile config file.
+
+        Security: validates target path is within profile directory.
+        """
+        from engine.profile import get_profile_path
+
+        target = routing_result.handler_args.get("target", "")
+        tail = routing_result.handler_args.get("tail", None)
+
+        if not target:
+            return DispatchResult(
+                success=False,
+                message="No target file specified",
+                data={"type": "file_display", "error": "no_target"}
+            )
+
+        profile_dir = get_profile_path()
+        target_path = (profile_dir / target).resolve()
+
+        # SECURITY: Reject path traversal
+        if not str(target_path).startswith(str(profile_dir.resolve())):
+            return DispatchResult(
+                success=False,
+                message=f"Access denied: {target} is outside the profile directory",
+                data={"type": "file_display", "error": "path_traversal"}
+            )
+
+        if not target_path.exists():
+            return DispatchResult(
+                success=True,
+                message=f"[{target}]\n(empty — file does not exist yet)",
+                data={"type": "file_display"}
+            )
+
+        content = target_path.read_text(encoding="utf-8")
+
+        if tail and isinstance(tail, int):
+            lines = content.strip().split("\n")
+            content = "\n".join(lines[-tail:])
+
+        header = f"── {target} ──"
+        return DispatchResult(
+            success=True,
+            message=f"{header}\n{content}",
+            data={"type": "file_display"}
+        )
+
+    def _handle_show_engine_manifest(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """Display engine source file manifest with line counts."""
+        engine_dir = Path(__file__).parent
+
+        manifest_lines = []
+        total_lines = 0
+
+        # Core engine files in display order
+        engine_files = [
+            "pipeline.py",
+            "cognitive_router.py",
+            "dispatcher.py",
+            "telemetry.py",
+            "ux.py",
+            "cortex.py",
+            "compiler.py",
+            "dock.py",
+            "llm_client.py",
+            "config_loader.py",
+            "profile.py",
+            "glass.py",
+        ]
+
+        for filename in engine_files:
+            filepath = engine_dir / filename
+            if filepath.exists():
+                line_count = len(filepath.read_text(encoding="utf-8").splitlines())
+                total_lines += line_count
+                desc = self._extract_module_description(filepath)
+                manifest_lines.append(
+                    f"  {filename:<24} {line_count:>4} lines   {desc}"
+                )
+
+        # Add entry point
+        entry_point = engine_dir.parent / "autonomaton.py"
+        ep_lines = 0
+        if entry_point.exists():
+            ep_lines = len(entry_point.read_text(encoding="utf-8").splitlines())
+            total_lines += ep_lines
+
+        header = f"ENGINE MANIFEST ({len(manifest_lines)} modules, ~{total_lines:,} lines)"
+        separator = "─" * 55
+
+        output = f"{header}\n{separator}\n"
+        output += "\n".join(manifest_lines)
+        output += f"\n{separator}\n"
+        output += f"  Entry point: autonomaton.py  {ep_lines} lines"
+
+        return DispatchResult(
+            success=True,
+            message=output,
+            data={"type": "engine_manifest"}
+        )
+
+    def _extract_module_description(self, filepath: Path) -> str:
+        """Extract first meaningful line from module docstring."""
+        lines = filepath.read_text(encoding="utf-8").splitlines()
+        in_docstring = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith('"""') and not in_docstring:
+                # Single-line docstring
+                if stripped.endswith('"""') and len(stripped) > 6:
+                    return stripped[3:-3].strip()
+                in_docstring = True
+                content = stripped[3:].strip()
+                if content:
+                    return content
+                continue
+            if in_docstring:
+                if stripped.endswith('"""'):
+                    return stripped[:-3].strip() if stripped[:-3].strip() else "No description"
+                if stripped:
+                    return stripped
+        return "No description"
 
 
 # =========================================================================

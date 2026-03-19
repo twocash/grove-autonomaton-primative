@@ -1,0 +1,14 @@
+# profile.yaml — Reference Implementation
+# Profile-level flags controlling REPL presentation and startup behavior.
+# These flags are read by the REPL layer, not the engine.
+
+display:
+  glass_pipeline: true         # Show pipeline stage annotations
+  glass_level: medium          # minimal | medium | full
+  tips: true                   # Show contextual tips after interactions
+
+startup:
+  skip_welcome: true           # No welcome card at startup
+  skip_startup_brief: true     # No strategic brief at startup
+  skip_plan_generation: true   # No first-boot plan generation
+  skip_queue: true             # No Kaizen queue processing at startup

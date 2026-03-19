@@ -1,0 +1,61 @@
+# zones.schema
+# Governance domains and zone classifications
+# Domain: [YOUR DOMAIN HERE]
+
+# Zone Definitions (Traffic Light Model)
+zones:
+  green:
+    approval: none
+    description: "Safe to execute autonomously"
+    examples:
+      - "Query local data"
+      - "Generate reports"
+      - "Draft content"
+
+  yellow:
+    approval: one_thumb
+    description: "Requires user confirmation before execution"
+    examples:
+      - "Send communications"
+      - "Create external records"
+      - "Modify entities"
+
+  red:
+    approval: explicit_with_context
+    description: "High-stakes action requiring full context review"
+    examples:
+      - "Delete records"
+      - "Financial operations"
+      - "System modifications"
+
+# Domain Schemas
+# Define your business domains here
+domains:
+  system:
+    description: "System management and configuration"
+    default_zone: green
+    entities: []
+    outputs: []
+
+  # Example domain (uncomment and customize):
+  # my_domain:
+  #   description: "Description of this domain"
+  #   default_zone: green
+  #   entities:
+  #     - my_entity_type
+  #   outputs:
+  #     - output/my_domain/
+
+# Jidoka Triggers (stop-the-line conditions)
+jidoka:
+  entity_ambiguity:
+    description: "Multiple entity matches or no match found"
+    action: prompt_resolution
+
+  zone_escalation:
+    description: "Action requires higher zone than current context"
+    action: request_approval
+
+  intent_unclear:
+    description: "Cannot confidently classify user intent"
+    action: clarify_intent

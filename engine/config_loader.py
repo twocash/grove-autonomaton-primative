@@ -168,3 +168,43 @@ def get_persona() -> PersonaConfig:
     Convenience alias for load_persona().
     """
     return load_persona()
+
+
+def load_profile_config() -> dict:
+    """Load profile.yaml from active profile. Returns defaults if missing.
+
+    Profile config controls REPL presentation and startup behavior.
+    It is NOT engine config — the engine doesn't read this file.
+    """
+    defaults = {
+        "display": {
+            "glass_pipeline": False,
+            "glass_level": "medium",
+            "tips": False
+        },
+        "startup": {
+            "skip_welcome": False,
+            "skip_startup_brief": False,
+            "skip_plan_generation": False,
+            "skip_queue": False
+        }
+    }
+
+    try:
+        config_path = get_config_dir() / "profile.yaml"
+    except RuntimeError:
+        return defaults
+
+    if not config_path.exists():
+        return defaults
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        # Merge with defaults (profile.yaml can be partial)
+        for section in defaults:
+            if section in data:
+                defaults[section].update(data[section])
+        return defaults
+    except Exception:
+        return defaults
