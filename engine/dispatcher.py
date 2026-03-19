@@ -252,31 +252,44 @@ class Dispatcher:
         Handle pit crew operations (skill building).
 
         Red Zone - requires explicit approval with context.
+        Pipeline-compliant: no operator prompts.
         """
         action = routing_result.handler_args.get("action", "build")
 
         if action == "build":
             skill_name = routing_result.extracted_args.get("skill_name", "")
+            description = routing_result.extracted_args.get("description", "")
 
             if not skill_name:
                 return DispatchResult(
                     success=False,
-                    message="Usage: build skill <name>",
-                    data={"type": "pit_crew_build", "error": "missing_name"}
+                    message="Usage: build skill [name] [description]\n"
+                            "Example: build skill weekly-report generates a weekly summary from telemetry",
+                    data={"type": "pit_crew_usage"}
                 )
 
-            # Return that this requires interactive input
-            # The actual build happens after description is collected by REPL
+            if not description:
+                return DispatchResult(
+                    success=False,
+                    message="Usage: build skill [name] [description]\n"
+                            "Example: build skill weekly-report generates a weekly summary from telemetry\n\n"
+                            f"Got skill name '{skill_name}' but missing description.",
+                    data={"type": "pit_crew_usage"}
+                )
+
+            # All arguments present — proceed with build
+            from engine.pit_crew import build_skill
+            result = build_skill(skill_name, description)
+
             return DispatchResult(
-                success=True,
-                message=f"Ready to build skill: {skill_name}",
+                success=result.get("success", False),
+                message=result.get("message", "Skill build complete"),
                 data={
                     "type": "pit_crew_build",
                     "skill_name": skill_name,
-                    "requires_description": True
-                },
-                requires_approval=True,  # Red Zone
-                approval_context=f"Build new skill: {skill_name}"
+                    "description": description,
+                    "result": result
+                }
             )
 
         return DispatchResult(

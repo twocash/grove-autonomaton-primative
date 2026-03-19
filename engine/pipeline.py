@@ -165,6 +165,10 @@ class InvariantPipeline:
         """
         routing_info = self.context.entities.get("routing", {})
 
+        # Extract cost_usd from LLM metadata if available (V7 fix)
+        llm_metadata = routing_info.get("llm_metadata", {})
+        cost = llm_metadata.get("cost_usd")
+
         log_event(
             source=self.context.source,
             raw_transcript=self.context.raw_input[:200],
@@ -173,8 +177,10 @@ class InvariantPipeline:
             tier=routing_info.get("tier"),
             confidence=routing_info.get("confidence"),
             human_feedback="approved" if self.context.approved else "rejected",
+            cost_usd=cost,
             inferred={
-                "stage": "pipeline_complete",
+                "stage": "execution",
+                "pipeline_id": self.context.telemetry_event.get("id"),
                 "handler": routing_info.get("handler"),
                 "intent_type": routing_info.get("intent_type"),
             }
@@ -189,7 +195,7 @@ class InvariantPipeline:
             source=self.context.source,
             raw_transcript=self.context.raw_input,
             zone_context=self.context.zone,
-            inferred={}
+            inferred={"stage": "telemetry"}
         )
 
     def _run_recognition(self) -> None:
@@ -228,6 +234,25 @@ class InvariantPipeline:
                     "llm_metadata": {"forced_route": True}
                 }
             }
+
+            # Stage 2 trace for forced route path
+            routing_info = self.context.entities.get("routing", {})
+            log_event(
+                source=self.context.source,
+                raw_transcript=self.context.raw_input[:200],
+                zone_context=self.context.zone,
+                intent=self.context.intent,
+                tier=routing_info.get("tier"),
+                confidence=routing_info.get("confidence"),
+                inferred={
+                    "stage": "recognition",
+                    "pipeline_id": self.context.telemetry_event.get("id"),
+                    "domain": self.context.domain,
+                    "handler": routing_info.get("handler"),
+                    "intent_type": routing_info.get("intent_type"),
+                    "method": "forced",
+                }
+            )
             return
 
         # Normal classification path
@@ -254,6 +279,29 @@ class InvariantPipeline:
             }
         }
 
+        # --- End of _run_recognition ---
+        # Stage 2 trace: recognition complete
+        routing_info = self.context.entities.get("routing", {})
+        log_event(
+            source=self.context.source,
+            raw_transcript=self.context.raw_input[:200],
+            zone_context=self.context.zone,
+            intent=self.context.intent,
+            tier=routing_info.get("tier"),
+            confidence=routing_info.get("confidence"),
+            inferred={
+                "stage": "recognition",
+                "pipeline_id": self.context.telemetry_event.get("id"),
+                "domain": self.context.domain,
+                "handler": routing_info.get("handler"),
+                "intent_type": routing_info.get("intent_type"),
+                "method": "forced" if self.context.force_route else (
+                    "cache" if routing_info.get("llm_metadata", {}).get("source") == "pattern_cache"
+                    else ("llm" if routing_info.get("tier", 0) >= 2 else "keyword")
+                ),
+            }
+        )
+
     def _run_compilation(self) -> None:
         """
         Stage 3: Compilation
@@ -275,6 +323,21 @@ class InvariantPipeline:
         if intent_type == "conversational":
             self.context.dock_context = []
             self.context.proposed_action = self.context.raw_input
+
+            # Stage 3 trace for skipped compilation
+            log_event(
+                source=self.context.source,
+                raw_transcript=self.context.raw_input[:200],
+                zone_context=self.context.zone,
+                intent=self.context.intent,
+                inferred={
+                    "stage": "compilation",
+                    "pipeline_id": self.context.telemetry_event.get("id"),
+                    "intent_type": "conversational",
+                    "dock_chunks": 0,
+                    "skipped": True,
+                }
+            )
             return
 
         # Import here to avoid circular dependency at module load
@@ -293,6 +356,39 @@ class InvariantPipeline:
         self.context.proposed_action = (
             f"[ACTION] Process: {self.context.raw_input}\n\n"
             f"[STRATEGIC CONTEXT]\n{dock_context}"
+        )
+
+        # --- End of _run_compilation ---
+        routing_info = self.context.entities.get("routing", {})
+        log_event(
+            source=self.context.source,
+            raw_transcript=self.context.raw_input[:200],
+            zone_context=self.context.zone,
+            intent=self.context.intent,
+            inferred={
+                "stage": "compilation",
+                "pipeline_id": self.context.telemetry_event.get("id"),
+                "intent_type": routing_info.get("intent_type", "actionable"),
+                "dock_chunks": len(self.context.dock_context) if self.context.dock_context else 0,
+                "skipped": False,
+            }
+        )
+
+    def _log_approval_trace(self) -> None:
+        """Log Stage 4 approval trace. Called before every return."""
+        routing_info = self.context.entities.get("routing", {})
+        log_event(
+            source=self.context.source,
+            raw_transcript=self.context.raw_input[:200],
+            zone_context=self.context.zone,
+            intent=self.context.intent,
+            human_feedback="approved" if self.context.approved else "rejected",
+            inferred={
+                "stage": "approval",
+                "pipeline_id": self.context.telemetry_event.get("id"),
+                "effective_zone": self.context.zone,
+                "action_required": routing_info.get("action_required", True),
+            }
         )
 
     def _run_approval(self) -> None:
@@ -342,11 +438,13 @@ class InvariantPipeline:
             confidence < CognitiveRouter.CLARIFICATION_THRESHOLD):
             # Ask user to clarify instead of blanket yellow approval
             self._handle_clarification_jidoka()
+            self._log_approval_trace()
             return
 
         # Sprint 8: Skip approval UX for non-actionable green zone intents
         if not action_required and effective_zone == "green":
             self.context.approved = True
+            self._log_approval_trace()
             return
 
         if effective_zone == "green":
@@ -380,6 +478,9 @@ class InvariantPipeline:
                 action_description=f"[UNKNOWN ZONE: {effective_zone}] {self.context.proposed_action}"
             )
 
+        # --- End of _run_approval ---
+        self._log_approval_trace()
+
     def _handle_clarification_jidoka(self) -> None:
         """
         Handle ambiguous input with diagnostic + smart clarification.
@@ -412,6 +513,19 @@ class InvariantPipeline:
             if choice == "1":
                 # User confirmed LLM's guess — proceed
                 self.context.approved = True
+                log_event(
+                    source="clarification_jidoka",
+                    raw_transcript=self.context.raw_input[:200],
+                    zone_context=self.context.zone,
+                    intent=self.context.intent,
+                    human_feedback="clarified",
+                    inferred={
+                        "stage": "approval_jidoka",
+                        "pipeline_id": self.context.telemetry_event.get("id"),
+                        "resolved_intent": self.context.intent,
+                        "jidoka_tier": "a",
+                    }
+                )
                 return
             elif choice == "3":
                 # User wants to rephrase
@@ -424,7 +538,13 @@ class InvariantPipeline:
             # choice == "2" falls through to Tier B
 
         # Tier B: Smart options via LLM
-        smart_options = self._generate_smart_clarification(self.context.raw_input)
+        # Ambiguity floor: short unknown inputs skip LLM clarification.
+        # The LLM hallucinates specific options for genuinely unknown input.
+        word_count = len(self.context.raw_input.strip().split())
+        if word_count <= 2 and confidence < 0.2:
+            smart_options = None
+        else:
+            smart_options = self._generate_smart_clarification(self.context.raw_input)
 
         if smart_options:
             choice = ask_jidoka(
@@ -451,6 +571,19 @@ class InvariantPipeline:
             self.context.entities["routing"]["intent_type"] = resolver.get("intent_type", "actionable")
             self.context.entities["routing"]["action_required"] = resolver.get("action_required", True)
             self.context.approved = True
+            log_event(
+                source="clarification_jidoka",
+                raw_transcript=self.context.raw_input[:200],
+                zone_context=self.context.zone,
+                intent=self.context.intent,
+                human_feedback="clarified",
+                inferred={
+                    "stage": "approval_jidoka",
+                    "pipeline_id": self.context.telemetry_event.get("id"),
+                    "resolved_intent": self.context.intent,
+                    "jidoka_tier": "b",
+                }
+            )
         else:
             # Tier B failed — log and fall back to generic options
             log_event(
@@ -481,6 +614,19 @@ class InvariantPipeline:
                 "llm_metadata": resolved.llm_metadata or {}
             }
             self.context.approved = True
+            log_event(
+                source="clarification_jidoka",
+                raw_transcript=self.context.raw_input[:200],
+                zone_context=self.context.zone,
+                intent=self.context.intent,
+                human_feedback="clarified",
+                inferred={
+                    "stage": "approval_jidoka",
+                    "pipeline_id": self.context.telemetry_event.get("id"),
+                    "resolved_intent": self.context.intent,
+                    "jidoka_tier": "generic",
+                }
+            )
 
     def _generate_smart_clarification(self, user_input: str) -> dict | None:
         """

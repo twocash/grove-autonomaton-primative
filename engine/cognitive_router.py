@@ -492,73 +492,59 @@ class CognitiveRouter:
 # =========================================================================
 
 def get_clarification_options() -> dict:
-    """
-    Get the standard clarification options for ambiguous input.
+    """Load fallback clarification options from profile config.
 
-    Returns options dict for ask_jidoka.
+    Reads clarification.yaml from the active profile. If missing,
+    returns minimal generic fallback. Zero hardcoded domain logic.
     """
+    import yaml
+    from engine.profile import get_config_dir
+
+    try:
+        config_path = get_config_dir() / "clarification.yaml"
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            options = {}
+            for key, entry in data.get("fallback_options", {}).items():
+                options[str(key)] = entry.get("label", f"Option {key}")
+            if options:
+                return options
+    except Exception:
+        pass
+
+    # Absolute minimal fallback (no domain assumptions)
     return {
-        "1": "Draft or compile content",
-        "2": "Schedule something",
-        "3": "Check on status/information",
-        "4": "Just chatting"
+        "1": "Start a conversation about this",
+        "2": "I'll rephrase with more context",
     }
 
 
 def resolve_clarification(choice: str, original_input: str) -> RoutingResult:
-    """
-    Resolve a clarification choice to a RoutingResult.
+    """Resolve a clarification choice using profile config.
 
-    Args:
-        choice: The user's choice ("1", "2", "3", or "4")
-        original_input: The original ambiguous input
-
-    Returns:
-        RoutingResult based on clarification
+    Maps the user's choice to an intent declared in BOTH
+    clarification.yaml AND the active routing.config. If the
+    intent doesn't exist in routing.config, falls back to
+    general_chat. Zero hardcoded domain logic.
     """
-    if choice == "1":
-        # Content work
-        return RoutingResult(
-            intent="content_draft",
-            domain="content",
-            zone="green",
-            tier=1,
-            confidence=1.0,
-            handler=None,
-            intent_type="actionable",
-            action_required=True,
-            llm_metadata={"clarified_from": original_input}
-        )
-    elif choice == "2":
-        # Scheduling
-        return RoutingResult(
-            intent="calendar_schedule",
-            domain="lessons",
-            zone="yellow",
-            tier=2,
-            confidence=1.0,
-            handler="mcp_calendar",
-            handler_args={"server": "google_calendar", "capability": "create_event"},
-            intent_type="actionable",
-            action_required=True,
-            llm_metadata={"clarified_from": original_input}
-        )
-    elif choice == "3":
-        # Status/information
-        return RoutingResult(
-            intent="dock_status",
-            domain="system",
-            zone="green",
-            tier=1,
-            confidence=1.0,
-            handler="status_display",
-            handler_args={"display_type": "dock"},
-            intent_type="informational",
-            action_required=False,
-            llm_metadata={"clarified_from": original_input}
-        )
-    else:
-        # Just chatting (default)
+    import yaml
+    from engine.profile import get_config_dir
+
+    resolved_intent = None
+
+    try:
+        config_path = get_config_dir() / "clarification.yaml"
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            entry = data.get("fallback_options", {}).get(choice, {})
+            resolved_intent = entry.get("intent")
+    except Exception:
+        pass
+
+    # null intent = user wants to rephrase (cancel)
+    if resolved_intent is None:
         return RoutingResult(
             intent="general_chat",
             domain="system",
@@ -568,8 +554,38 @@ def resolve_clarification(choice: str, original_input: str) -> RoutingResult:
             handler="general_chat",
             intent_type="conversational",
             action_required=False,
+            llm_metadata={"clarified_from": original_input, "action": "rephrase"}
+        )
+
+    # Validate intent exists in active routing.config
+    router = get_router()
+    if resolved_intent in router.routes:
+        route = router.routes[resolved_intent]
+        return RoutingResult(
+            intent=resolved_intent,
+            domain=route.get("domain", "system"),
+            zone=route.get("zone", "green"),
+            tier=route.get("tier", 1),
+            confidence=1.0,
+            handler=route.get("handler"),
+            handler_args=route.get("handler_args", {}),
+            intent_type=route.get("intent_type", "actionable"),
+            action_required=route.get("intent_type") != "conversational",
             llm_metadata={"clarified_from": original_input}
         )
+
+    # Intent in clarification.yaml but not in routing.config — fallback
+    return RoutingResult(
+        intent="general_chat",
+        domain="system",
+        zone="green",
+        tier=1,
+        confidence=1.0,
+        handler="general_chat",
+        intent_type="conversational",
+        action_required=False,
+        llm_metadata={"clarified_from": original_input, "fallback": True}
+    )
 
 
 # =========================================================================

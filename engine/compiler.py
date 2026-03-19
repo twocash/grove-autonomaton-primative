@@ -334,31 +334,31 @@ def detect_entity_gaps() -> list[dict]:
         return gaps
 
     # Define required fields by entity type
-    # These are the fields handlers expect to find
+    # These are generic patterns - handlers come from profile routing.config
     required_fields = {
         "parents": {
             "email": {
                 "patterns": [r"\*\*email:\*\*", r"email:", r"contact:"],
-                "handler": "email_parent",
+                "handler": "external_comms",
                 "priority": "high"
             },
             "phone": {
                 "patterns": [r"\*\*phone:\*\*", r"phone:"],
-                "handler": "sms_parent",
+                "handler": "external_comms",
                 "priority": "medium"
             }
         },
         "players": {
             "handicap": {
                 "patterns": [r"\*\*handicap:\*\*", r"handicap:"],
-                "handler": "performance_report",
+                "handler": "entity_report",
                 "priority": "low"
             }
         },
         "venues": {
             "address": {
                 "patterns": [r"\*\*address:\*\*", r"address:", r"location:"],
-                "handler": "calendar_schedule",
+                "handler": "external_action",
                 "priority": "medium"
             }
         }

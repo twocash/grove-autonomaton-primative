@@ -1,0 +1,17 @@
+# clarification.yaml
+# Fallback options when Jidoka fires for ambiguous input.
+# Each option resolves to an intent in THIS profile's routing.config.
+
+fallback_options:
+  "1":
+    label: "Draft or compile content"
+    intent: "content_compilation"
+  "2":
+    label: "Check on status or information"
+    intent: "dock_status"
+  "3":
+    label: "Just chatting"
+    intent: "general_chat"
+  "4":
+    label: "I'll rephrase with more context"
+    intent: null

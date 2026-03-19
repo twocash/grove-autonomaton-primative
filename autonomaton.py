@@ -248,13 +248,25 @@ def display_result(context, verbose: bool) -> None:
             print(f"\n  {c.YELLOW}[CONTENT ENGINE]{c.RESET} {c.DIM}No content seeds found{c.RESET}\n")
 
     elif data_type == "pit_crew_build":
-        if data.get("requires_description"):
-            # Need to collect description interactively
-            handle_skill_build_interactive(data.get("skill_name"))
-        elif data.get("error"):
-            print(f"\n  {c.RED}[PIT CREW]{c.RESET} {context.result.get('message')}\n")
+        # Skill build result (description provided inline per V6 compliance)
+        result = data.get("result", {})
+        if result.get("status") == "deployed":
+            print(f"\n  {c.GREEN}[PIT CREW]{c.RESET} Skill deployed successfully!")
+            print(f"  {c.DIM}Skill:{c.RESET} {data.get('skill_name')}")
+            print(f"  {c.DIM}Description:{c.RESET} {data.get('description')}")
+            if result.get("files"):
+                print(f"  {c.DIM}Files created:{c.RESET}")
+                for f in result["files"]:
+                    print(f"    {c.DIM}-{c.RESET} {Path(f).name}")
+            print()
+        elif result.get("status") == "rejected":
+            print(f"\n  {c.YELLOW}[PIT CREW]{c.RESET} {result.get('message')}\n")
         else:
             print(f"\n  {c.RED}[PIT CREW]{c.RESET} {context.result.get('message')}\n")
+
+    elif data_type == "pit_crew_usage":
+        # Usage instructions (missing name or description)
+        print(f"\n  {c.RED}[PIT CREW]{c.RESET} {context.result.get('message')}\n")
 
     elif data_type == "session_zero":
         # Session Zero intake - display the Socratic prompt
@@ -303,46 +315,6 @@ def display_result(context, verbose: bool) -> None:
         else:
             print(f"  {c.DIM}[LOGGED]{c.RESET} Event ID: {c.DIM}{event_id}...{c.RESET}")
             print(f"  {c.YELLOW}[CANCELLED]{c.RESET} {context.result.get('message', 'Cancelled')}\n")
-
-
-def handle_skill_build_interactive(skill_name: str) -> None:
-    """
-    Handle interactive skill building (description prompt).
-
-    This is called AFTER the pipeline has classified and approved
-    the pit_crew_build intent. The actual build operation goes
-    through the pit_crew module which has its own Red Zone approval.
-    """
-    from engine.pit_crew import build_skill
-
-    c = Colors
-
-    print(f"\n  {c.RED}[PIT CREW]{c.RESET} Initiating skill build: {c.WHITE}{skill_name}{c.RESET}")
-    print(f"  {c.DIM}This is a RED ZONE operation that modifies system capabilities.{c.RESET}\n")
-
-    try:
-        description = input(f"  {c.BOLD}Enter skill description:{c.RESET} ").strip()
-        if not description:
-            description = f"Auto-generated skill: {skill_name}"
-    except (KeyboardInterrupt, EOFError):
-        print(f"\n  {c.YELLOW}[PIT CREW]{c.RESET} Build cancelled.\n")
-        return
-
-    # Build the skill (includes its own Red Zone approval)
-    result = build_skill(skill_name, description)
-
-    if result.get("status") == "deployed":
-        print(f"\n  {c.GREEN}[PIT CREW]{c.RESET} Skill deployed successfully!")
-        print(f"  {c.DIM}Location:{c.RESET} skills/{skill_name}/")
-        if result.get("files"):
-            print(f"  {c.DIM}Files created:{c.RESET}")
-            for f in result["files"]:
-                print(f"    {c.DIM}-{c.RESET} {Path(f).name}")
-        print()
-    elif result.get("status") == "rejected":
-        print(f"\n  {c.YELLOW}[PIT CREW]{c.RESET} {result.get('message')}\n")
-    else:
-        print(f"\n  {c.RED}[PIT CREW]{c.RESET} Error: {result.get('message')}\n")
 
 
 def main():
@@ -517,9 +489,11 @@ def main():
             )
 
             # Glass pipeline display (if enabled)
+            # Epic E: Read from telemetry stream, not PipelineContext
             if glass_enabled:
-                from engine.glass import display_glass_pipeline, display_ratchet_announcement
-                ratchet_msg = display_glass_pipeline(context, glass_level)
+                from engine.glass import display_glass_from_telemetry, display_ratchet_announcement
+                pipeline_id = context.telemetry_event.get("id", "")
+                ratchet_msg = display_glass_from_telemetry(pipeline_id, glass_level)
                 if ratchet_msg:
                     display_ratchet_announcement(ratchet_msg)
 

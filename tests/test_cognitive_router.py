@@ -518,40 +518,65 @@ class TestClarificationJidoka:
         assert all(isinstance(k, str) for k in options.keys()), \
             "Option keys must be strings"
 
-    def test_resolve_clarification_content(self):
+    def test_resolve_clarification_from_config(self):
         """
-        resolve_clarification("1") should return content draft routing.
+        resolve_clarification should read from profile config (Sprint: pipeline-compliance-v1).
         """
-        from engine.cognitive_router import resolve_clarification
+        from engine.profile import set_profile
+        from engine.cognitive_router import resolve_clarification, reset_router
 
+        set_profile("reference")
+        reset_router()
         result = resolve_clarification("1", "original input")
 
-        assert result.intent == "content_draft", \
-            f"Choice 1 should be content_draft, got '{result.intent}'"
+        # Reference profile option 1 is "general_chat"
+        assert result.intent == "general_chat", \
+            f"Choice 1 should be general_chat from reference config, got '{result.intent}'"
         assert result.confidence == 1.0, \
             "User clarification should have full confidence"
 
-    def test_resolve_clarification_chat(self):
+    def test_resolve_clarification_coach_demo(self):
         """
-        resolve_clarification("4") should return general_chat routing.
+        Coach demo profile has different clarification options.
         """
-        from engine.cognitive_router import resolve_clarification
+        from engine.profile import set_profile
+        from engine.cognitive_router import resolve_clarification, reset_router
 
-        result = resolve_clarification("4", "original input")
+        set_profile("coach_demo")
+        reset_router()
+        result = resolve_clarification("1", "original input")
 
+        # Coach demo option 1 is "content_compilation"
+        assert result.intent == "content_compilation", \
+            f"Choice 1 should be content_compilation from coach_demo config, got '{result.intent}'"
+
+    def test_resolve_clarification_null_intent_rephrase(self):
+        """
+        Clarification option with null intent means user wants to rephrase.
+        """
+        from engine.profile import set_profile
+        from engine.cognitive_router import resolve_clarification, reset_router
+
+        set_profile("reference")
+        reset_router()
+        # Option 3 in reference has intent: null
+        result = resolve_clarification("3", "original input")
+
+        # Null intent falls back to general_chat with rephrase marker
         assert result.intent == "general_chat", \
-            f"Choice 4 should be general_chat, got '{result.intent}'"
-        assert result.intent_type == "conversational", \
-            "general_chat must be conversational"
-        assert result.action_required is False, \
-            "general_chat should not require action"
+            f"Null intent should fall back to general_chat, got '{result.intent}'"
+        assert result.llm_metadata.get("action") == "rephrase", \
+            "Null intent should have rephrase marker"
 
     def test_resolve_clarification_preserves_original_input(self):
         """
         resolve_clarification should store original input in llm_metadata.
         """
-        from engine.cognitive_router import resolve_clarification
+        from engine.profile import set_profile
+        from engine.cognitive_router import resolve_clarification, reset_router
 
+        set_profile("reference")
+        reset_router()
         original = "something ambiguous"
         result = resolve_clarification("1", original)
 
