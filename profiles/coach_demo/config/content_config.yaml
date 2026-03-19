@@ -1,0 +1,35 @@
+# content_config.yaml
+# Platform-specific content templates for content compilation.
+# The engine reads this — zero domain terms in engine code.
+
+# Default tone for content generation (supplements voice.yaml)
+default_tone: "Encouraging and faith-driven"
+
+# Default pillar fallback when none specified
+default_pillar: "surrender"
+
+# Platform-specific templates
+platform_templates:
+  tiktok:
+    hooks:
+      - "Here's the secret nobody tells you about golf..."
+      - "Stop doing this on the course."
+      - "Watch this transformation."
+      - "The one thing that changed everything."
+      - "Most players get this wrong."
+    ctas:
+      - "Follow for more faith-driven golf wisdom."
+    emoji: " ⛳"
+
+  instagram:
+    hooks:
+      - "Practice footage or course shot"
+    ctas:
+      - "Tag a golfer who needs to hear this. Link in bio for more."
+    emoji: " 🏌️"
+    visual_prompt: "[Suggest: Practice footage or course shot]"
+
+  x:
+    hooks: []
+    ctas: []
+    emoji: ""

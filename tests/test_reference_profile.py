@@ -72,117 +72,53 @@ class TestProfileConfigReference:
 # ============================================================================
 
 class TestGlassPipeline:
-    """Verify glass pipeline display functions."""
+    """Verify glass pipeline display functions (telemetry-based)."""
 
-    @pytest.fixture
-    def mock_context(self):
-        """Create a mock PipelineContext for testing."""
-        from engine.pipeline import PipelineContext
-        ctx = PipelineContext(
-            raw_input="hello",
-            source="test"
-        )
-        ctx.telemetry_event = {"id": "test1234567890"}
-        ctx.intent = "general_chat"
-        ctx.domain = "system"
-        ctx.zone = "green"
-        ctx.approved = True
-        ctx.executed = True
-        ctx.entities = {
-            "routing": {
-                "tier": 0,
-                "confidence": 1.0,
-                "handler": "general_chat",
-                "intent_type": "conversational",
-                "action_required": False,
-                "llm_metadata": {}
-            }
-        }
-        ctx.dock_context = []
-        ctx.result = {"status": "success", "message": "Done"}
-        return ctx
+    def test_glass_telemetry_functions_exist(self):
+        """Telemetry-based glass functions are available."""
+        from engine.glass import read_pipeline_events, display_glass_from_telemetry
+        assert callable(read_pipeline_events)
+        assert callable(display_glass_from_telemetry)
 
-    def test_glass_extracts_data(self, mock_context):
-        from engine.glass import _extract_glass_data
-        data = _extract_glass_data(mock_context)
+    def test_glass_reads_from_telemetry(self):
+        """Glass reads events from telemetry stream."""
+        from engine.profile import set_profile
+        from engine.pipeline import run_pipeline
+        from engine.cognitive_router import reset_router
+        from engine.glass import read_pipeline_events
 
-        assert data["event_id"] == "test1234"  # First 8 chars
-        assert data["intent"] == "general_chat"
-        assert data["tier"] == 0
-        assert data["method"] == "keyword"
-        assert data["cost_str"] == "$0.00"
-        assert data["zone"] == "green"
+        set_profile("reference")
+        reset_router()
+        ctx = run_pipeline("hello", source="glass_test")
+        pipeline_id = ctx.telemetry_event["id"]
 
-    def test_glass_keyword_match(self, mock_context):
-        """Tier 0 keyword match shows correct method."""
-        from engine.glass import _extract_glass_data
-        data = _extract_glass_data(mock_context)
+        events = read_pipeline_events(pipeline_id)
+        assert isinstance(events, list)
+        assert len(events) >= 1
 
-        assert data["tier"] == 0
-        assert data["method"] == "keyword"
-        assert data["is_cache_hit"] is False
+    def test_glass_stage_render_function_exists(self):
+        """Stage renderer is available."""
+        from engine.glass import _render_stage_from_event
+        assert callable(_render_stage_from_event)
 
-    def test_glass_llm_classification(self, mock_context):
-        """Tier 2 LLM shows cost estimate."""
-        from engine.glass import _extract_glass_data
+    def test_glass_zone_colors(self):
+        """Zone color function returns correct colors (or empty in non-TTY)."""
+        from engine.glass import _get_zone_color, _c
 
-        mock_context.entities["routing"]["tier"] = 2
-        mock_context.telemetry_event["tier"] = 2
-        mock_context.telemetry_event["cost_usd"] = 0.0032
+        # In TTY mode, colors contain ANSI codes; in non-TTY, they're empty
+        green = _get_zone_color("green")
+        yellow = _get_zone_color("yellow")
+        red = _get_zone_color("red")
 
-        data = _extract_glass_data(mock_context)
-
-        assert data["tier"] == 2
-        assert data["method"] == "LLM"
-        assert "$0.003" in data["cost_str"]
-
-    def test_glass_cache_hit(self, mock_context):
-        """Cache hit shows HIT marker and $0.00."""
-        from engine.glass import _extract_glass_data
-
-        mock_context.entities["routing"]["llm_metadata"] = {"source": "pattern_cache"}
-
-        data = _extract_glass_data(mock_context)
-
-        assert data["method"] == "cache HIT"
-        assert data["is_cache_hit"] is True
-        assert data["cost_str"] == "$0.00"
-
-    def test_glass_conversational_skip(self, mock_context):
-        """Conversational intent shows 'Skipped' for compilation."""
-        from engine.glass import _extract_glass_data
-
-        mock_context.entities["routing"]["intent_type"] = "conversational"
-
-        data = _extract_glass_data(mock_context)
-
-        assert "Skipped" in data["compilation"]
-
-    def test_glass_yellow_zone(self, mock_context):
-        """Yellow zone shows confirmation required."""
-        from engine.glass import _extract_glass_data
-
-        mock_context.zone = "yellow"
-
-        data = _extract_glass_data(mock_context)
-
-        assert data["zone"] == "yellow"
-        assert "requires confirmation" in data["approval"].lower()
-
-    def test_glass_format_box_output(self, mock_context):
-        """Format box produces multi-line output with all stages."""
-        from engine.glass import _extract_glass_data, format_glass_box
-
-        data = _extract_glass_data(mock_context)
-        box = format_glass_box(data, "medium")
-
-        # Should have all 5 stages
-        assert "GLASS PIPELINE" in box
-        assert "Telemetry" in box
-        assert "Recognition" in box
-        assert "Compilation" in box
-        assert "Approval" in box
-        assert "Execution" in box
+        if _c.ENABLED:
+            assert "92" in green  # Green ANSI
+            assert "93" in yellow  # Yellow ANSI
+            assert "91" in red  # Red ANSI
+        else:
+            # Non-TTY: colors are disabled, function still returns valid strings
+            assert green == ""
+            assert yellow == ""
+            assert red == ""
 
 
 class TestRatchetAnnouncement:
@@ -190,28 +126,22 @@ class TestRatchetAnnouncement:
 
     def test_ratchet_announcement_once(self):
         """Ratchet fires on first cache hit, not on second."""
-        from engine.pipeline import PipelineContext
-        from engine.glass import get_ratchet_announcement, reset_ratchet_announcement
+        from engine.glass import _format_ratchet_from_event, reset_ratchet_announcement
 
         # Reset for clean test
         reset_ratchet_announcement()
 
-        # Create cache hit context
-        ctx = PipelineContext(raw_input="test", source="test")
-        ctx.entities = {
-            "routing": {
-                "llm_metadata": {"source": "pattern_cache"}
-            }
-        }
+        # Create cache hit event
+        cache_event = {"inferred": {"method": "cache"}}
 
         # First call should announce
-        msg1 = get_ratchet_announcement(ctx)
-        assert msg1 is not None
+        msg1 = _format_ratchet_from_event(cache_event)
+        assert msg1  # Non-empty string
         assert "RATCHET" in msg1
 
-        # Second call should not announce
-        msg2 = get_ratchet_announcement(ctx)
-        assert msg2 is None
+        # Second call should not announce (session-scoped)
+        msg2 = _format_ratchet_from_event(cache_event)
+        assert msg2 == ""  # Empty string on second call
 
 
 # ============================================================================

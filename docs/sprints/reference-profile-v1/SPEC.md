@@ -453,20 +453,27 @@ the `--glass` CLI flag.
    `startup.skip_queue` from profile.yaml. Existing `--skip-welcome`
    and `--skip-queue` CLI flags become overrides for these config values.
 
-3. **Glass pipeline display:** After every `run_pipeline()` call, check
+3. **Fix startup force_route bug:** Three startup `run_pipeline()` calls
+   pass `raw_input` strings like `"welcome_card"` without `force_route`.
+   These intents have `keywords: []` — the cognitive router can't classify
+   them and triggers clarification Jidoka instead of dispatching. Add
+   `force_route` to all three calls: `generate_plan`, `welcome_card`,
+   `startup_brief`. This fixes a purity-audit-v1 implementation gap.
+
+4. **Glass pipeline display:** After every `run_pipeline()` call, check
    `display.glass_pipeline` (or `--glass` CLI flag). If true, call
    `display_glass_pipeline(context)` before `display_result(context)`.
 
-4. **Banner modification:** When glass_pipeline is active, add
+5. **Banner modification:** When glass_pipeline is active, add
    `Glass Pipeline: ACTIVE` to the banner. When profile is `reference`,
    add the three-line intro block.
 
-5. **CLI flag addition:**
+6. **CLI flag addition:**
    ```
    --glass         Enable glass pipeline for any profile
    ```
 
-6. **Tip engine hook:** After `display_result()`, if tips are enabled,
+7. **Tip engine hook:** After `display_result()`, if tips are enabled,
    evaluate tip triggers against the context and display at most one tip.
 
 

@@ -85,7 +85,7 @@ class ContentEngine:
 
         Args:
             seed_content: Raw content seed text
-            pillar: Content pillar (e.g., 'training', 'coaching')
+            pillar: Content pillar (from profile pillars.yaml)
             platform: Target platform (e.g., 'tiktok', 'instagram', 'x')
 
         Returns:
@@ -110,13 +110,18 @@ class ContentEngine:
         pillar_desc = pillar_config.get("description", pillar)
         pillar_hashtags = pillar_config.get("hashtags", [])[:hashtag_limit]
 
+        # Load content config for tone
+        from engine.config_loader import load_content_config
+        content_config = load_content_config()
+        default_tone = content_config.get("default_tone", "Professional")
+
         # Build the prompt
         prompt = f"""You are a content creator applying specific voice and brand guidelines.
 
 ## Voice Configuration
 - Personality: {', '.join(personality) if personality else 'professional, authentic'}
 - Signature phrases to use: {', '.join(signature_phrases[:3]) if signature_phrases else 'none specified'}
-- Tone: Encouraging and faith-driven
+- Tone: {default_tone}
 
 ## Pillar Context
 - Content pillar: {pillar}
@@ -243,9 +248,14 @@ Your response should be the final draft text only, no explanations or metadata."
         for line in content.split("\n"):
             if line.lower().startswith("pillar:"):
                 return line.split(":", 1)[1].strip().lower()
-        # Default to first pillar
+        # Default to first pillar from config
         pillars = self.pillars.get("pillars", {})
-        return list(pillars.keys())[0] if pillars else "surrender"
+        if pillars:
+            return list(pillars.keys())[0]
+        # Ultimate fallback from content config
+        from engine.config_loader import load_content_config
+        content_config = load_content_config()
+        return content_config.get("default_pillar", "general")
 
     def _extract_theme(self, content: str) -> Optional[str]:
         """Extract theme from seed content."""
@@ -321,22 +331,24 @@ Your response should be the final draft text only, no explanations or metadata."
         # Extract the core message from seed
         core_message = self._get_core_message(seed)
 
-        # Build hook-first structure
-        hooks = [
-            "Here's the secret nobody tells you about golf...",
-            "Stop doing this on the course.",
-            "Watch this transformation.",
-            "The one thing that changed everything.",
-            "Most players get this wrong.",
-        ]
+        # Load platform templates from config
+        from engine.config_loader import load_content_config
+        content_config = load_content_config()
+        tiktok_templates = content_config.get("platform_templates", {}).get("tiktok", {})
 
-        hook = random.choice(hooks)
+        # Build hook-first structure from config
+        hooks = tiktok_templates.get("hooks", ["Here's what you need to know..."])
+        ctas = tiktok_templates.get("ctas", ["Follow for more."])
+        config_emoji = tiktok_templates.get("emoji", "")
+
+        hook = random.choice(hooks) if hooks else "Here's what you need to know..."
         phrase = random.choice(signature_phrases) if signature_phrases else "Trust your practice."
+        cta = random.choice(ctas) if ctas else "Follow for more."
 
         # Add emoji based on config
         emoji = ""
-        if emoji_use == "moderate":
-            emoji = " ⛳"
+        if emoji_use == "moderate" and config_emoji:
+            emoji = config_emoji
 
         content = f"""[HOOK]{emoji}
 {hook}
@@ -348,7 +360,7 @@ Your response should be the final draft text only, no explanations or metadata."
 {phrase}
 
 [CTA]
-Follow for more faith-driven golf wisdom.
+{cta}
 """
         return content.strip()
 
@@ -399,12 +411,23 @@ Follow for more faith-driven golf wisdom.
         core_message = self._get_core_message(seed)
         phrase = random.choice(signature_phrases) if signature_phrases else "Excellence is a habit."
 
+        # Load platform templates from config
+        from engine.config_loader import load_content_config
+        content_config = load_content_config()
+        ig_templates = content_config.get("platform_templates", {}).get("instagram", {})
+
+        config_emoji = ig_templates.get("emoji", "")
+        ctas = ig_templates.get("ctas", ["Link in bio for more."])
+        visual_prompt = ig_templates.get("visual_prompt", "[Suggest: relevant visual]")
+
         emoji = ""
-        if emoji_use == "moderate":
-            emoji = " 🏌️"
+        if emoji_use == "moderate" and config_emoji:
+            emoji = config_emoji
+
+        cta = random.choice(ctas) if ctas else "Link in bio for more."
 
         content = f"""[VISUAL]{emoji}
-[Suggest: Practice footage or course shot]
+{visual_prompt}
 
 [CAPTION]
 {core_message}
@@ -412,7 +435,7 @@ Follow for more faith-driven golf wisdom.
 {phrase}
 
 [CTA]
-Tag a golfer who needs to hear this. Link in bio for more.
+{cta}
 """
         return content.strip()
 

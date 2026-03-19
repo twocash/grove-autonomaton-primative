@@ -1,0 +1,6 @@
+# entity_config.yaml — Blank template (absolute minimum)
+entity_types: []
+exclude_domain_words: []
+required_entity_fields: {}
+content_pillars: []
+content_seed_prompts: {}

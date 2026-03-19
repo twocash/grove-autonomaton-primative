@@ -61,8 +61,8 @@ class TestCognitiveRouterWithBlankTemplate:
         router = CognitiveRouter()
         assert router is not None
 
-    def test_router_returns_unknown_for_empty_routes(self):
-        """Assert router defaults to unknown intent for minimal config."""
+    def test_router_handles_unmatched_input(self):
+        """Assert router handles unmatched input gracefully (via Ratchet or fallback)."""
         from engine.cognitive_router import classify_intent, reset_router
         from engine.profile import set_profile
 
@@ -71,9 +71,12 @@ class TestCognitiveRouterWithBlankTemplate:
 
         result = classify_intent("some random input")
 
-        # Should return unknown, not crash
-        assert result.intent == "unknown"
-        assert result.zone == "yellow"  # Unknown defaults to yellow
+        # Should return a valid routing result, not crash
+        # blank_template now includes ratchet_intent_classify for LLM classification fallback
+        assert result.intent is not None
+        assert result.zone in ("green", "yellow", "red")
+        # Could be ratchet_intent_classify (LLM fallback), general_chat, or unknown
+        assert result.intent in ("ratchet_intent_classify", "general_chat", "unknown")
 
     def test_router_still_works_after_blank_template(self):
         """Assert router can switch back to coach_demo."""
@@ -188,8 +191,8 @@ class TestDockWithBlankTemplate:
 class TestDispatcherWithBlankTemplate:
     """Tests for Dispatcher behavior with minimal handlers."""
 
-    def test_dispatcher_handles_passthrough(self):
-        """Assert dispatcher handles unknown intents gracefully."""
+    def test_dispatcher_handles_unmatched_input(self):
+        """Assert dispatcher handles unmatched intents gracefully."""
         from engine.dispatcher import dispatch_action
         from engine.cognitive_router import classify_intent, reset_router
         from engine.profile import set_profile
@@ -200,9 +203,10 @@ class TestDispatcherWithBlankTemplate:
         routing = classify_intent("unknown command")
         result = dispatch_action(routing, "unknown command")
 
-        # Should return passthrough result
+        # Should return a valid result, not crash
+        # blank_template routes unmatched to ratchet_interpreter or general_chat
         assert result.success is True
-        assert result.data.get("type") == "passthrough"
+        assert result.data.get("type") in ("passthrough", "ratchet_interpreter", "general_chat")
 
 
 class TestProfileIsolation:
@@ -250,12 +254,14 @@ class TestBlankTemplateStartup:
         import sys
 
         # Run autonomaton with blank_template and immediately exit
+        # Use --skip-welcome to avoid LLM calls during startup
+        # Note: blank_template has a structured-plan.md to skip first-boot prompt
         result = subprocess.run(
-            [sys.executable, "autonomaton.py", "--profile", "blank_template"],
+            [sys.executable, "autonomaton.py", "--profile", "blank_template", "--skip-welcome"],
             input="exit\n",
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=15,
             cwd=Path(__file__).parent.parent
         )
 

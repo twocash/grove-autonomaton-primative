@@ -5,16 +5,19 @@ Wraps the Anthropic Python SDK with mandatory telemetry logging.
 
 CRITICAL INVARIANT (Ratchet Compliance):
 Every LLM call MUST log telemetry with:
-- model: The model used (e.g., claude-3-haiku-20240307)
+- model: The model used
 - tokens_in: Input token count
 - tokens_out: Output token count
 - cost: Estimated cost in USD
 - intent: The intent being served
 
-Tier Routing:
-- Tier 1: claude-3-haiku-20240307 (fast, cheap - for classification, extraction)
-- Tier 2: claude-3-5-sonnet-20241022 (quality - for content generation)
-- Tier 3: claude-3-opus-20240229 (apex - for Pit Crew skill generation, Architectural Judge)
+Tier Routing (models.yaml is authoritative):
+- Tier 1: Fast, cheap - for classification, extraction
+- Tier 2: Quality - for content generation
+- Tier 3: Apex - for Pit Crew skill generation, Architectural Judge
+
+The engine dispatches to TIERS, not models. Model IDs are in models.yaml.
+Fallback defaults exist ONLY as crash prevention for missing config.
 """
 
 import json
@@ -29,23 +32,24 @@ from engine.profile import get_telemetry_dir
 # Model Configuration
 # =========================================================================
 
-# Hardcoded fallback defaults (Purity v2: system never crashes on missing config)
+# Fallback defaults — ONLY used if models.yaml is missing (crash prevention)
+# models.yaml is AUTHORITATIVE. The engine dispatches to tiers, not models.
 _DEFAULT_TIER_MODELS = {
-    1: "claude-3-haiku-20240307",
-    2: "claude-3-5-sonnet-20241022",
-    3: "claude-3-opus-20240229",  # Apex tier for Pit Crew and Architectural Judge
+    1: "claude-haiku-4-5-20251001",
+    2: "claude-sonnet-4-6",
+    3: "claude-opus-4-6",
 }
 
 _DEFAULT_MODEL_PRICING = {
-    "claude-3-haiku-20240307": {
-        "input": 0.25,   # $0.25 per million input tokens
-        "output": 1.25,  # $1.25 per million output tokens
+    "claude-haiku-4-5-20251001": {
+        "input": 0.80,   # $0.80 per million input tokens
+        "output": 4.0,   # $4.00 per million output tokens
     },
-    "claude-3-5-sonnet-20241022": {
+    "claude-sonnet-4-6": {
         "input": 3.0,    # $3.00 per million input tokens
         "output": 15.0,  # $15.00 per million output tokens
     },
-    "claude-3-opus-20240229": {
+    "claude-opus-4-6": {
         "input": 15.0,   # $15.00 per million input tokens
         "output": 75.0,  # $75.00 per million output tokens
     },

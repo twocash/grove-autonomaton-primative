@@ -7,8 +7,8 @@ cache:
     handler_args:
       action: compile
     intent_type: actionable
-    confirmed_count: 53
-    last_confirmed: '2026-03-19T05:18:06.321181+00:00'
+    confirmed_count: 71
+    last_confirmed: '2026-03-19T21:36:32.904216+00:00'
     original_input: compile content
     confidence: 1.0
   f915e934396d09fe:
@@ -20,8 +20,8 @@ cache:
       server: google_calendar
       capability: create_event
     intent_type: actionable
-    confirmed_count: 30
-    last_confirmed: '2026-03-19T05:07:21.755722+00:00'
+    confirmed_count: 42
+    last_confirmed: '2026-03-19T21:02:19.342132+00:00'
     original_input: schedule a lesson with Henderson for tomorrow at 3pm
     confidence: 0.9
   02348f8c104e760e:
@@ -33,8 +33,8 @@ cache:
       server: gmail
       capability: send_email
     intent_type: actionable
-    confirmed_count: 15
-    last_confirmed: '2026-03-19T05:07:21.898658+00:00'
+    confirmed_count: 21
+    last_confirmed: '2026-03-19T21:02:19.459840+00:00'
     original_input: email Henderson's parent about today's progress
     confidence: 0.9
   3ddf31460608454e:
@@ -46,8 +46,8 @@ cache:
       server: google_calendar
       capability: create_event
     intent_type: actionable
-    confirmed_count: 35
-    last_confirmed: '2026-03-19T05:07:22.024163+00:00'
+    confirmed_count: 53
+    last_confirmed: '2026-03-19T21:54:11.694912+00:00'
     original_input: schedule a lesson with Test
     confidence: 0.9
   77443df17cadbf86:
@@ -58,8 +58,8 @@ cache:
     handler_args:
       action: compile
     intent_type: actionable
-    confirmed_count: 10
-    last_confirmed: '2026-03-19T03:59:37.677039+00:00'
+    confirmed_count: 16
+    last_confirmed: '2026-03-19T21:54:10.771102+00:00'
     original_input: 'compile content with special chars: @#$%'
     confidence: 0.9
   0054cdc6aba392e6:
@@ -70,8 +70,8 @@ cache:
     handler_args:
       skill_name: session-zero-intake
     intent_type: actionable
-    confirmed_count: 20
-    last_confirmed: '2026-03-19T03:59:38.198933+00:00'
+    confirmed_count: 32
+    last_confirmed: '2026-03-19T21:54:11.263674+00:00'
     original_input: session zero
     confidence: 1.0
   45733d652ddcb495:
@@ -94,8 +94,8 @@ cache:
     handler: welcome_card
     handler_args: {}
     intent_type: informational
-    confirmed_count: 2
-    last_confirmed: '2026-03-19T05:29:21.116447+00:00'
+    confirmed_count: 15
+    last_confirmed: '2026-03-19T21:54:55.388046+00:00'
     original_input: welcome_card
     confidence: 1.0
   45032a8dcaee0a8b:
@@ -105,8 +105,8 @@ cache:
     handler: startup_brief
     handler_args: {}
     intent_type: informational
-    confirmed_count: 2
-    last_confirmed: '2026-03-19T05:29:37.265803+00:00'
+    confirmed_count: 15
+    last_confirmed: '2026-03-19T21:55:07.537454+00:00'
     original_input: startup_brief
     confidence: 1.0
   ed343a513afc4fd1:
@@ -121,4 +121,17 @@ cache:
     confirmed_count: 2
     last_confirmed: '2026-03-19T05:18:13.851638+00:00'
     original_input: xyzzy random unknown command
+    confidence: 1.0
+  04c447fc8be8cead:
+    intent: ratchet_intent_classify
+    domain: system
+    zone: green
+    handler: ratchet_interpreter
+    handler_args:
+      classifier: intent
+      prompt_template: classify_intent
+    intent_type: actionable
+    confirmed_count: 2
+    last_confirmed: '2026-03-19T18:55:15.388742+00:00'
+    original_input: xyzzy unknown gibberish
     confidence: 1.0

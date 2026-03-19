@@ -1,0 +1,61 @@
+# entity_config.yaml
+# Entity extraction configuration for this profile.
+# The engine reads this — zero domain terms in engine code.
+
+entity_types:
+  - name: "player"
+    plural: "players"
+    default_alias: "a player"
+  - name: "parent"
+    plural: "parents"
+    default_alias: "a parent"
+  - name: "client"
+    plural: "clients"
+    default_alias: "a client"
+  - name: "venue"
+    plural: "venues"
+    default_alias: "a venue"
+
+# Capitalized words to EXCLUDE from entity name detection.
+# Domain terms the operator uses that are NOT entity names.
+exclude_domain_words:
+  - "Coach"
+  - "Player"
+  - "Parent"
+  - "Client"
+  - "Venue"
+  - "Session"
+  - "Practice"
+  - "Lesson"
+  - "Tournament"
+  - "Team"
+  - "Golf"
+  - "Swing"
+  - "Revenue"
+  - "Goal"
+  - "Target"
+  - "Content"
+  - "Email"
+  - "Call"
+
+# Fields that trigger Kaizen gap proposals when missing
+required_entity_fields:
+  player:
+    - "handicap"
+    - "grade"
+  parent:
+    - "contact_email"
+
+# Content mining pillars (used by cortex content seed extraction)
+content_pillars:
+  - "training"
+  - "coaching"
+  - "community"
+  - "surrender"
+
+content_seed_prompts:
+  look_for:
+    - "Moments of progress or breakthrough"
+    - "Coaching insights or wisdom"
+    - "Community building opportunities"
+    - "Stories of perseverance"

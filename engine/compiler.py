@@ -31,7 +31,7 @@ def load_entity_aliases() -> Dict[str, str]:
     if not entities_dir.exists():
         return aliases
 
-    # Scan all entity subdirectories (players, parents, clients, etc.)
+    # Scan all entity subdirectories (types from entity_config.yaml)
     for subdir in entities_dir.iterdir():
         if subdir.is_dir() and not subdir.name.startswith('.'):
             for entity_file in subdir.glob("*.md"):
@@ -70,13 +70,21 @@ def _extract_name_and_alias(filepath: Path) -> tuple[str, str]:
     if alias_match:
         alias = alias_match.group(1).strip()
     else:
-        # Default alias based on entity type
-        if "players" in str(filepath):
-            alias = "a player"
-        elif "parents" in str(filepath):
-            alias = "a parent"
-        else:
-            alias = "a team member"
+        # Default alias based on entity type from config
+        from engine.config_loader import load_entity_config
+        entity_config = load_entity_config()
+        entity_types = entity_config.get("entity_types", [])
+
+        # Build mapping from plural folder name to default alias
+        alias_map = {t["plural"]: t.get("default_alias", "an entity") for t in entity_types}
+
+        # Check filepath against known entity type folders
+        path_str = str(filepath)
+        alias = "an entity"  # Fallback
+        for plural, default_alias in alias_map.items():
+            if plural in path_str:
+                alias = default_alias
+                break
 
     return (name, alias)
 
@@ -333,36 +341,24 @@ def detect_entity_gaps() -> list[dict]:
     if not entities_dir.exists():
         return gaps
 
-    # Define required fields by entity type
-    # These are generic patterns - handlers come from profile routing.config
-    required_fields = {
-        "parents": {
-            "email": {
-                "patterns": [r"\*\*email:\*\*", r"email:", r"contact:"],
-                "handler": "external_comms",
-                "priority": "high"
-            },
-            "phone": {
-                "patterns": [r"\*\*phone:\*\*", r"phone:"],
-                "handler": "external_comms",
-                "priority": "medium"
-            }
-        },
-        "players": {
-            "handicap": {
-                "patterns": [r"\*\*handicap:\*\*", r"handicap:"],
+    # Load required fields from config
+    from engine.config_loader import load_entity_config
+    entity_config = load_entity_config()
+    required_entity_fields = entity_config.get("required_entity_fields", {})
+    type_map = {t["name"]: t["plural"] for t in entity_config.get("entity_types", [])}
+
+    # Build required_fields dict with patterns from config
+    required_fields = {}
+    for entity_type, fields in required_entity_fields.items():
+        plural = type_map.get(entity_type, f"{entity_type}s")
+        required_fields[plural] = {}
+        for field in fields:
+            # Generate patterns for field detection
+            required_fields[plural][field] = {
+                "patterns": [rf"\*\*{field}:\*\*", rf"{field}:"],
                 "handler": "entity_report",
                 "priority": "low"
             }
-        },
-        "venues": {
-            "address": {
-                "patterns": [r"\*\*address:\*\*", r"address:", r"location:"],
-                "handler": "external_action",
-                "priority": "medium"
-            }
-        }
-    }
 
     # Scan entity directories
     for entity_type, fields in required_fields.items():

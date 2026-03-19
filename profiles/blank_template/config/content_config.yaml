@@ -1,0 +1,20 @@
+# content_config.yaml — Blank template (absolute minimum)
+default_tone: "Professional"
+default_pillar: "general"
+
+platform_templates:
+  tiktok:
+    hooks: []
+    ctas: []
+    emoji: ""
+
+  instagram:
+    hooks: []
+    ctas: []
+    emoji: ""
+    visual_prompt: ""
+
+  x:
+    hooks: []
+    ctas: []
+    emoji: ""

@@ -1,4 +1,12 @@
-# Pattern Cache — The Ratchet
-# Confirmed LLM classifications cached as Tier 0 lookups.
-# This file starts empty. The Ratchet populates it through use.
-cache: {}
+cache:
+  2b74a90553c8e88e:
+    intent: general_chat
+    domain: system
+    zone: green
+    handler: general_chat
+    handler_args: {}
+    intent_type: conversational
+    confirmed_count: 1
+    last_confirmed: '2026-03-19T13:36:24.638685+00:00'
+    original_input: my name is bob
+    confidence: 0.0

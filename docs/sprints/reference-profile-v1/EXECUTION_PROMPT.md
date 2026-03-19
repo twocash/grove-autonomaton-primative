@@ -823,7 +823,48 @@ skip_plan = startup["skip_plan_generation"]
 skip_brief = startup["skip_startup_brief"]
 ```
 
-**Step 4:** Gate the startup sequences using those flags. Currently in
+**Step 4: FIX STARTUP FORCE_ROUTE BUG.** This is a known bug from the
+purity audit v1 implementation. Three startup calls in `main()` pass
+`raw_input` strings like `"welcome_card"` and `"startup_brief"` into
+`run_pipeline()` WITHOUT using the `force_route` parameter. These intents
+have `keywords: []` in routing.config (they're programmatic-only, not
+operator-typed). The cognitive router can't classify them, escalates to
+the LLM, and triggers clarification Jidoka instead of dispatching to the
+correct handler.
+
+Fix all three startup `run_pipeline()` calls by adding `force_route`:
+
+```python
+# ~line 386: Plan generation (currently works via keyword, but fragile)
+plan_context = run_pipeline(
+    raw_input="generate plan",
+    source="system_startup",
+    force_route="generate_plan"    # ADD THIS
+)
+
+# ~line 413: Welcome card (BROKEN — keywords: [], guaranteed Jidoka)
+welcome_context = run_pipeline(
+    raw_input="welcome_card",
+    source="system_startup",
+    force_route="welcome_card"     # ADD THIS
+)
+
+# ~line 434: Startup brief (BROKEN — same as welcome_card)
+brief_context = run_pipeline(
+    raw_input="startup_brief",
+    source="system_startup",
+    force_route="startup_brief"    # ADD THIS
+)
+```
+
+**Verify the fix works before proceeding:**
+```bash
+python autonomaton.py --profile coach_demo
+# Should show welcome briefing and strategic brief — NO Jidoka prompt
+# If you still see "I'm not sure what you'd like to do", the fix didn't land
+```
+
+**Step 5:** Gate the startup sequences using those flags. Currently in
 `main()`, the plan generation, queue processing, welcome card, and startup
 brief each have their own block. Wrap each with the appropriate flag:
 
@@ -839,7 +880,7 @@ Be careful with the existing `args.skip_welcome` logic — merge, don't
 duplicate. The cleanest approach: replace `args.skip_welcome` with the
 computed `skip_welcome` variable (which already OR's both sources).
 
-**Step 5:** Wire glass pipeline display into the REPL loop. In the main
+**Step 6:** Wire glass pipeline display into the REPL loop. In the main
 `while True` loop, after `context = run_pipeline(...)` and before
 `display_result(context, verbose)`, add:
 
@@ -850,7 +891,7 @@ if glass_enabled:
     display_glass_pipeline(context, glass_level)
 ```
 
-**Step 6:** Wire tip engine into the REPL loop. After `display_result()`:
+**Step 7:** Wire tip engine into the REPL loop. After `display_result()`:
 
 ```python
 # Contextual tips (if enabled)
@@ -861,7 +902,7 @@ if tip_engine:
         display_tip(tip_text)
 ```
 
-**Step 7:** Modify `print_banner()` to accept profile config and show
+**Step 8:** Modify `print_banner()` to accept profile config and show
 glass pipeline status. When `glass_enabled`, add a line after cortex_info:
 ```
   Glass Pipeline: ACTIVE
@@ -876,6 +917,13 @@ When profile is `reference`, add the intro block after the banner:
 
 **Build Gate E (Full OOB Flow):**
 ```bash
+# FIRST: Verify startup force_route fix on coach_demo
+python autonomaton.py --profile coach_demo
+# Should show welcome briefing + strategic brief at startup
+# NO Jidoka clarification prompt ("I'm not sure what you'd like to do")
+# If Jidoka fires at startup, the force_route fix didn't land — STOP
+
+# THEN: Full reference profile OOB flow
 python autonomaton.py --profile reference
 # 1. Banner shows "Glass Pipeline: ACTIVE" + intro block
 # 2. No welcome card, no brief, no plan generation, no queue
@@ -963,11 +1011,15 @@ test patterns, imports, and fixtures used. Match the existing style.
 - `test_tips_disabled` — when display.tips=False, no tips returned
 - `test_no_tips_file` — missing tips.yaml produces no errors, no tips
 
-**Integration (profile isolation):**
+**Integration (profile isolation + startup fix):**
 - `test_engine_unchanged` — run_pipeline with reference profile produces
   same PipelineContext structure as with blank_template for identical input
 - `test_coach_demo_unaffected` — coach_demo loads and runs without any
   change in behavior
+- `test_startup_uses_force_route` — verify all three startup run_pipeline
+  calls in main() use force_route (welcome_card, startup_brief, generate_plan).
+  Mock run_pipeline, call main startup sequence, assert force_route param
+  is passed for each internal invocation.
 
 **Build Gate F:**
 ```bash

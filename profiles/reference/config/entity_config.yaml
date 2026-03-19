@@ -1,0 +1,9 @@
+# entity_config.yaml — Reference profile (minimal)
+entity_types:
+  - name: "contact"
+    plural: "contacts"
+    default_alias: "a contact"
+exclude_domain_words: []
+required_entity_fields: {}
+content_pillars: []
+content_seed_prompts: {}

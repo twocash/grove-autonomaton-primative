@@ -69,18 +69,32 @@ class TestPerStageTraces:
 
 
 class TestProfileIsolation:
-    """V2: Zero domain logic in cognitive_router.py."""
+    """V2: Zero domain logic in engine/."""
 
-    def test_no_domain_terms_in_cognitive_router(self):
-        """Check cognitive_router.py for hardcoded domain terms per V2."""
+    def test_no_domain_terms_in_engine(self):
+        """Scan ALL engine files for domain-specific terms.
+
+        Domain terms = coaching-domain vocabulary (golf, lesson, handicap, etc.)
+        NOT integration service names (google_calendar is an API, not a domain concept)
+        """
         domain_terms = [
-            "calendar_schedule", "mcp_calendar", "google_calendar",
-            "content_draft", "lessons",
+            "coaching", "golf", "swing", "lesson", "tournament",
+            "handicap", '"player"', '"parent"', '"venue"',
+            "nobody tells you about", "on the course",
         ]
-        content = Path("engine/cognitive_router.py").read_text(encoding="utf-8")
-        for term in domain_terms:
-            assert term not in content, \
-                f"Domain term '{term}' still in cognitive_router.py"
+        # Files allowed to have integration service names
+        integration_files = {"effectors.py"}
+
+        engine_dir = Path("engine/")
+        violations = []
+        for py_file in engine_dir.glob("*.py"):
+            code_lines = [l for l in py_file.read_text(encoding="utf-8").split("\n")
+                          if not l.strip().startswith("#")]
+            code = "\n".join(code_lines)
+            for term in domain_terms:
+                if term in code:
+                    violations.append(f"{py_file.name}: contains '{term}'")
+        assert not violations, "Domain terms in engine:\n" + "\n".join(violations)
 
     def test_clarification_resolves_to_valid_intents(self):
         from engine.profile import set_profile
@@ -189,3 +203,34 @@ class TestTelemetryConsumer:
         events = read_pipeline_events(pid)
         assert isinstance(events, list)
         assert len(events) >= 1
+
+
+class TestBlankTemplateIsolation:
+    """Architect §II Test 6: blank_template runs without errors."""
+
+    def test_blank_template_hello(self):
+        from engine.profile import set_profile
+        from engine.cognitive_router import reset_router
+        from engine.pipeline import run_pipeline
+        set_profile("blank_template")
+        reset_router()
+        ctx = run_pipeline("hello", source="test_blank")
+        assert ctx.telemetry_event is not None, "Stage 1 failed"
+        assert ctx.intent is not None, "Stage 2 failed"
+
+
+class TestCrossProfileClassification:
+    """Architect §II Test 4: accuracy across ALL profiles."""
+
+    @pytest.mark.parametrize("profile",
+        ["reference", "coach_demo", "blank_template"])
+    def test_hello_classifies_across_profiles(self, profile):
+        from engine.profile import set_profile
+        from engine.cognitive_router import classify_intent, reset_router
+        set_profile(profile)
+        reset_router()
+        for text in ["hello", "hi", "thanks", "goodbye"]:
+            result = classify_intent(text)
+            assert result.intent == "general_chat", \
+                f"{profile}: '{text}' -> {result.intent}"
+            assert result.confidence >= 0.5

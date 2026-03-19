@@ -208,3 +208,62 @@ def load_profile_config() -> dict:
         return defaults
     except Exception:
         return defaults
+
+
+def load_entity_config() -> dict:
+    """Load entity_config.yaml from active profile.
+
+    Returns dict with keys: entity_types, exclude_domain_words,
+    required_entity_fields, content_pillars, content_seed_prompts.
+    Falls back to empty defaults if missing. Zero domain logic.
+    """
+    defaults = {
+        "entity_types": [],
+        "exclude_domain_words": [],
+        "required_entity_fields": {},
+        "content_pillars": [],
+        "content_seed_prompts": {},
+    }
+    try:
+        config_path = get_config_dir() / "entity_config.yaml"
+        if not config_path.exists():
+            return defaults
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return {k: data.get(k, v) for k, v in defaults.items()}
+    except Exception:
+        return defaults
+
+
+def load_content_config() -> dict:
+    """Load content_config.yaml from active profile.
+
+    Returns dict with keys: default_tone, default_pillar, platform_templates.
+    Falls back to empty defaults if missing. Zero domain logic.
+    """
+    defaults = {
+        "default_tone": "Professional",
+        "default_pillar": "general",
+        "platform_templates": {
+            "tiktok": {"hooks": [], "ctas": [], "emoji": ""},
+            "instagram": {"hooks": [], "ctas": [], "emoji": "", "visual_prompt": ""},
+            "x": {"hooks": [], "ctas": [], "emoji": ""},
+        },
+    }
+    try:
+        config_path = get_config_dir() / "content_config.yaml"
+        if not config_path.exists():
+            return defaults
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        # Merge with defaults (config can be partial)
+        result = defaults.copy()
+        result["default_tone"] = data.get("default_tone", defaults["default_tone"])
+        result["default_pillar"] = data.get("default_pillar", defaults["default_pillar"])
+        if "platform_templates" in data:
+            for platform in defaults["platform_templates"]:
+                if platform in data["platform_templates"]:
+                    result["platform_templates"][platform].update(data["platform_templates"][platform])
+        return result
+    except Exception:
+        return defaults

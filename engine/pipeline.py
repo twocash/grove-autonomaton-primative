@@ -299,6 +299,8 @@ class InvariantPipeline:
                     "cache" if routing_info.get("llm_metadata", {}).get("source") == "pattern_cache"
                     else ("llm" if routing_info.get("tier", 0) >= 2 else "keyword")
                 ),
+                "entities": routing_info.get("llm_metadata", {}).get("entities", {}),
+                "sentiment": routing_info.get("llm_metadata", {}).get("sentiment"),
             }
         )
 
@@ -894,6 +896,8 @@ JSON:"""
                     "last_confirmed": datetime.now(timezone.utc).isoformat(),
                     "original_input": self.context.raw_input[:100],
                     "confidence": routing_info.get("confidence", 0.0),
+                    "entities": llm_metadata.get("entities", {}),
+                    "sentiment": llm_metadata.get("sentiment", "neutral"),
                 }
 
             data["cache"] = cache

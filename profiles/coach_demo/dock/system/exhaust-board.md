@@ -51,3 +51,899 @@ Each entry follows this structure:
 - Compare scouting card predictions ("watch for") with post-match telemetry → measure coaching accuracy
 - Catalog Pregame Word themes → identify which messages correlate with strong team performance
 - Monitor course strategy notes → build venue-specific playbooks over multiple seasons
+
+### tournament-prep - 2026-03-19 01:32 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 01:32 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 01:32 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 01:32 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 01:32 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 01:32 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 01:32 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---
+
+### tournament-prep - 2026-03-19 01:34 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 01:34 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 01:34 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 01:34 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 01:34 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 01:34 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 01:34 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---
+
+### tournament-prep - 2026-03-19 01:45 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 01:45 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 01:45 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 01:45 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 01:45 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 01:45 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 01:45 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---
+
+### tournament-prep - 2026-03-19 02:04 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 02:04 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 02:04 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 02:04 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 02:04 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 02:04 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 02:04 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---
+
+### tournament-prep - 2026-03-19 03:01 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 03:01 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 03:01 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 03:01 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 03:01 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 03:01 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 03:01 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---
+
+### tournament-prep - 2026-03-19 03:45 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 03:45 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 03:45 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 03:45 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 03:45 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 03:45 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 03:45 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---
+
+### tournament-prep - 2026-03-19 03:47 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 03:48 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 03:48 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 03:48 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 03:48 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 03:48 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 03:48 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---
+
+### tournament-prep - 2026-03-19 03:59 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 03:59 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 03:59 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 03:59 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 03:59 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 03:59 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 03:59 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---
+
+### tournament-prep - 2026-03-19 19:11 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 19:11 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 19:11 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 19:11 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 19:11 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 19:11 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 19:11 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---
+
+### tournament-prep - 2026-03-19 19:58 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 19:58 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 19:58 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 19:58 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 19:58 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 19:58 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 19:58 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---
+
+### tournament-prep - 2026-03-19 21:20 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 21:20 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 21:20 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 21:20 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 21:20 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 21:20 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 21:20 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---
+
+### tournament-prep - 2026-03-19 21:34 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 21:34 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 21:34 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 21:34 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 21:34 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 21:34 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 21:34 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---
+
+### tournament-prep - 2026-03-19 21:40 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 21:40 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 21:40 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 21:40 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 21:40 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 21:40 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 21:40 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---
+
+### tournament-prep - 2026-03-19 21:54 UTC
+
+**Description:** Prepare players for tournament
+
+**Telemetry Unlocks:**
+- Test unlock 1
+
+---
+
+### test-skill - 2026-03-19 21:54 UTC
+
+**Description:** Test skill
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 21:54 UTC
+
+**Description:** Test description
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### test-skill - 2026-03-19 21:54 UTC
+
+**Description:** Test
+
+**Telemetry Unlocks:**
+
+
+---
+
+### approved-skill - 2026-03-19 21:54 UTC
+
+**Description:** This skill was approved
+
+**Telemetry Unlocks:**
+- Test unlock
+
+---
+
+### future-skill - 2026-03-19 21:54 UTC
+
+**Description:** Test future potential
+
+**Telemetry Unlocks:**
+- Enable predictive analytics via skill output patterns
+- Chain with notification-skill for proactive alerts
+
+---
+
+### e2e-test - 2026-03-19 21:54 UTC
+
+**Description:** End to end test skill
+
+**Telemetry Unlocks:**
+- E2E test unlock
+
+---

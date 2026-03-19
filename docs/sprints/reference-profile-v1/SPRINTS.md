@@ -300,7 +300,19 @@ and get defaults — zero behavior change.
 **Acceptance:** Reference profile returns glass_pipeline=True. Coach_demo
 returns glass_pipeline=False (default). No existing tests break.
 
-### Story E.2: Wire startup gating in autonomaton.py
+### Story E.2: Fix startup force_route bug
+**Task:** Three startup `run_pipeline()` calls in `main()` pass raw_input
+strings like `"welcome_card"` without `force_route`. These intents have
+`keywords: []` — they're programmatic-only. The cognitive router can't
+classify them and triggers clarification Jidoka instead of dispatching.
+Add `force_route` to all three calls:
+- `run_pipeline(raw_input="generate plan", ..., force_route="generate_plan")`
+- `run_pipeline(raw_input="welcome_card", ..., force_route="welcome_card")`
+- `run_pipeline(raw_input="startup_brief", ..., force_route="startup_brief")`
+**Acceptance:** `python autonomaton.py --profile coach_demo` shows welcome
+briefing and strategic brief at startup with NO Jidoka clarification prompt.
+
+### Story E.3: Wire startup gating in autonomaton.py
 **Task:** In `main()`, after `set_profile()`, load profile config. Use
 startup flags to gate:
 - Plan generation (first-boot check)
@@ -313,7 +325,7 @@ Both CLI flags and profile.yaml flags should be OR'd (either can suppress).
 **Acceptance:** Reference profile skips all startup sequences. Coach_demo
 unchanged.
 
-### Story E.3: Wire glass pipeline display in REPL loop
+### Story E.4: Wire glass pipeline display in REPL loop
 **Task:** In the main REPL loop, after `run_pipeline()` returns and before
 `display_result()`, check if glass is enabled (profile config OR `--glass`
 CLI flag). If yes, call `display_glass_pipeline(context, level)`.
@@ -326,13 +338,13 @@ parser.add_argument("--glass", action="store_true",
 **Acceptance:** Glass annotations appear before result for reference profile.
 `--glass` flag works with coach_demo.
 
-### Story E.4: Wire tip engine in REPL loop
+### Story E.5: Wire tip engine in REPL loop
 **Task:** After `display_result()`, if tips are enabled (profile config),
 evaluate tips against context and display at most one tip.
 **Acceptance:** Tips appear after results in reference profile. No tips
 in coach_demo.
 
-### Story E.5: Modify banner for reference profile
+### Story E.6: Modify banner for reference profile
 **Task:** When glass_pipeline is active, add `Glass Pipeline: ACTIVE` line
 to banner. When profile is `reference`, add the three-line intro block:
 ```
@@ -389,6 +401,12 @@ tips disabled when `display.tips: false`. Test no tips file = no tips.
 **Task:** Script the designed first-five-minutes flow programmatically.
 Verify glass output, tip sequence, Ratchet announcement, and handler
 results at each step. This is the acceptance test for the entire sprint.
+
+### Story F.6: Startup force_route regression test
+**Task:** Verify all three startup `run_pipeline()` calls use `force_route`.
+Mock `run_pipeline`, invoke the startup sequence, assert `force_route` param
+is passed for `welcome_card`, `startup_brief`, and `generate_plan`. This
+prevents regression on the startup Jidoka bug fixed in Story E.2.
 
 ### Build Gate F
 ```bash

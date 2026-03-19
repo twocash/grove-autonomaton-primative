@@ -369,13 +369,13 @@ class Dispatcher:
         import json
         from engine.llm_client import call_llm
 
-        server = routing_result.handler_args.get("server", "google_calendar")
+        server = routing_result.handler_args.get("server", "calendar")
         capability = routing_result.handler_args.get("capability", "create_event")
 
         # Use LLM to extract calendar parameters from raw input
         prompt = f"""Extract calendar event parameters from this request.
 Return JSON with these fields:
-- event_type: Type of event (lesson, practice, tournament, meeting)
+- event_type: Type of event (meeting, session, appointment, etc.)
 - participant: Name of person/group involved
 - date: Date in ISO format (YYYY-MM-DD)
 - time: Time in 24-hour format (HH:MM)
@@ -1208,11 +1208,17 @@ Maintain the markdown structure. Update the "Last updated" timestamp to today.""
         from engine.telemetry import log_event
 
         # Use LLM to extract entity and field info
+        # Load entity types from config
+        from engine.config_loader import load_entity_config
+        entity_config = load_entity_config()
+        entity_types = [t["plural"] for t in entity_config.get("entity_types", [])]
+        entity_types_str = ", ".join(f'"{t}"' for t in entity_types) if entity_types else '"entities"'
+
         prompt = f"""Extract entity update information from this request.
 Return JSON with:
-- entity_type: One of "players", "parents", "venues"
-- entity_name: Name of the entity (e.g., "martinez", "henderson-family")
-- field_name: Field to add (e.g., "email", "phone", "handicap")
+- entity_type: One of {entity_types_str}
+- entity_name: Name of the entity
+- field_name: Field to add (e.g., "email", "phone")
 - field_value: Value to set
 
 Request: "{raw_input}"

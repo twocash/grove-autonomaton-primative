@@ -1,0 +1,24 @@
+# content_config.yaml — Reference profile (minimal)
+default_tone: "Professional and helpful"
+default_pillar: "general"
+
+platform_templates:
+  tiktok:
+    hooks:
+      - "Here's what you need to know..."
+      - "Quick tip for you."
+    ctas:
+      - "Follow for more tips."
+    emoji: ""
+
+  instagram:
+    hooks: []
+    ctas:
+      - "Link in bio for more."
+    emoji: ""
+    visual_prompt: "[Suggest: relevant visual]"
+
+  x:
+    hooks: []
+    ctas: []
+    emoji: ""

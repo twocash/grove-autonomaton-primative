@@ -214,7 +214,12 @@ class CognitiveRouter:
             extracted_args={},
             intent_type=entry.get("intent_type", "actionable"),
             action_required=entry.get("intent_type") != "conversational",
-            llm_metadata={"source": "pattern_cache", "cache_hash": input_hash}
+            llm_metadata={
+                "source": "pattern_cache",
+                "cache_hash": input_hash,
+                "entities": entry.get("entities", {}),
+                "sentiment": entry.get("sentiment", "neutral"),
+            }
         )
 
     def classify(self, user_input: str) -> RoutingResult:
@@ -430,7 +435,9 @@ class CognitiveRouter:
                 llm_metadata = {
                     "reasoning": classification.get("reasoning", ""),
                     "classification_confidence": confidence,
-                    "via_pipeline": True  # ADR-001 compliance marker
+                    "via_pipeline": True,  # ADR-001 compliance marker
+                    "entities": classification.get("entities", {}),
+                    "sentiment": classification.get("sentiment", "neutral"),
                 }
 
                 # Validate intent against declared routes

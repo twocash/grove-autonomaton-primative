@@ -502,7 +502,13 @@ def main():
 
             # Contextual tips (if enabled)
             if tip_engine:
-                tip_text = tip_engine.evaluate(context)
+                # Pass dict to TipEngine (refactored from PipelineContext)
+                tip_data = {
+                    "intent": context.intent,
+                    "zone": context.zone,
+                    "entities": context.entities,
+                }
+                tip_text = tip_engine.evaluate(tip_data)
                 if tip_text:
                     from engine.glass import display_tip
                     display_tip(tip_text)
