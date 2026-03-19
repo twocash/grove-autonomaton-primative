@@ -1711,13 +1711,14 @@ Generate the welcome card now:"""
                 )
 
             # Write the plan to dock/system/structured-plan.md
-            write_structured_plan(plan_content)
+            write_success = write_structured_plan(plan_content)
 
             return DispatchResult(
                 success=True,
                 message="Structured plan generated and saved to dock/system/structured-plan.md",
                 data={
                     "type": "generate_plan",
+                    "plan_written": write_success,
                     "plan_preview": plan_content[:500] + "..." if len(plan_content) > 500 else plan_content
                 }
             )
