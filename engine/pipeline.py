@@ -546,11 +546,26 @@ class InvariantPipeline:
                 return
             # choice == "2" falls through to Tier B
 
-        # Tier B: Smart options via LLM
-        # Ambiguity floor: short unknown inputs skip LLM clarification.
-        # The LLM hallucinates specific options for genuinely unknown input.
+        # Tier B: Smart options via LLM (config-gated)
+        # Some profiles disable smart clarification to avoid surprise LLM costs.
+        # When disabled, falls through to config-driven options from clarification.yaml.
+        from engine.cognitive_router import get_router
+        router_settings = get_router().tiers  # access raw config
+        # Check routing.config settings.smart_clarification
+        import yaml
+        try:
+            from engine.profile import get_config_dir
+            rc_path = get_config_dir() / "routing.config"
+            with open(rc_path, "r", encoding="utf-8") as _f:
+                _rc = yaml.safe_load(_f) or {}
+            smart_enabled = _rc.get("settings", {}).get("smart_clarification", True)
+        except Exception:
+            smart_enabled = True
+
         word_count = len(self.context.raw_input.strip().split())
-        if word_count <= 2 and confidence < 0.2:
+        if not smart_enabled:
+            smart_options = None  # Config says: use free fallback only
+        elif word_count <= 2 and confidence < 0.2:
             smart_options = None
         else:
             smart_options = self._generate_smart_clarification(self.context.raw_input)
@@ -911,6 +926,11 @@ JSON:"""
 
             with open(cache_path, "w", encoding="utf-8") as f:
                 yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+            # Invalidate router's in-memory cache — config changed, re-read it
+            # This is Invariant #3: Config Over Code. The file is authoritative.
+            from engine.cognitive_router import get_router
+            get_router().load_cache()
 
         except Exception as e:
             # Cache write failure is non-fatal — log and continue
