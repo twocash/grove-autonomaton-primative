@@ -4,11 +4,14 @@
 
 fallback_options:
   "1":
-    label: "Start a conversation about this topic"
-    intent: "general_chat"
+    label: "Learn how this system works"
+    intent: "explain_system"
   "2":
-    label: "Check system status or information"
-    intent: "dock_status"
+    label: "Start a conversation"
+    intent: "general_chat"
   "3":
+    label: "Check system status"
+    intent: "dock_status"
+  "4":
     label: "I'll rephrase with more context"
     intent: null

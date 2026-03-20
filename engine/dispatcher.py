@@ -832,11 +832,11 @@ Please execute the skill based on the above instructions and user request.
         raw_input: str
     ) -> DispatchResult:
         """
-        Handle conversational greetings and basic chat.
+        Handle conversational greetings and informational queries.
 
-        Sprint 8: Simplified handler - NO dock context loading.
-        Conversational intents skip dock in Compilation stage, so we just
-        respond with persona-driven conversation.
+        Sprint ux-polish-v1: Dock-aware handler. If Compilation loaded dock
+        context (intent_type=informational), include it in the prompt.
+        Otherwise, respond conversationally.
 
         Green Zone - Persona responds according to config/persona.yaml.
         Uses Tier 1 (Haiku) for low latency responses.
@@ -845,13 +845,25 @@ Please execute the skill based on the above instructions and user request.
         """
         from engine.llm_client import call_llm
         from engine.config_loader import get_persona
+        from engine.dock import query_dock
 
         # Load persona from config
         persona = get_persona()
 
-        # Build system prompt from persona config
-        # Sprint 8: Conversational with ambient awareness
-        task_context = """The user is saying hello or making casual conversation.
+        # Query dock for relevant context (Approach 2 from ux-polish-v1)
+        dock_context = query_dock(raw_input, top_k=2)
+
+        # Build task context based on whether dock has relevant content
+        if dock_context and dock_context.strip():
+            task_context = f"""The user is asking a question. Use the following
+reference material to inform your response. Be conversational but
+knowledgeable. If the reference material answers their question,
+synthesize it naturally — don't quote it back verbatim.
+
+Reference material:
+{dock_context[:2000]}"""
+        else:
+            task_context = """The user is saying hello or making casual conversation.
 Respond naturally and briefly. You're aware of the context but don't dump it —
 reference it naturally if relevant."""
 

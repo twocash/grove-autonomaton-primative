@@ -125,7 +125,7 @@ class TestClassificationAccuracy:
 
     @pytest.mark.parametrize("text", [
         "hello", "hi", "my name is bob", "thanks",
-        "thank you", "goodbye", "what is this",
+        "thank you", "goodbye",  # "what is this" moved to explain_system (ux-polish-v1)
     ])
     def test_conversational_input(self, text):
         from engine.profile import set_profile
@@ -137,6 +137,20 @@ class TestClassificationAccuracy:
             f"'{text}' classified as '{result.intent}'"
         assert result.confidence >= 0.5, \
             f"'{text}' confidence {result.confidence} too low"
+
+
+class TestExplainSystemRouting:
+    """ux-polish-v1: Explain system routes correctly."""
+
+    def test_explain_system_routing(self):
+        from engine.profile import set_profile
+        from engine.cognitive_router import classify_intent, reset_router
+        set_profile("reference")
+        reset_router()
+        for text in ["how does this work", "what is this", "explain"]:
+            result = classify_intent(text)
+            assert result.intent == "explain_system",                 f"'{text}' classified as '{result.intent}'"
+            assert result.intent_type == "informational"
 
 
 class TestNoPipelineBypasses:

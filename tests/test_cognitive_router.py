@@ -529,9 +529,9 @@ class TestClarificationJidoka:
         reset_router()
         result = resolve_clarification("1", "original input")
 
-        # Reference profile option 1 is "general_chat"
-        assert result.intent == "general_chat", \
-            f"Choice 1 should be general_chat from reference config, got '{result.intent}'"
+        # Reference profile option 1 is "explain_system" (ux-polish-v1)
+        assert result.intent == "explain_system", \
+            f"Choice 1 should be explain_system from reference config, got '{result.intent}'"
         assert result.confidence == 1.0, \
             "User clarification should have full confidence"
 
@@ -559,8 +559,8 @@ class TestClarificationJidoka:
 
         set_profile("reference")
         reset_router()
-        # Option 3 in reference has intent: null
-        result = resolve_clarification("3", "original input")
+        # Option 4 in reference has intent: null (ux-polish-v1)
+        result = resolve_clarification("4", "original input")
 
         # Null intent falls back to general_chat with rephrase marker
         assert result.intent == "general_chat", \

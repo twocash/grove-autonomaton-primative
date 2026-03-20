@@ -306,6 +306,15 @@ def display_result(context, verbose: bool) -> None:
                 print(f"    {c.BLUE}[{proposal.get('skill_name', '?')}]{c.RESET} {proposal.get('description', '?')}")
         print()
 
+    elif data_type == "skill_execution":
+        # Skill execution results - show the actual LLM output
+        response = data.get("response", "")
+        if response:
+            print(f"  {c.WHITE}{response}{c.RESET}")
+        else:
+            skill_name = data.get("skill_name", "unknown")
+            print(f"  {c.YELLOW}Skill '{skill_name}' produced no output.{c.RESET}")
+
     else:
         # Generic display with zone coloring
         zc = zone_color(zone)
