@@ -165,9 +165,16 @@ class InvariantPipeline:
         """
         routing_info = self.context.entities.get("routing", {})
 
-        # Extract cost_usd from LLM metadata if available (V7 fix)
+        # Extract cost_usd: try routing metadata first, then LLM cache
         llm_metadata = routing_info.get("llm_metadata", {})
         cost = llm_metadata.get("cost_usd")
+        if cost is None:
+            try:
+                from engine.llm_client import get_last_call_metadata
+                last_meta = get_last_call_metadata()
+                cost = last_meta.get("cost_usd")
+            except ImportError:
+                pass
 
         log_event(
             source=self.context.source,

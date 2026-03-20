@@ -78,9 +78,15 @@ class TestProfileIsolation:
         NOT integration service names (google_calendar is an API, not a domain concept)
         """
         domain_terms = [
+            # Domain terms (from domain-purity-v1)
             "coaching", "golf", "swing", "lesson", "tournament",
             "handicap", '"player"', '"parent"', '"venue"',
             "nobody tells you about", "on the course",
+            # MCP service constants (mcp-purity-v1)
+            "GOOGLE_CALENDAR_SCOPES", "GMAIL_SCOPES",
+            # Old handler names (mcp-purity-v1)
+            "_handle_mcp_calendar", "_handle_mcp_gmail",
+            "_format_calendar_payload",
         ]
         # Files allowed to have integration service names
         integration_files = {"effectors.py"}
@@ -234,3 +240,45 @@ class TestCrossProfileClassification:
             assert result.intent == "general_chat", \
                 f"{profile}: '{text}' -> {result.intent}"
             assert result.confidence >= 0.5
+
+
+class TestCostTelemetry:
+    """P8: cost_usd flows through main telemetry stream."""
+
+    def test_metadata_cache_exists(self):
+        from engine.llm_client import get_last_call_metadata
+        meta = get_last_call_metadata()
+        assert isinstance(meta, dict)
+
+    def test_metadata_populated_after_call(self):
+        """After any LLM call, metadata cache has cost_usd."""
+        # This test requires ANTHROPIC_API_KEY. Skip if not set.
+        import os
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            pytest.skip("No API key — cannot test live LLM call")
+
+        from engine.llm_client import call_llm, get_last_call_metadata
+        call_llm(prompt="Say hello", tier=1, intent="test_cost")
+        meta = get_last_call_metadata()
+        assert "cost_usd" in meta, "cost_usd missing from metadata"
+        assert meta["cost_usd"] >= 0, "cost_usd must be non-negative"
+
+
+class TestMCPConfigConsistency:
+    """MCP handlers resolve to config-declared servers."""
+
+    def test_mcp_formatter_templates_exist(self):
+        """Every MCP route with mcp_formatter handler must have a template."""
+        import yaml
+        for profile in ["coach_demo"]:
+            config_path = Path(f"profiles/{profile}/config/routing.config")
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            for intent, route in config.get("routes", {}).items():
+                if route.get("handler") == "mcp_formatter":
+                    args = route.get("handler_args", {})
+                    template = args.get("formatter_template", "")
+                    if template:
+                        tpath = Path(f"profiles/{profile}/config/mcp-formatters/{template}.md")
+                        assert tpath.exists(), \
+                            f"{profile}/{intent}: template {template}.md not found"

@@ -121,6 +121,39 @@ class ConfigLoader:
         return domain_config.get("default_zone", "yellow")
 
     @classmethod
+    def get_server_scopes(cls, server: str) -> list:
+        """Load OAuth scopes for a server from mcp.config.
+
+        Returns list of scope strings, or empty list if not configured.
+        """
+        if cls._mcp_config is None:
+            cls.load_mcp_config()
+        if cls._mcp_config is None:
+            return []
+        servers = cls._mcp_config.get("servers", {})
+        server_config = servers.get(server, {})
+        return server_config.get("auth", {}).get("scopes", [])
+
+    @classmethod
+    def get_configured_servers(cls) -> list:
+        """Return list of server names from mcp.config."""
+        if cls._mcp_config is None:
+            cls.load_mcp_config()
+        if cls._mcp_config is None:
+            return []
+        return list(cls._mcp_config.get("servers", {}).keys())
+
+    @classmethod
+    def get_server_status(cls, server: str) -> str:
+        """Return server status from mcp.config (active/stub/not_implemented)."""
+        if cls._mcp_config is None:
+            cls.load_mcp_config()
+        if cls._mcp_config is None:
+            return "unknown"
+        servers = cls._mcp_config.get("servers", {})
+        return servers.get(server, {}).get("status", "unknown")
+
+    @classmethod
     def reset_cache(cls) -> None:
         """Reset configuration cache (useful when switching profiles)."""
         cls._mcp_config = None
@@ -131,10 +164,6 @@ class ConfigLoader:
 # =========================================================================
 # Google API Service Management
 # =========================================================================
-
-# OAuth scopes required for each service
-GOOGLE_CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar']
-GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 
 
 def get_auth_dir() -> Path:
@@ -163,6 +192,11 @@ def get_google_calendar_service():
         # Google API libraries not installed
         return None
 
+    # Load scopes from config (fallback for missing config)
+    scopes = ConfigLoader.get_server_scopes("google_calendar")
+    if not scopes:
+        scopes = ['https://www.googleapis.com/auth/calendar']
+
     token_path = get_auth_dir() / "calendar_token.json"
     credentials_path = get_auth_dir() / "credentials.json"
 
@@ -170,7 +204,7 @@ def get_google_calendar_service():
 
     # Load existing token
     if token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), GOOGLE_CALENDAR_SCOPES)
+        creds = Credentials.from_authorized_user_file(str(token_path), scopes)
 
     # Refresh or get new token
     if not creds or not creds.valid:
@@ -186,7 +220,7 @@ def get_google_calendar_service():
                 return None
 
             flow = InstalledAppFlow.from_client_secrets_file(
-                str(credentials_path), GOOGLE_CALENDAR_SCOPES
+                str(credentials_path), scopes
             )
 
             # Use console flow for headless environments
@@ -221,6 +255,11 @@ def get_gmail_service():
         # Google API libraries not installed
         return None
 
+    # Load scopes from config (fallback for missing config)
+    scopes = ConfigLoader.get_server_scopes("gmail")
+    if not scopes:
+        scopes = ['https://www.googleapis.com/auth/gmail.modify']
+
     token_path = get_auth_dir() / "gmail_token.json"
     credentials_path = get_auth_dir() / "credentials.json"
 
@@ -228,7 +267,7 @@ def get_gmail_service():
 
     # Load existing token
     if token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), GMAIL_SCOPES)
+        creds = Credentials.from_authorized_user_file(str(token_path), scopes)
 
     # Refresh or get new token
     if not creds or not creds.valid:
@@ -244,7 +283,7 @@ def get_gmail_service():
                 return None
 
             flow = InstalledAppFlow.from_client_secrets_file(
-                str(credentials_path), GMAIL_SCOPES
+                str(credentials_path), scopes
             )
 
             # Use console flow for headless environments
@@ -480,11 +519,17 @@ class MCPClient:
                 "error": f"Capability '{capability}' not supported by {self.server}"
             }
 
-        # Route to appropriate API implementation
-        if self.server == "google_calendar":
-            return self._execute_calendar(capability, payload)
-        elif self.server == "gmail":
-            return self._execute_gmail(capability, payload)
+        # Service implementation registry — maps server names to methods.
+        # The registry is internal to the effector layer. The server NAMES
+        # come from mcp.config. The IMPLEMENTATIONS are engine code.
+        _service_registry = {
+            "google_calendar": self._execute_calendar,
+            "gmail": self._execute_gmail,
+        }
+
+        handler = _service_registry.get(self.server)
+        if handler:
+            return handler(capability, payload)
 
         # Fallback to stub for unimplemented servers
         return {

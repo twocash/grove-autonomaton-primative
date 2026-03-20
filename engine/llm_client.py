@@ -160,8 +160,9 @@ def get_default_max_tokens() -> int:
 # Reset config cache (for testing or profile switch)
 def reset_models_config() -> None:
     """Reset the models config cache (call after profile switch)."""
-    global _models_config_cache
+    global _models_config_cache, _last_call_metadata
     _models_config_cache = None
+    _last_call_metadata = {}
 
 
 # =========================================================================
@@ -276,6 +277,26 @@ def _calculate_cost(model: str, tokens_in: int, tokens_out: int) -> float:
 
 
 # =========================================================================
+# Last-Call Metadata Cache
+# =========================================================================
+# Stores metadata from the most recent call_llm() invocation.
+# The pipeline reads this to populate cost_usd in the main
+# telemetry stream. This avoids changing call_llm()'s return
+# type (string), which has 24 call sites.
+
+_last_call_metadata: dict = {}
+
+
+def get_last_call_metadata() -> dict:
+    """Return metadata from the most recent call_llm() invocation.
+
+    Returns dict with keys: cost_usd, model, tokens_in, tokens_out.
+    Returns empty dict if no call has been made.
+    """
+    return _last_call_metadata.copy()
+
+
+# =========================================================================
 # Main API
 # =========================================================================
 
@@ -304,6 +325,7 @@ def call_llm(
 
     INVARIANT: Every call logs telemetry with model, tokens, cost, intent.
     """
+    global _last_call_metadata
     model = get_model_for_tier(tier)
     if max_tokens is None:
         max_tokens = get_default_max_tokens()
@@ -332,6 +354,14 @@ def call_llm(
         # Calculate cost
         cost = _calculate_cost(model, tokens_in, tokens_out)
 
+        # Cache metadata for pipeline cost telemetry
+        _last_call_metadata = {
+            "cost_usd": cost,
+            "model": model,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+        }
+
         # Log telemetry (CRITICAL - must happen before return)
         log_llm_event(
             model=model,
@@ -347,6 +377,15 @@ def call_llm(
         return ""
 
     except Exception as e:
+        # Cache zeroed metadata for failed calls
+        _last_call_metadata = {
+            "cost_usd": 0.0,
+            "model": model,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "error": str(e),
+        }
+
         # Log the failed attempt
         log_llm_event(
             model=model,
