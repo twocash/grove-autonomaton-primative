@@ -299,4 +299,10 @@ class TipEngine:
             if zone != trigger["after_zone"]:
                 return False
 
+        # Sequencing: require another tip to have been shown first
+        if "requires_shown" in trigger:
+            required_id = trigger["requires_shown"]
+            if required_id not in self.shown_ids:
+                return False
+
         return True

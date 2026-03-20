@@ -877,7 +877,7 @@ Respond (1-2 sentences only):"""
             response = call_llm(
                 prompt=prompt,
                 system=system_prompt,
-                tier=1,  # Haiku for speed
+                tier=routing_result.tier,  # Use tier from routing config
                 intent="general_chat"
             )
 
@@ -924,7 +924,7 @@ Respond (1-2 sentences only):"""
         to synthesize what matters right now.
 
         Green Zone — advisory, no side effects.
-        Uses Tier 2 (Sonnet) for quality synthesis.
+        Uses tier from routing_result for appropriate quality level.
         """
         from engine.llm_client import call_llm
         from engine.config_loader import get_persona
@@ -953,7 +953,7 @@ Generate a focused strategic brief (3-5 items, natural language):"""
             response = call_llm(
                 prompt=prompt,
                 system=system_prompt,
-                tier=2,
+                tier=routing_result.tier,  # Use tier from routing config
                 intent="strategy_session"
             )
 

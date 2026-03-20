@@ -42,3 +42,13 @@ tips:
     trigger:
       after_intent: "session_zero"
     text: "To build your own, copy this profile directory and customize."
+
+  - id: so_what_prompt
+    trigger:
+      after_intent: "explain_system"
+    text: "OK, a five-stage pipeline and three config files. So what? Ask 'so what' to find out what makes this unlike anything you've used before."
+
+  - id: tier_upgrade_offer
+    trigger:
+      after_intent: "explain_system"
+    text: "Those answers came from cached patterns — $0.00 each. For a real architectural conversation, try 'brainstorm distributed vs centralized' — apex-tier cognition, costs a few dimes, but the Ratchet caches it. Next time? Free."

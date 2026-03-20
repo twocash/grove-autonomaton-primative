@@ -153,6 +153,116 @@ class TestExplainSystemRouting:
             assert result.intent_type == "informational"
 
 
+class TestRatchetInvalidation:
+    """ux-polish-v1 Epic E: Ratchet invalidation works correctly."""
+
+    def test_cache_cleared_after_invalidation(self):
+        """After clear_cache, pattern cache should be empty."""
+        from engine.cognitive_router import CognitiveRouter, reset_router
+        from engine.profile import set_profile
+        
+        set_profile("reference")
+        reset_router()
+        router = CognitiveRouter()
+        router.load_config()
+        
+        # Populate cache with a test entry
+        router.pattern_cache = {"test_hash": {"intent": "general_chat"}}
+        router._cache_loaded = True
+        
+        # Verify cache has content
+        assert len(router.pattern_cache) > 0
+        
+        # Clear the cache
+        router.pattern_cache = {}
+        router._cache_loaded = True
+        
+        # Verify cache is empty
+        result = router._check_pattern_cache("any input")
+        assert result is None, "Cache should return None after invalidation"
+
+    def test_invalidated_entry_forces_reclassification(self):
+        """Removing a specific cache entry forces re-evaluation."""
+        import hashlib
+        from engine.cognitive_router import CognitiveRouter, reset_router
+        from engine.profile import set_profile
+        
+        set_profile("reference")
+        reset_router()
+        router = CognitiveRouter()
+        router.load_config()
+        
+        test_input = "hello there"
+        input_hash = hashlib.sha256(
+            test_input.encode("utf-8")
+        ).hexdigest()[:16]
+        
+        # Add entry to cache
+        router.pattern_cache = {
+            input_hash: {
+                "intent": "general_chat",
+                "domain": "system",
+                "zone": "green",
+                "handler": "general_chat",
+                "handler_args": {},
+                "intent_type": "conversational",
+                "confirmed_count": 5,
+            }
+        }
+        router._cache_loaded = True
+        
+        # Verify cache hit
+        result = router._check_pattern_cache(test_input)
+        assert result is not None, "Should get cache hit"
+        assert result.tier == 0, "Cache hit should be Tier 0"
+        
+        # Remove the entry (invalidation)
+        del router.pattern_cache[input_hash]
+        
+        # Now should get None (forces re-classification)
+        result = router._check_pattern_cache(test_input)
+        assert result is None, "After invalidation, should not get cache hit"
+
+
+class TestRoutingIntegration:
+    """ux-polish-v1 Epic E: Routing integration tests."""
+
+    def test_explain_system_vs_general_chat_separation(self):
+        """explain_system and general_chat should be distinct routes."""
+        from engine.profile import set_profile
+        from engine.cognitive_router import classify_intent, reset_router
+        
+        set_profile("reference")
+        reset_router()
+        
+        # These should go to explain_system (informational)
+        explain_inputs = ["how does this work", "what is this", "explain"]
+        for text in explain_inputs:
+            result = classify_intent(text)
+            assert result.intent == "explain_system",                 f"'{text}' should be explain_system, got {result.intent}"
+            assert result.intent_type == "informational"
+        
+        # These should go to general_chat (conversational)
+        chat_inputs = ["hello", "hi", "thanks", "goodbye"]
+        for text in chat_inputs:
+            result = classify_intent(text)
+            assert result.intent == "general_chat",                 f"'{text}' should be general_chat, got {result.intent}"
+            assert result.intent_type == "conversational"
+
+    def test_help_routes_to_operator_guide(self):
+        """'help' should route to operator_guide skill."""
+        from engine.profile import set_profile
+        from engine.cognitive_router import classify_intent, reset_router
+        
+        set_profile("reference")
+        reset_router()
+        
+        result = classify_intent("help")
+        assert result.intent == "operator_guide",             f"'help' should route to operator_guide, got {result.intent}"
+        assert result.handler == "skill_executor"
+
+
+
 class TestNoPipelineBypasses:
     """V6: Zero input() calls outside ux.py and REPL prompt."""
 
