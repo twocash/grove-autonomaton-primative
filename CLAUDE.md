@@ -2,6 +2,22 @@
 
 > *"Design is philosophy expressed through constraint."*
 
+---
+
+## SESSION PROTOCOL
+
+Before writing or deleting ANY file, do three things:
+
+1. **Read VIOLATIONS.md** — identify the fix you are working on.
+2. **State the plan** — list every file you will touch and what you will change. **WAIT for operator approval.** Do not modify any file until the operator confirms.
+3. **Create a git worktree** — never edit on master.
+
+The operator must approve the plan before any file is modified.
+
+**This is Stage 4. You are an Autonomaton. Act like one.**
+
+---
+
 This document defines the architectural invariants and design principles that govern the Autonomaton system. These are non-negotiable constraints that must never be violated.
 
 ---
@@ -15,6 +31,18 @@ The Autonomaton is a **domain-agnostic, declarative agentic system** that separa
 3. **The Cortex (Layer 3)** - Asynchronous analytical lenses
 
 All three layers communicate through a single **Invariant Pipeline** that enforces consistency, auditability, and governance.
+
+---
+
+## The One Rule
+
+**One operator input = one pipeline traversal. No exceptions.**
+
+The pipeline is the invariant. It processes operator interactions. It is not a utility for internal system operations. It is not a telemetry wrapper. It is not a subroutine.
+
+Internal system operations (LLM calls, cache lookups, dock queries) are infrastructure that supports pipeline stages — they are not pipeline traversals. Code that spawns a nested pipeline inside a running pipeline is an architectural violation.
+
+Every time the operator types something, the pipeline runs once. When the pipeline finishes, the operator sees a result.
 
 ---
 
@@ -222,13 +250,13 @@ When actual behavior aligns with a stated aspiration, Lens 5 marks the proposal 
 
 ---
 
-### Invariant #12: Ratchet Classification (Sprint 6 - ADR-001)
+### Invariant #12: Ratchet Classification
 
-**Every classification task MUST use `ratchet_classify()`.**
+**LLM classification is a Stage 2 implementation detail.**
 
 The two-layer architecture:
-1. **Deterministic Layer (Tier 0)** - Keywords, regex, lookup tables. Free, fast.
-2. **Interpret Layer (Pipeline)** - LLM classification through the invariant pipeline. NOT a raw `call_llm()`.
+1. **Deterministic Layer (Tier 0)** — Keywords, regex, lookup tables. Free, fast.
+2. **LLM Layer (Direct Call)** — When keyword matching fails and the operator consents via the Kaizen prompt, the cognitive router makes a direct LLM call through `llm_client`. The classification result returns to the outer pipeline. No sub-pipelines. No `force_route`.
 
 ```
 INPUT
@@ -239,26 +267,38 @@ LAYER 1: Deterministic (free)
   If confidence ≥ threshold → return result
   │
   ▼ (confidence < threshold)
-LAYER 2: Pipeline Interpretation
-  Routes through run_pipeline(force_route=...)
-  Uses ratchet_interpreter handler
+  Kaizen prompt fires in Stage 4.
+  Operator consents to LLM spend.
   │
   ▼
-TELEMETRY: Every classification logged
-  Standardized schema for Ratchet analysis
+LAYER 2: Direct LLM Call
+  cognitive_router calls llm_client directly.
+  Sends input + valid intents list.
+  Returns structured classification result.
+  │
+  ▼
+OUTER PIPELINE CONTINUES
+  Context updated with classified intent.
+  Stage 5 executes with the real intent.
+  │
+  ▼
+RATCHET CACHE
+  The classified intent is cached at Tier 0.
+  Next identical input resolves free, instantly.
 ```
 
 **Rules:**
-- No classification task may use only an LLM layer
+- No classification task may skip the deterministic first pass
 - No classification task may skip telemetry
-- The interpret layer routes THROUGH the pipeline
-- Deterministic rules are declared in config (routing.config, cortex.yaml)
+- LLM classification is a direct call through `llm_client`, NOT a pipeline traversal
+- Deterministic rules are declared in config (`routing.config`)
+- The Ratchet caches what the OPERATOR meant, not what the SYSTEM routed internally
 - The Ratchet adds rules over time through confirmed patterns
 
-**Violation Example:** Raw `call_llm()` for classification without deterministic first pass.
-**Correct Pattern:** Use `ratchet_classify()` with deterministic function and interpret_route.
+**Violation Example:** Spawning a nested pipeline via `run_pipeline()` for LLM classification.
+**Correct Pattern:** `_escalate_to_llm()` in `cognitive_router.py` calls `llm_client` directly and returns the classification result.
 
-**See:** `docs/ADR-001-ratchet-classification.md`
+**See:** V-001 in VIOLATIONS.md. ADR-001 is superseded.
 
 ---
 
@@ -336,12 +376,12 @@ The Cortex answers: *"What patterns and improvements exist in the telemetry?"*
 
 | Tier | Model | Cost | Use Case |
 |------|-------|------|----------|
-| **Tier 0** | Deterministic | Free | Keyword routing, known patterns |
+| **Tier 0** | Deterministic | Free | Keyword routing, known patterns, Ratchet cache |
 | **Tier 1** | Haiku | Low | Entity extraction, quick classification |
 | **Tier 2** | Sonnet | Medium | Skill execution, content generation |
 | **Tier 3** | Opus | High | Architectural judgment, complex reasoning |
 
-**Ratchet Principle:** Intents should be demoted to lower tiers as patterns stabilize.
+**Ratchet Principle:** Intents should be demoted to lower tiers as patterns stabilize. Every Tier 2 LLM classification that becomes a confirmed pattern migrates to Tier 0 — cached, free, instant.
 
 ---
 
@@ -372,13 +412,14 @@ profiles/
 ## Development Principles
 
 1. **Never bypass the pipeline** - All roads lead through `run_pipeline()`
-2. **Config first, code last** - Express intent in YAML before writing handlers
-3. **Zones are non-negotiable** - Every action has a zone, always
-4. **Telemetry is sacred** - Schema validation protects data integrity
-5. **The human decides** - Jidoka surfaces decisions, never hides them
-6. **Skills compose** - Output data, not prose
-7. **The Judge validates** - No unchecked generative code
+2. **Never nest the pipeline** - One operator input = one pipeline traversal
+3. **Config first, code last** - Express intent in YAML before writing handlers
+4. **Zones are non-negotiable** - Every action has a zone, always
+5. **Telemetry is sacred** - Schema validation protects data integrity
+6. **The human decides** - Jidoka surfaces decisions, never hides them
+7. **Skills compose** - Output data, not prose
+8. **The Judge validates** - No unchecked generative code
 
 ---
 
-*This architecture was forged through six sprints of disciplined, test-driven development. Sprint 6.5 added Ambient Evolution via the Vision Board.*
+*This architecture was forged through six sprints of disciplined, test-driven development. Sprint 6.5 added Ambient Evolution via the Vision Board. Invariant #12 was corrected to remove the sub-pipeline violation identified in V-001.*
