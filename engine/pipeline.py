@@ -562,20 +562,82 @@ class InvariantPipeline:
                 )
                 return
 
-            # LLM couldn't classify either — fall to option 3
+            # JIDOKA: LLM classification failed. Stop and surface.
             log_event(
-                source="kaizen_classification",
+                source="jidoka_classification_failure",
                 raw_transcript=self.context.raw_input[:200],
                 zone_context="yellow",
                 intent="unknown",
                 inferred={
-                    "stage": "approval_kaizen",
+                    "stage": "approval_jidoka",
                     "pipeline_id": self.context.telemetry_event.get("id"),
                     "llm_classification_failed": True,
+                    "subsystem": "cognitive_router._escalate_to_llm",
+                    "expected": "RoutingResult with classified intent",
+                    "actual": "None or unknown intent",
                 }
             )
-            # Show config options as fallback
-            choice = "3"
+
+            # KAIZEN: Propose recovery options. Operator decides.
+            fallback_options = {
+                "1": "Answer from what you already know (free)",
+                "2": "Show me what you can help with (free)",
+                "3": "I'll rephrase",
+            }
+            fallback_choice = ask_jidoka(
+                context_message=(
+                    "The LLM classification didn't return a confident result.\n"
+                    "No charge was applied. Here's what we can do instead:"
+                ),
+                options=fallback_options
+            )
+
+            if fallback_choice == "1":
+                # Route to local context (same as original Option 2)
+                self.context.intent = "general_chat"
+                self.context.domain = "system"
+                self.context.zone = "green"
+                self.context.entities["routing"]["handler"] = "general_chat"
+                self.context.entities["routing"]["handler_args"] = {}
+                self.context.entities["routing"]["intent_type"] = "informational"
+                self.context.entities["routing"]["action_required"] = False
+                self.context.entities["routing"]["tier"] = 1
+                self.context.approved = True
+                return
+            elif fallback_choice == "2":
+                # Route to config options (same as original Option 3)
+                config_options = get_clarification_options()
+                if config_options:
+                    sub_choice = ask_jidoka(
+                        context_message="Here's what I can help with:",
+                        options=config_options
+                    )
+                    resolved = resolve_clarification(
+                        sub_choice, self.context.raw_input
+                    )
+                    self.context.intent = resolved.intent
+                    self.context.domain = resolved.domain
+                    self.context.zone = resolved.zone
+                    self.context.entities["routing"] = {
+                        "tier": resolved.tier,
+                        "confidence": resolved.confidence,
+                        "handler": resolved.handler,
+                        "handler_args": resolved.handler_args or {},
+                        "extracted_args": resolved.extracted_args or {},
+                        "intent_type": resolved.intent_type,
+                        "action_required": resolved.action_required,
+                        "llm_metadata": resolved.llm_metadata or {}
+                    }
+                    self.context.approved = True
+                    return
+
+            # Fallback choice 3 or any unhandled: rephrase
+            self.context.approved = False
+            self.context.result = {
+                "status": "cancelled",
+                "message": "Go ahead — I'm listening."
+            }
+            return
 
         # ---- Option 2: Answer from local context (free) ----
         if choice == "2":

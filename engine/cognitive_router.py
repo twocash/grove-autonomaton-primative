@@ -412,7 +412,7 @@ class CognitiveRouter:
                 return None
 
             result_data = pipeline_context.result
-            if isinstance(result_data, dict) and result_data.get("success"):
+            if isinstance(result_data, dict) and result_data.get("status") == "executed":
                 data = result_data.get("data", {})
                 classification = data.get("raw_result", {})
                 classified_intent = data.get("classification")
