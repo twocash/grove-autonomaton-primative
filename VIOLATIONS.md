@@ -198,7 +198,7 @@ Audit test suite against the 7 invariant tests from the Architect SKILL. Remove 
 ---
 
 ## V-010: Glass Shows Stale Intent After Kaizen Classification
-**Status:** ⬜ Open
+**Status:** ✅ Resolved
 **Priority:** MEDIUM — misleading display, not architectural
 **Files:** `engine/glass.py`, `engine/pipeline.py`
 
@@ -219,7 +219,8 @@ Any fix must be vetted for integrity against the pipeline invariant. The Stage 2
 **Acceptance Test:**
 After Kaizen Option 1, Glass Stage 2 line must show the classified intent. `show telemetry` must NOT contain fabricated or backdated trace entries.
 
-**Commit:** _pending_
+**Commit:** 629fe5a `V-010-glass-arrow` — Glass reads existing `approval_kaizen` trace's `resolved_intent` field. Shows `intent:unknown → explain_system` arrow. No telemetry fabrication.
+**Resolved:** 2026-03-21
 
 ---
 
