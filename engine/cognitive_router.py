@@ -283,15 +283,14 @@ class CognitiveRouter:
 
         # If no match or low confidence: cache check, then LLM escalation
         if best_match is None or best_match[2] < self.LLM_ESCALATION_THRESHOLD:
-            # THE RATCHET: Check pattern cache before calling LLM (purity-audit-v1)
+            # THE RATCHET: Check pattern cache (Tier 0, free)
             cache_result = self._check_pattern_cache(user_input)
             if cache_result is not None:
                 return cache_result
-            # Cache miss — escalate to LLM
-            llm_result = self._escalate_to_llm(user_input)
-            if llm_result is not None:
-                return llm_result
-            # If LLM fails and we had no keyword match, return default
+            # No keyword match, no cache hit. Return unknown.
+            # The LLM is NOT called here. LLM calls cost money.
+            # Money is an action. Actions go through Stage 4.
+            # Stage 4 will offer the Kaizen prompt.
             if best_match is None:
                 return self._create_default_result()
 

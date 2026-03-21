@@ -50,7 +50,7 @@ def check(label, condition, detail=""):
     return condition
 
 
-def test_step(step_num, input_text, expect_intent, expect_no_jidoka=True,
+def run_step(step_num, input_text, expect_intent, expect_no_jidoka=True,
               expect_dock=False, expect_tier=None, expect_cache_hit=False):
     """Test one interaction step."""
     print(f"\n{'='*60}")
@@ -94,7 +94,7 @@ def run_all():
     print("="*60)
 
     # ── PHASE 1: Basic greeting ──────────────────────────────
-    r = test_step(1, "hello",
+    r = run_step(1, "hello",
                   expect_intent="general_chat",
                   expect_tier=1)
 

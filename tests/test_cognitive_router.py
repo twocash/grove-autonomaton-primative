@@ -312,32 +312,30 @@ class TestRouterReset:
 class TestTier1LLMEscalation:
     """Tests for Tier 1 LLM escalation when keyword confidence is low (Sprint 2)."""
 
-    def test_low_confidence_escalates_to_llm(self):
+    def test_low_confidence_returns_unknown_no_llm(self):
         """
-        When Tier 0 keyword confidence < 0.7, escalate to Tier 1 LLM.
+        When Tier 0 keyword confidence < 0.7, return unknown — do NOT call LLM.
 
-        This tests the hybrid classification approach:
-        - Tier 0: Fast keyword matching
-        - Tier 1: LLM classification for ambiguous input
+        consent-gated-classification-v1: classify() no longer auto-fires the LLM.
+        LLM classification requires operator consent via Stage 4 Kaizen prompt.
         """
         from unittest.mock import patch
         from engine.cognitive_router import classify_intent
 
-        # Input that partially matches but with low confidence
+        # Input that doesn't match any keywords
         ambiguous_input = "I need to handle some content stuff"
 
-        # Mock the LLM client to return a classification
-        mock_llm_response = "content_compilation"
-
-        with patch('engine.llm_client.call_llm', return_value=mock_llm_response) as mock_llm:
+        with patch('engine.llm_client.call_llm') as mock_llm:
             result = classify_intent(ambiguous_input)
 
-            # If confidence was low, LLM should have been called
-            if result.confidence < 0.7:
-                mock_llm.assert_called_once()
-                # LLM result should be used
-                assert result.intent in ["content_compilation", "unknown"], \
-                    f"LLM should classify intent, got '{result.intent}'"
+            # LLM must NOT be called from classify()
+            mock_llm.assert_not_called()
+
+            # Result should be unknown with 0.0 confidence
+            assert result.intent == "unknown", \
+                f"Expected 'unknown', got '{result.intent}'"
+            assert result.confidence == 0.0, \
+                f"Expected confidence 0.0, got {result.confidence}"
 
     def test_high_confidence_skips_llm(self):
         """

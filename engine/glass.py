@@ -73,7 +73,8 @@ def read_pipeline_events(pipeline_id: str) -> list[dict]:
 
     # Sort by stage order
     stage_order = {"telemetry": 1, "recognition": 2, "compilation": 3,
-                   "approval": 4, "approval_jidoka": 4, "execution": 5}
+                   "approval": 4, "approval_jidoka": 4,
+                   "approval_kaizen": 4, "execution": 5}
     pipeline_events.sort(
         key=lambda e: stage_order.get(
             e.get("inferred", {}).get("stage", ""), 99
@@ -120,7 +121,7 @@ def _render_stage_from_event(lines: list, event: dict,
         lines.append(
             f"  {_c.DIM}│{_c.RESET} {_c.CYAN}3{_c.RESET} Compilation {comp}")
 
-    elif stage == "approval":
+    elif stage in ("approval", "approval_jidoka", "approval_kaizen"):
         zone = event.get("zone_context", "green")
         feedback = event.get("human_feedback", "")
         zc = _get_zone_color(zone)
