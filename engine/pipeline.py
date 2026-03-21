@@ -59,6 +59,11 @@ class PipelineContext:
     executed: bool = False
     mcp_result: Any = None  # Result from MCP execution
 
+    # UX metadata (REPL reads these for tips, announcements)
+    classification_source: str = "unknown"  # "cache" | "keyword" | "llm" | "unknown"
+    events: list = field(default_factory=list)  # ["keyword_match"], ["kaizen_fired", "llm_classification"]
+    cost: float = 0.0  # Estimated cost of this traversal
+
 
 class InvariantPipeline:
     """
@@ -214,10 +219,15 @@ class InvariantPipeline:
         self.context.intent = routing_result.intent
         self.context.domain = routing_result.domain
         self.context.zone = routing_result.zone  # Override caller's zone
+        self.context.classification_source = routing_result.classification_source
+
+        # Set event for UX tips
+        if routing_result.classification_source == "cache":
+            self.context.events.append("ratchet_cache_hit")
+        elif routing_result.classification_source == "keyword":
+            self.context.events.append("keyword_match")
 
         # Store routing metadata for Stage 5 dispatcher
-        # Sprint 8: Include intent_type, action_required, llm_metadata for
-        # Compilation gating and Approval UX decisions
         self.context.entities = {
             "routing": {
                 "tier": routing_result.tier,
@@ -329,9 +339,27 @@ class InvariantPipeline:
             }
         )
 
-    def _log_approval_trace(self) -> None:
-        """Log Stage 4 approval trace. Called before every return."""
+    def _log_approval_trace(self, label: str = None) -> None:
+        """Log Stage 4 approval trace with label for Glass rendering."""
         routing_info = self.context.entities.get("routing", {})
+
+        # Generate label based on approval state and zone
+        if label is None:
+            zone_upper = self.context.zone.upper() if self.context.zone else "YELLOW"
+            if self.context.approved:
+                if "kaizen_fired" in self.context.events:
+                    # Kaizen path - determine which option
+                    if "llm_classification" in self.context.events:
+                        label = f"{zone_upper} kaizen → LLM classify"
+                    elif self.context.intent == "general_chat":
+                        label = f"{zone_upper} kaizen → local context"
+                    else:
+                        label = f"{zone_upper} kaizen → resolved"
+                else:
+                    label = f"{zone_upper} auto-approve"
+            else:
+                label = f"{zone_upper} kaizen → rephrase"
+
         log_event(
             source=self.context.source,
             raw_transcript=self.context.raw_input[:200],
@@ -340,6 +368,8 @@ class InvariantPipeline:
             human_feedback="approved" if self.context.approved else "rejected",
             inferred={
                 "stage": "approval",
+                "stage_name": "Approval",
+                "label": label,
                 "pipeline_id": self.context.telemetry_event.get("id"),
                 "effective_zone": self.context.zone,
                 "action_required": routing_info.get("action_required", True),
@@ -371,16 +401,9 @@ class InvariantPipeline:
         Yellow zone: Require Jidoka confirmation
         Red zone: Require explicit approval with context
         """
-        from engine.cognitive_router import (
-            get_clarification_options,
-            resolve_clarification,
-            CognitiveRouter
-        )
-
         # Get routing metadata for action_required check
         routing_info = self.context.entities.get("routing", {})
         action_required = routing_info.get("action_required", True)
-        confidence = routing_info.get("confidence", 0.0)
 
         # Compute effective zone for MCP actions
         effective_zone = self._compute_effective_zone()
@@ -388,9 +411,8 @@ class InvariantPipeline:
         # Update context with effective zone
         self.context.zone = effective_zone
 
-        # Sprint 8: Clarification Jidoka for unknown intents
-        if (self.context.intent == "unknown" and
-            confidence < CognitiveRouter.CLARIFICATION_THRESHOLD):
+        # Clarification Jidoka for unknown intents (no confident match)
+        if self.context.intent == "unknown":
             # Ask user to clarify instead of blanket yellow approval
             self._handle_clarification_jidoka()
             return  # Kaizen handler logs its own approval trace
@@ -458,6 +480,9 @@ class InvariantPipeline:
         """
         from engine.ux import ask_jidoka
 
+        # Track that Kaizen fired (for UX tips)
+        self.context.events.append("kaizen_fired")
+
         config = self._load_kaizen_config()
         prompt = config.get("prompt", "I don't recognize this input.")
         options_config = config.get("options", {})
@@ -510,48 +535,95 @@ class InvariantPipeline:
     def _kaizen_llm_classify(self) -> None:
         """Capability: LLM classification with consent.
 
-        On success: sets context state. Stage 4 trace emitted by caller.
-        On failure: logs Jidoka diagnostic, then offers fallback options.
+        Calls call_llm() directly — this is Stage 4 infrastructure.
+        The router is a pure lookup; LLM calls live here.
         """
-        from engine.cognitive_router import get_router
+        import json
+        from engine.cognitive_router import get_router, RoutingResult
+        from engine.llm_client import call_llm
         from engine.ux import ask_jidoka
         from engine.telemetry import log_event
+        from engine.profile import get_config_dir
 
         router = get_router()
-        llm_result = router._escalate_to_llm(self.context.raw_input)
+        route_descriptions = router.get_route_descriptions()
+        valid_intents = list(route_descriptions.keys())
 
-        if llm_result is not None and llm_result.intent != "unknown":
-            self._apply_routing_result(llm_result)
-            self.context.approved = True
+        if not valid_intents:
+            self._kaizen_local_context()
             return
 
-        # JIDOKA: LLM classification failed. Log diagnostic (not Stage 4).
-        log_event(
-            source="jidoka_classification_failure",
-            raw_transcript=self.context.raw_input[:200],
-            zone_context="yellow",
-            intent="unknown",
-            inferred={
-                "stage": "jidoka_llm_failure",
-                "pipeline_id": self.context.telemetry_event.get("id"),
-                "llm_classification_failed": True,
-                "subsystem": "cognitive_router._escalate_to_llm",
-            }
-        )
+        # Build prompt
+        intent_lines = [f"- {name}: {desc[:80]}" for name, desc in route_descriptions.items()]
+        available_intents = "\n".join(intent_lines[:20])
 
+        try:
+            tpl_path = get_config_dir() / "cognitive-router" / "prompts" / "classify_intent.md"
+            if tpl_path.exists():
+                prompt = tpl_path.read_text(encoding="utf-8")
+                prompt = prompt.replace("{user_input}", self.context.raw_input)
+                prompt = prompt.replace("{available_intents}", available_intents)
+            else:
+                prompt = (
+                    f'Classify this input: "{self.context.raw_input}"\n\n'
+                    f'Available intents:\n{available_intents}\n\n'
+                    f'Return ONLY valid JSON: {{"intent":"<name>","confidence":<0-1>}}'
+                )
+        except Exception:
+            self._kaizen_local_context()
+            return
+
+        try:
+            response = call_llm(prompt=prompt, tier=2, intent="llm_intent_classify")
+            json_str = response.strip()
+            start_idx = json_str.find('{')
+            end_idx = json_str.rfind('}')
+            if start_idx != -1 and end_idx != -1:
+                json_str = json_str[start_idx:end_idx + 1]
+            result = json.loads(json_str)
+
+            classified_intent = str(result.get("intent", "unknown")).lower()
+            confidence = float(result.get("confidence", 0.5))
+
+            if classified_intent in valid_intents:
+                rc = router.routes[classified_intent]
+                llm_result = RoutingResult(
+                    intent=classified_intent,
+                    domain=rc.get("domain", "general"),
+                    zone=rc.get("zone", "yellow"),
+                    tier=rc.get("tier", 2),
+                    confidence=confidence,
+                    handler=rc.get("handler"),
+                    handler_args=rc.get("handler_args", {}),
+                    intent_type=rc.get("intent_type", "actionable"),
+                    action_required=rc.get("intent_type") != "conversational",
+                    llm_metadata={"source": "llm_classify", "classification_confidence": confidence},
+                    classification_source="llm"
+                )
+                self._apply_routing_result(llm_result)
+                self.context.classification_source = "llm"
+                self.context.events.append("llm_classification")
+                self.context.approved = True
+                return
+
+        except Exception as e:
+            log_event(
+                source="jidoka_classification_failure",
+                raw_transcript=self.context.raw_input[:200],
+                zone_context="yellow", intent="unknown",
+                inferred={"stage": "jidoka_llm_failure", "error": str(e)}
+            )
+
+        # LLM failed — offer fallback
         fallback_options = {
             "1": "Answer from what you already know (free)",
             "2": "Show me what you can help with (free)",
             "3": "I'll rephrase",
         }
         fallback_choice = ask_jidoka(
-            context_message=(
-                "The LLM classification didn't return a confident result.\n"
-                "No charge was applied. Here's what we can do instead:"
-            ),
+            context_message="The LLM classification didn't return a confident result.\nHere's what we can do instead:",
             options=fallback_options
         )
-
         if fallback_choice == "1":
             self._kaizen_local_context()
         elif fallback_choice == "2":

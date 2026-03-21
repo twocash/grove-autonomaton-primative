@@ -508,11 +508,12 @@ def main():
 
             # Contextual tips (if enabled)
             if tip_engine:
-                # Pass dict to TipEngine (refactored from PipelineContext)
+                # Pass dict to TipEngine (event-based)
                 tip_data = {
                     "intent": context.intent,
                     "zone": context.zone,
                     "entities": context.entities,
+                    "events": context.events,
                 }
                 tip_text = tip_engine.evaluate(tip_data)
                 if tip_text:

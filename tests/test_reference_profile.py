@@ -259,38 +259,25 @@ class TestShowEngineManifest:
 # ============================================================================
 
 class TestTipsEngine:
-    """Verify tips engine behavior."""
+    """Verify event-based tips engine behavior."""
 
-    @pytest.fixture
-    def mock_context(self):
-        from engine.pipeline import PipelineContext
-        ctx = PipelineContext(raw_input="hello", source="test")
-        ctx.intent = "general_chat"
-        ctx.zone = "green"
-        ctx.entities = {
-            "routing": {
-                "tier": 0,
-                "llm_metadata": {}
-            }
-        }
-        return ctx
-
-    def test_tip_fires_on_matching_trigger(self, mock_context):
-        """Tip fires when trigger conditions match."""
+    def test_tip_fires_on_matching_trigger(self):
+        """Tip fires when matching event is present."""
         from engine.glass import TipEngine
         from engine.profile import set_profile
 
         set_profile("reference")
         engine = TipEngine()
 
-        # First general_chat should trigger first_greeting tip
-        tip = engine.evaluate(mock_context)
+        # keyword_match event should trigger tip
+        tip_data = {"events": ["keyword_match"]}
+        tip = engine.evaluate(tip_data)
 
         assert tip is not None
         assert "won't recognize" in tip.lower()
 
-    def test_tip_fires_once(self, mock_context):
-        """Same trigger condition doesn't repeat tip."""
+    def test_tip_fires_once(self):
+        """Same event doesn't repeat tip."""
         from engine.glass import TipEngine
         from engine.profile import set_profile
 
@@ -298,34 +285,25 @@ class TestTipsEngine:
         engine = TipEngine()
 
         # First call
-        tip1 = engine.evaluate(mock_context)
+        tip_data = {"events": ["keyword_match"]}
+        tip1 = engine.evaluate(tip_data)
         assert tip1 is not None
 
-        # Second call with same conditions
-        tip2 = engine.evaluate(mock_context)
+        # Second call with same event
+        tip2 = engine.evaluate(tip_data)
         assert tip2 is None  # Already shown
 
     def test_tier_trigger_fires(self):
-        """after_tier trigger fires correctly."""
-        from engine.pipeline import PipelineContext
+        """llm_classification event fires correctly."""
         from engine.glass import TipEngine
         from engine.profile import set_profile
 
         set_profile("reference")
         engine = TipEngine()
 
-        # Skip the first_greeting tip
-        ctx1 = PipelineContext(raw_input="hi", source="test")
-        ctx1.intent = "general_chat"
-        ctx1.entities = {"routing": {"tier": 0, "llm_metadata": {}}}
-        engine.evaluate(ctx1)
-
-        # Now trigger tier 2
-        ctx2 = PipelineContext(raw_input="ambiguous", source="test")
-        ctx2.intent = "strategy_session"
-        ctx2.entities = {"routing": {"tier": 2, "llm_metadata": {}}}
-
-        tip = engine.evaluate(ctx2)
+        # llm_classification event should trigger LLM-related tip
+        tip_data = {"events": ["llm_classification"]}
+        tip = engine.evaluate(tip_data)
 
         assert tip is not None
         assert "LLM" in tip
