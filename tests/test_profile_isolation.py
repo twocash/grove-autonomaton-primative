@@ -204,9 +204,8 @@ class TestDispatcherWithBlankTemplate:
         result = dispatch_action(routing, "unknown command")
 
         # Should return a valid result, not crash
-        # blank_template routes unmatched to ratchet_interpreter or general_chat
         assert result.success is True
-        assert result.data.get("type") in ("passthrough", "ratchet_interpreter", "general_chat")
+        assert result.data.get("type") in ("passthrough", "general_chat")
 
 
 class TestProfileIsolation:

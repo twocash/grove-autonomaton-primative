@@ -373,120 +373,115 @@ class CognitiveRouter:
 
     def _escalate_to_llm(self, user_input: str) -> Optional[RoutingResult]:
         """
-        Escalate to LLM for structured intent classification.
+        Direct LLM call for intent classification.
 
-        Sprint 6 (ADR-001): Routes through the invariant pipeline via force_route.
-        The ratchet_intent_classify route handles the LLM call with standardized
-        telemetry. This ensures all classification telemetry is consistent for
-        Ratchet analysis.
+        V-001: This is Stage 2 infrastructure — NOT a pipeline traversal.
+        The pipeline is for operator interactions. Classification is an
+        implementation detail of Recognition.
 
-        Args:
-            user_input: The ambiguous user input
-
-        Returns:
-            RoutingResult if LLM successfully classifies, None on failure
+        Reads the prompt template from config, calls call_llm() directly,
+        parses the JSON classification, returns a RoutingResult.
         """
-        try:
-            from engine.pipeline import run_pipeline
-            from engine.telemetry import log_event
-        except ImportError:
-            return None
+        import json
+        from engine.llm_client import call_llm
+        from engine.telemetry import log_event
 
-        # Build list of valid intents from config
-        valid_intents = [k for k in self.routes.keys() if not k.startswith("ratchet_")]
+        valid_intents = list(self.routes.keys())
         if not valid_intents:
             return None
 
+        # Build intent descriptions for the prompt
+        intent_lines = []
+        for name, cfg in self.routes.items():
+            desc = cfg.get("description", name)
+            intent_lines.append(f"- {name}: {desc[:80]}")
+        available_intents = "\n".join(intent_lines[:20])
+
+        # Load prompt template (inline fallback if missing)
         try:
-            # Route through the invariant pipeline with forced route to ratchet_intent_classify
-            # This ensures the LLM call goes through all 5 stages per ADR-001
-            pipeline_context = run_pipeline(
-                raw_input=user_input,
-                source="cognitive_router:llm_escalation",
-                zone="green",
-                force_route="ratchet_intent_classify"
+            tpl_path = get_config_dir() / "cognitive-router" / "prompts" / "classify_intent.md"
+            if tpl_path.exists():
+                prompt = tpl_path.read_text(encoding="utf-8")
+                prompt = prompt.replace("{user_input}", user_input)
+                prompt = prompt.replace("{available_intents}", available_intents)
+            else:
+                prompt = (
+                    f'Classify this input: "{user_input}"\n\n'
+                    f'Available intents:\n{available_intents}\n\n'
+                    f'Return ONLY valid JSON: {{"intent":"<name>","confidence":<0-1>,'
+                    f'"reasoning":"<why>","intent_type":"<conversational|informational|actionable>",'
+                    f'"action_required":<true|false>}}'
+                )
+        except RuntimeError:
+            return None
+
+        try:
+            response = call_llm(
+                prompt=prompt,
+                tier=2,
+                intent="llm_intent_classify"
             )
 
-            # Check if classification succeeded
-            if not pipeline_context.executed or not pipeline_context.result:
-                return None
+            # Parse JSON from response
+            json_str = response.strip()
+            start_idx = json_str.find('{')
+            end_idx = json_str.rfind('}')
+            if start_idx != -1 and end_idx != -1:
+                json_str = json_str[start_idx:end_idx + 1]
+            result = json.loads(json_str)
 
-            result_data = pipeline_context.result
-            if isinstance(result_data, dict) and result_data.get("status") == "executed":
-                data = result_data.get("data", {})
-                classification = data.get("raw_result", {})
-                classified_intent = data.get("classification")
+            classified_intent = str(result.get("intent", "unknown")).lower()
+            confidence = float(result.get("confidence", 0.5))
+            intent_type = result.get("intent_type", "actionable")
+            action_required = result.get("action_required", True)
+            llm_metadata = {
+                "reasoning": result.get("reasoning", ""),
+                "classification_confidence": confidence,
+                "entities": result.get("entities", {}),
+                "sentiment": result.get("sentiment", "neutral"),
+            }
 
-                if classified_intent is None:
-                    classified_intent = classification.get("intent", "unknown")
+            log_event(
+                source="cognitive_router",
+                raw_transcript=user_input[:200],
+                zone_context="green",
+                intent=classified_intent,
+                tier=2,
+                confidence=confidence,
+                inferred={"stage": "llm_classification", "method": "direct_call"}
+            )
 
-                # Normalize intent name
-                if isinstance(classified_intent, str):
-                    classified_intent = classified_intent.lower()
-                else:
-                    classified_intent = "unknown"
-
-                confidence = float(classification.get("confidence", data.get("confidence", 0.5)))
-                intent_type = classification.get("intent_type", "actionable")
-                action_required = classification.get("action_required", True)
-
-                # Build llm_metadata for downstream use
-                llm_metadata = {
-                    "reasoning": classification.get("reasoning", ""),
-                    "classification_confidence": confidence,
-                    "via_pipeline": True,  # ADR-001 compliance marker
-                    "entities": classification.get("entities", {}),
-                    "sentiment": classification.get("sentiment", "neutral"),
-                }
-
-                # Validate intent against declared routes
-                if classified_intent in valid_intents:
-                    route_config = self.routes[classified_intent]
-                    return RoutingResult(
-                        intent=classified_intent,
-                        domain=route_config.get("domain", "general"),
-                        zone=route_config.get("zone", "yellow"),
-                        tier=route_config.get("tier", 2),
-                        confidence=confidence,
-                        handler=route_config.get("handler"),
-                        handler_args=route_config.get("handler_args", {}),
-                        extracted_args={},
-                        intent_type=intent_type,
-                        action_required=action_required,
-                        llm_metadata=llm_metadata
-                    )
-
-                # LLM returned unknown - pass through metadata for clarification
+            if classified_intent in valid_intents:
+                rc = self.routes[classified_intent]
                 return RoutingResult(
-                    intent="unknown",
-                    domain="general",
-                    zone="yellow",
-                    tier=2,
+                    intent=classified_intent,
+                    domain=rc.get("domain", "general"),
+                    zone=rc.get("zone", "yellow"),
+                    tier=rc.get("tier", 2),
                     confidence=confidence,
-                    handler=None,
-                    handler_args={},
+                    handler=rc.get("handler"),
+                    handler_args=rc.get("handler_args", {}),
                     extracted_args={},
                     intent_type=intent_type,
                     action_required=action_required,
-                    llm_metadata=llm_metadata
+                    llm_metadata=llm_metadata,
                 )
 
-            return None
+            return RoutingResult(
+                intent="unknown", domain="general", zone="yellow", tier=2,
+                confidence=confidence, handler=None, handler_args={},
+                extracted_args={}, intent_type=intent_type,
+                action_required=action_required, llm_metadata=llm_metadata,
+            )
 
         except Exception as e:
-            # Log failure with flat fields (Purity v2)
             try:
                 log_event(
                     source="cognitive_router",
                     raw_transcript=user_input[:200],
-                    zone_context="yellow",
-                    intent="unknown",
-                    tier=2,
-                    inferred={
-                        "error": str(e),
-                        "error_type": type(e).__name__,
-                        "stage": "llm_escalation_error"
-                    }
+                    zone_context="yellow", intent="unknown", tier=2,
+                    inferred={"error": str(e), "error_type": type(e).__name__,
+                              "stage": "llm_escalation_error"}
                 )
             except Exception:
                 pass

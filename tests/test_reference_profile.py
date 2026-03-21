@@ -389,57 +389,6 @@ class TestProfileIsolation:
         assert context.executed is True
 
 
-class TestStartupForceRoute:
-    """Verify startup intents work with force_route (bug fix E.2/F.6)."""
-
-    def test_startup_force_route_welcome_card(self):
-        """welcome_card routes correctly when force_route is used."""
-        from engine.profile import set_profile
-        from engine.pipeline import run_pipeline
-
-        set_profile("coach_demo")
-        # This would trigger Jidoka without force_route since keywords: []
-        context = run_pipeline(
-            "welcome_card",
-            source="system_startup",
-            force_route="welcome_card"
-        )
-
-        # Should NOT trigger clarification Jidoka
-        assert context.intent == "welcome_card"
-        assert context.zone == "green"
-
-    def test_startup_force_route_startup_brief(self):
-        """startup_brief routes correctly when force_route is used."""
-        from engine.profile import set_profile
-        from engine.pipeline import run_pipeline
-
-        set_profile("coach_demo")
-        context = run_pipeline(
-            "startup_brief",
-            source="system_startup",
-            force_route="startup_brief"
-        )
-
-        assert context.intent == "startup_brief"
-        assert context.zone == "green"
-
-    def test_startup_force_route_generate_plan(self):
-        """generate_plan config exists and is properly configured."""
-        from engine.profile import set_profile
-        from engine.cognitive_router import get_router, reset_router
-
-        set_profile("coach_demo")
-        reset_router()
-        router = get_router()
-
-        # Verify the intent exists in routing config (force_route uses this)
-        assert "generate_plan" in router.routes
-        route = router.routes["generate_plan"]
-        assert route["zone"] == "yellow"
-        assert route["handler"] == "generate_plan"
-
-
 class TestReferenceProfileConfig:
     """Verify reference profile config files exist."""
 

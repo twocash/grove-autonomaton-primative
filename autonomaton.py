@@ -403,8 +403,7 @@ def main():
         # Stage 5 dispatcher handler does LLM call and file write
         plan_context = run_pipeline(
             raw_input="generate plan",
-            source="system_startup",
-            force_route="generate_plan"
+            source="startup_ceremony",
         )
         if plan_context.executed:
             result = plan_context.result or {}
@@ -429,8 +428,7 @@ def main():
         # Route welcome_card through pipeline
         welcome_context = run_pipeline(
             raw_input="welcome_card",
-            source="system_startup",
-            force_route="welcome_card"
+            source="startup_ceremony",
         )
         if welcome_context.executed:
             result = welcome_context.result or {}
@@ -452,8 +450,7 @@ def main():
         if not skip_brief:
             brief_context = run_pipeline(
                 raw_input="startup_brief",
-                source="system_startup",
-                force_route="startup_brief"
+                source="startup_ceremony",
             )
             if brief_context.executed:
                 result = brief_context.result or {}

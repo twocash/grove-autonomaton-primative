@@ -1,8 +1,12 @@
 # ADR-001: Ratchet Classification — LLM Interprets, Deterministic Compiles
 
-> Status: **Proposed**
+> Status: **Superseded (V-001)**
 > Date: 2026-03-18
 > Author: Jim Calhoun / Grove Architecture
+> Superseded: 2026-03-20 — The interpret layer is a direct LLM call
+> within the cognitive router, not a pipeline traversal. Sub-pipelines
+> violated the core invariant (one operator input = one pipeline traversal)
+> and poisoned the Ratchet cache. See VIOLATIONS.md V-001.
 
 ---
 

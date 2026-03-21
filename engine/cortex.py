@@ -207,36 +207,20 @@ class Cortex:
 
     def _extract_entities(self, event: dict) -> list[ExtractedEntity]:
         """
-        Extract entities from a telemetry event using ratchet pattern.
+        Extract entities from a telemetry event.
 
-        Sprint 6 (ADR-001): Uses the two-layer architecture:
-        1. Deterministic layer (regex) runs first - free
-        2. LLM layer (via pipeline) runs if confidence < threshold
-
-        The LLM escalation routes through the invariant pipeline to
-        ratchet_entity_extract, ensuring standardized telemetry.
+        V-001: Uses deterministic regex extraction directly.
+        LLM escalation for entity extraction removed with ratchet.py.
         """
-        from engine.ratchet import ratchet_classify, RatchetConfig
-
         transcript = event.get("raw_transcript", "")
         event_id = event.get("id", "unknown")
 
         if not transcript.strip():
             return []
 
-        # Configure entity extraction ratchet
-        entity_config = RatchetConfig(
-            label="entity_extraction",
-            deterministic=lambda t: self._regex_extract_entities(t, event_id),
-            interpret_route="ratchet_entity_extract",
-            threshold=0.7
-        )
-
-        # Run ratchet classification
         try:
-            result = ratchet_classify(transcript, entity_config)
+            result = self._regex_extract_entities(transcript, event_id)
         except Exception as e:
-            # Ratchet failed - log and return empty (Digital Jidoka: visible failure)
             from engine.telemetry import log_event
             log_event(
                 source="cortex:entity_extraction",
@@ -246,21 +230,16 @@ class Cortex:
                 inferred={
                     "error": str(e),
                     "error_type": type(e).__name__,
-                    "stage": "ratchet_classify"
+                    "stage": "regex_extract"
                 }
             )
             return []
 
-        # Convert result to ExtractedEntity list
-        if result.result is None:
+        if result is None:
             return []
 
-        if result.source == "deterministic":
-            # Deterministic layer returns list of ExtractedEntity
-            return result.result if isinstance(result.result, list) else []
-        else:
-            # Pipeline layer returns raw entities list from LLM
-            return self._parse_llm_entities(result.result, event_id, transcript)
+        entities, confidence = result
+        return entities if isinstance(entities, list) else []
 
     def _regex_extract_entities(self, transcript: str, event_id: str) -> Optional[tuple]:
         """
@@ -338,8 +317,7 @@ class Cortex:
         """
         Parse LLM extraction result into ExtractedEntity list.
 
-        The ratchet_interpreter handler returns entities in raw format.
-        This method converts them to ExtractedEntity dataclass instances.
+        Converts raw entity extraction results to ExtractedEntity dataclass instances.
         """
         entities = []
 
