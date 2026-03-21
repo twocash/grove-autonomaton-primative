@@ -84,7 +84,8 @@ def read_pipeline_events(pipeline_id: str) -> list[dict]:
 
 
 def _render_stage_from_event(lines: list, event: dict,
-                              stage: str, level: str) -> None:
+                              stage: str, level: str,
+                              reclassified_intent: str = None) -> None:
     """Render one stage line from a telemetry event."""
     inf = event.get("inferred", {})
 
@@ -104,9 +105,14 @@ def _render_stage_from_event(lines: list, event: dict,
         is_cache = method == "cache"
         cost = "$0.00" if tier < 2 or is_cache else "~$0.003"
         cache_marker = f" {_c.GREEN}✓{_c.RESET}" if is_cache else ""
+        # V-010: Show reclassification arrow if Kaizen changed the intent
+        if reclassified_intent and reclassified_intent != intent:
+            intent_display = f"{intent} {_c.DIM}→{_c.RESET} {reclassified_intent}"
+        else:
+            intent_display = intent
         lines.append(
             f"  {_c.DIM}│{_c.RESET} {_c.CYAN}2{_c.RESET} Recognition "
-            f"{_c.DIM}intent:{_c.RESET}{intent} "
+            f"{_c.DIM}intent:{_c.RESET}{intent_display} "
             f"{_c.DIM}T{tier}{_c.RESET} {method}{cache_marker} "
             f"{_c.DIM}{cost}{_c.RESET}")
         if level in ("medium", "full") and conf > 0:
@@ -172,6 +178,14 @@ def display_glass_from_telemetry(pipeline_id: str,
     if not events:
         return None
 
+    # V-010: Check if Kaizen reclassified the intent
+    reclassified_intent = None
+    for event in events:
+        inf = event.get("inferred", {})
+        if inf.get("stage") == "approval_kaizen" and inf.get("resolved_intent"):
+            reclassified_intent = inf["resolved_intent"]
+            break
+
     lines = []
     width = 58
     border = f"{_c.DIM}{'─' * width}{_c.RESET}"
@@ -181,7 +195,7 @@ def display_glass_from_telemetry(pipeline_id: str,
 
     for event in events:
         stage = event.get("inferred", {}).get("stage", "")
-        _render_stage_from_event(lines, event, stage, level)
+        _render_stage_from_event(lines, event, stage, level, reclassified_intent)
 
     lines.append(f"  {border}")
     print("\n".join(lines))
