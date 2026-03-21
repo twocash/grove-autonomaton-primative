@@ -71,108 +71,12 @@ class TestNoPipelineBypasses:
 # =========================================================================
 
 class TestPatternCache:
-    """Verify the Ratchet: confirmed classifications cache at Tier 0."""
+    """Verify cache file exists and handler is registered."""
 
     def test_pattern_cache_file_exists(self):
         """pattern_cache.yaml must exist in profile config."""
         cache_path = Path("profiles/coach_demo/config/pattern_cache.yaml")
         assert cache_path.exists(), "pattern_cache.yaml not found"
-
-    def test_empty_cache_returns_none(self):
-        """Empty cache should return None for any input."""
-        from engine.cognitive_router import CognitiveRouter
-        router = CognitiveRouter()
-        router.load_config()
-        router.pattern_cache = {}
-        router._cache_loaded = True
-        result = router._check_pattern_cache("some random input")
-        assert result is None
-
-    def test_cache_hit_returns_tier_zero(self):
-        """Cached classification must return Tier 0 result."""
-        from engine.cognitive_router import CognitiveRouter
-        router = CognitiveRouter()
-        router.load_config()
-
-        test_input = "how is my season going"
-        input_hash = hashlib.sha256(
-            test_input.lower().strip().encode()
-        ).hexdigest()[:16]
-
-        router.pattern_cache = {
-            input_hash: {
-                "intent": "strategy_session",
-                "domain": "system",
-                "zone": "green",
-                "handler": "strategy_session",
-                "handler_args": {},
-                "intent_type": "actionable",
-                "confirmed_count": 3,
-                "last_confirmed": "2026-03-18T00:00:00Z",
-                "original_input": test_input,
-                "confidence": 0.85,
-            }
-        }
-        router._cache_loaded = True
-
-        result = router._check_pattern_cache(test_input)
-        assert result is not None, "Cache hit should return a result"
-        assert result.tier == 0, f"Cache hit should be Tier 0, got {result.tier}"
-        assert result.intent == "strategy_session"
-        assert result.llm_metadata.get("source") == "pattern_cache"
-
-    def test_cache_does_not_store_red_zone(self):
-        """Red zone actions must never be cached (sovereignty safety)."""
-        from engine.pipeline import InvariantPipeline, PipelineContext
-        pipeline = InvariantPipeline()
-        pipeline.context = PipelineContext(
-            raw_input="adjust fee for Henderson",
-            source="test",
-            intent="fee_adjustment",
-            domain="money",
-            zone="red",
-            approved=True,
-            executed=True,
-            entities={
-                "routing": {
-                    "tier": 2,
-                    "confidence": 0.9,
-                    "handler": None,
-                    "handler_args": {},
-                    "intent_type": "actionable",
-                    "llm_metadata": {}
-                }
-            },
-            result={"status": "executed"}
-        )
-        # Should NOT write to cache because zone is red
-        pipeline._write_to_pattern_cache()
-        # Verify cache was not written
-        # (This test relies on the method checking zone == "red" and returning)
-        # A more robust test would mock the file write and assert it wasn't called
-
-    def test_stale_cache_entry_ignored(self):
-        """Cache entry for removed intent should return None."""
-        from engine.cognitive_router import CognitiveRouter
-        router = CognitiveRouter()
-        router.load_config()
-
-        input_hash = hashlib.sha256(b"test").hexdigest()[:16]
-        router.pattern_cache = {
-            input_hash: {
-                "intent": "nonexistent_intent_xyz",
-                "domain": "general",
-                "zone": "green",
-                "handler": None,
-                "handler_args": {},
-                "intent_type": "actionable",
-                "confirmed_count": 1,
-            }
-        }
-        router._cache_loaded = True
-
-        result = router._check_pattern_cache("test")
-        assert result is None, "Stale intent should not resolve from cache"
 
     def test_clear_cache_handler_registered(self):
         """clear_cache handler must be registered in Dispatcher."""

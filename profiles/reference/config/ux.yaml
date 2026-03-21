@@ -1,0 +1,40 @@
+# ============================================================
+# ux.yaml — Reference Profile UX Configuration
+# ============================================================
+# Controls informational displays that make the architecture
+# visible during the demo. Domain profiles can disable any
+# element or customize messages.
+#
+# These are NOT prompts. They are post-pipeline displays.
+# The pipeline produces results. This file controls how
+# the REPL layer presents them.
+# ============================================================
+
+# --- THE RATCHET Announcement ---
+# Fires when Stage 2 resolves from pattern cache (Tier 0).
+# Makes the economic benefit visible to the operator.
+ratchet_announcement:
+  enabled: true
+  template: |
+    THE RATCHET: Classified by LLM last time → cache this time.
+       Tier {tier}, ${cost}. The system got cheaper because you used it.
+
+# --- Tips (Demo Scaffolding) ---
+# Educational guidance displayed after each interaction.
+# One tip per interaction, highest priority wins.
+# The reference profile is a self-guided architecture demo.
+tips:
+  enabled: true
+  events:
+    ratchet_cache_hit:
+      priority: 1
+      message: "Type 'show cache' to see what the Ratchet stored."
+    llm_classification:
+      priority: 2
+      message: "That used the LLM. Try the exact same phrase again."
+    kaizen_fired:
+      priority: 3
+      message: "That was Jidoka stopping the line. The system won't spend money without your consent."
+    keyword_match:
+      priority: 4
+      message: "Try something the system won't recognize to see what happens."

@@ -131,16 +131,15 @@ def _render_stage_from_event(lines: list, event: dict,
         zone = event.get("zone_context", "green")
         feedback = event.get("human_feedback", "")
         zc = _get_zone_color(zone)
+        # Read label from pipeline (set by _log_approval_trace)
+        label = inf.get("label")
         if feedback == "rejected":
             app = "CANCELLED"
-        elif zone == "green":
-            app = "GREEN auto-approve"
-        elif zone == "yellow":
-            app = "YELLOW — confirmed"
-        elif zone == "red":
-            app = "RED — explicit approval"
+        elif label:
+            app = label
         else:
-            app = zone.upper()
+            # Fallback for older events without label
+            app = f"{zone.upper()} auto-approve" if zone == "green" else zone.upper()
         lines.append(
             f"  {_c.DIM}│{_c.RESET} {_c.CYAN}4{_c.RESET} Approval    "
             f"{zc}{app}{_c.RESET}")
@@ -220,46 +219,47 @@ def display_tip(tip_text: str) -> None:
 
 
 # =========================================================================
-# Tip Engine (refactored to take dict, not PipelineContext)
+# Tip Engine (event-based, reads from ux.yaml)
 # =========================================================================
 
 class TipEngine:
-    """Declarative contextual tip system.
+    """Event-based contextual tip system.
 
-    Loads tip definitions from config/tips.yaml.
-    Tracks shown tips in-memory (session-scoped, not persisted).
-    Evaluates triggers against pipeline data after each run.
-    Returns at most one tip per interaction.
+    Loads tip definitions from config/ux.yaml (tips.events section).
+    Matches pipeline events to tip triggers.
+    Returns at most one tip per interaction, highest priority wins.
     """
 
     def __init__(self):
-        self.tips = []
-        self.shown_ids = set()
+        self.tips = {}  # event_name -> {priority, message}
+        self.shown_events = set()
         self._loaded = False
 
     def load(self) -> None:
-        """Load tips.yaml from active profile."""
+        """Load ux.yaml from active profile."""
         import yaml
         from engine.profile import get_config_dir
 
-        tips_path = get_config_dir() / "tips.yaml"
-        if not tips_path.exists():
+        ux_path = get_config_dir() / "ux.yaml"
+        if not ux_path.exists():
             self._loaded = True
             return
 
         try:
-            with open(tips_path, "r", encoding="utf-8") as f:
+            with open(ux_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
-            self.tips = data.get("tips", [])
+            tips_config = data.get("tips", {})
+            if tips_config.get("enabled", True):
+                self.tips = tips_config.get("events", {})
         except Exception:
-            self.tips = []
+            self.tips = {}
         self._loaded = True
 
-    def evaluate(self, pipeline_data) -> Optional[str]:
-        """Evaluate tip triggers against pipeline data.
+    def evaluate(self, pipeline_data: dict) -> Optional[str]:
+        """Evaluate tip triggers against pipeline events.
 
         Args:
-            pipeline_data: Dict or PipelineContext with intent, zone, entities
+            pipeline_data: Dict with events list from pipeline context
 
         Returns:
             Tip text string or None.
@@ -267,61 +267,32 @@ class TipEngine:
         if not self._loaded:
             self.load()
 
-        # Handle both dict and PipelineContext for backwards compatibility
-        if hasattr(pipeline_data, 'entities'):
-            # PipelineContext object
-            routing = pipeline_data.entities.get("routing", {})
-            intent = pipeline_data.intent or ""
-            zone = pipeline_data.zone or "green"
-        else:
-            # Dict
-            routing = pipeline_data.get("entities", {}).get("routing", {})
-            intent = pipeline_data.get("intent", "")
-            zone = pipeline_data.get("zone", "green")
+        if not self.tips:
+            return None
 
-        llm_meta = routing.get("llm_metadata", {})
+        # Get events from pipeline data
+        events = pipeline_data.get("events", [])
+        if not events:
+            return None
 
-        for tip in self.tips:
-            tip_id = tip.get("id", "")
-            if tip_id in self.shown_ids:
+        # Find matching tips, sorted by priority (lower = higher priority)
+        candidates = []
+        for event_name in events:
+            if event_name in self.shown_events:
                 continue
+            if event_name in self.tips:
+                tip = self.tips[event_name]
+                candidates.append((
+                    tip.get("priority", 99),
+                    event_name,
+                    tip.get("message", "")
+                ))
 
-            trigger = tip.get("trigger", {})
-            if self._matches(trigger, intent, zone, routing, llm_meta):
-                self.shown_ids.add(tip_id)
-                return tip.get("text", "")
+        if not candidates:
+            return None
 
-        return None
-
-    def _matches(self, trigger: dict, intent: str, zone: str,
-                 routing: dict, llm_meta: dict) -> bool:
-        """Check if all trigger conditions are met."""
-        if "after_intent" in trigger:
-            if intent != trigger["after_intent"]:
-                return False
-
-        if "after_tier" in trigger:
-            tier = routing.get("tier", 0)
-            if tier != trigger["after_tier"]:
-                return False
-
-        if "after_cache_hit" in trigger:
-            is_cache_hit = llm_meta.get("source") == "pattern_cache"
-            if is_cache_hit != trigger["after_cache_hit"]:
-                return False
-
-        if "after_classification_source" in trigger:
-            if llm_meta.get("source") != trigger["after_classification_source"]:
-                return False
-
-        if "after_zone" in trigger:
-            if zone != trigger["after_zone"]:
-                return False
-
-        # Sequencing: require another tip to have been shown first
-        if "requires_shown" in trigger:
-            required_id = trigger["requires_shown"]
-            if required_id not in self.shown_ids:
-                return False
-
-        return True
+        # Sort by priority and return the highest priority (lowest number)
+        candidates.sort(key=lambda x: x[0])
+        _, event_name, message = candidates[0]
+        self.shown_events.add(event_name)
+        return message

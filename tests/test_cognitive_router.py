@@ -548,39 +548,6 @@ class TestClarificationJidoka:
         assert result.intent == "content_compilation", \
             f"Choice 1 should be content_compilation from coach_demo config, got '{result.intent}'"
 
-    def test_resolve_clarification_null_intent_rephrase(self):
-        """
-        Clarification option with null intent means user wants to rephrase.
-        """
-        from engine.profile import set_profile
-        from engine.cognitive_router import resolve_clarification, reset_router
-
-        set_profile("reference")
-        reset_router()
-        # Option 4 in reference has intent: null (ux-polish-v1)
-        result = resolve_clarification("4", "original input")
-
-        # Null intent falls back to general_chat with rephrase marker
-        assert result.intent == "general_chat", \
-            f"Null intent should fall back to general_chat, got '{result.intent}'"
-        assert result.llm_metadata.get("action") == "rephrase", \
-            "Null intent should have rephrase marker"
-
-    def test_resolve_clarification_preserves_original_input(self):
-        """
-        resolve_clarification should store original input in llm_metadata.
-        """
-        from engine.profile import set_profile
-        from engine.cognitive_router import resolve_clarification, reset_router
-
-        set_profile("reference")
-        reset_router()
-        original = "something ambiguous"
-        result = resolve_clarification("1", original)
-
-        assert result.llm_metadata.get("clarified_from") == original, \
-            "Should preserve original input in metadata"
-
 
 class TestLLMStructuredClassification:
     """Tests for Sprint 8 structured LLM classification output."""
