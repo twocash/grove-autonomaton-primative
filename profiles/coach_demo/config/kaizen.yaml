@@ -1,0 +1,24 @@
+# kaizen.yaml
+# Declarative Kaizen options for unknown input classification
+# V-004: Config-driven dispatch replaces hardcoded branching in pipeline.py
+#
+# Each option maps to a capability handler method: _kaizen_{capability}
+
+prompt: |
+  I don't recognize this from my current vocabulary.
+  I can use the LLM to learn what you mean - the Ratchet
+  will cache it so it's free next time.
+
+options:
+  "1":
+    label: "Use the LLM to classify this (fractions of a cent, cached after)"
+    capability: llm_classify
+  "2":
+    label: "Answer from what you already know (free)"
+    capability: local_context
+  "3":
+    label: "Show me what you can help with (free)"
+    capability: config_menu
+  "4":
+    label: "I'll rephrase"
+    capability: cancel

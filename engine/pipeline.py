@@ -435,220 +435,168 @@ class InvariantPipeline:
         # --- End of _run_approval ---
         self._log_approval_trace()
 
+    def _load_kaizen_config(self) -> dict:
+        """Load kaizen.yaml from the active profile's config directory."""
+        import yaml
+        from engine.profile import get_config_dir
+
+        try:
+            config_path = get_config_dir() / "kaizen.yaml"
+            if config_path.exists():
+                with open(config_path, "r", encoding="utf-8") as f:
+                    return yaml.safe_load(f) or {}
+        except Exception:
+            pass
+        return {}
+
     def _handle_clarification_jidoka(self) -> None:
         """
         Kaizen classification proposal for unknown input.
 
-        The router couldn't classify this from keywords or cache.
-        Instead of auto-firing the LLM, ask the operator.
-
-        This is Kaizen (propose improvement), not Jidoka (stop for error).
-        Nothing is broken. The system just doesn't know this phrase yet.
+        V-004: Config-driven dispatch. Options defined in kaizen.yaml,
+        capabilities implemented as _kaizen_{capability} methods.
         """
-        from engine.cognitive_router import (
-            get_clarification_options, resolve_clarification, get_router
-        )
+        from engine.ux import ask_jidoka
+
+        config = self._load_kaizen_config()
+        prompt = config.get("prompt", "I don't recognize this input.")
+        options_config = config.get("options", {})
+
+        # Build options dict for ask_jidoka: key -> label
+        options = {k: v.get("label", k) for k, v in options_config.items()}
+
+        choice = ask_jidoka(context_message=prompt, options=options)
+
+        # Dispatch to capability handler
+        capability = options_config.get(choice, {}).get("capability", "cancel")
+        self._dispatch_kaizen_capability(capability)
+
+        # ALL paths log approval trace — including cancel
+        self._log_approval_trace()
+
+    def _present_kaizen_options(self, config: dict) -> tuple:
+        """Render Kaizen menu from config. Returns (options_dict, options_config)."""
+        options_config = config.get("options", {})
+        options = {k: v.get("label", k) for k, v in options_config.items()}
+        return options, options_config
+
+    def _dispatch_kaizen_capability(self, capability: str) -> None:
+        """Route to the appropriate capability handler."""
+        handlers = {
+            "llm_classify": self._kaizen_llm_classify,
+            "local_context": self._kaizen_local_context,
+            "config_menu": self._kaizen_config_menu,
+            "cancel": self._kaizen_cancel,
+        }
+        handler = handlers.get(capability, self._kaizen_cancel)
+        handler()
+
+    def _apply_routing_result(self, result) -> None:
+        """Apply a RoutingResult to the pipeline context."""
+        self.context.intent = result.intent
+        self.context.domain = result.domain
+        self.context.zone = result.zone
+        self.context.entities["routing"] = {
+            "tier": result.tier,
+            "confidence": result.confidence,
+            "handler": result.handler,
+            "handler_args": result.handler_args or {},
+            "extracted_args": result.extracted_args or {},
+            "intent_type": result.intent_type,
+            "action_required": result.action_required,
+            "llm_metadata": result.llm_metadata or {}
+        }
+
+    def _kaizen_llm_classify(self) -> None:
+        """Capability: LLM classification with consent.
+
+        On success: sets context state. Stage 4 trace emitted by caller.
+        On failure: logs Jidoka diagnostic, then offers fallback options.
+        """
+        from engine.cognitive_router import get_router
         from engine.ux import ask_jidoka
         from engine.telemetry import log_event
 
-        # Build the 4-option Kaizen prompt
-        rephrase_key = "4"
-        options = {
-            "1": "Use the LLM to classify this (fractions of a cent, cached after)",
-            "2": "Answer from what you already know (free)",
-            "3": "Show me what you can help with (free)",
-        }
+        router = get_router()
+        llm_result = router._escalate_to_llm(self.context.raw_input)
 
-        # Option 4 is always rephrase
-        options[rephrase_key] = "I'll rephrase"
+        if llm_result is not None and llm_result.intent != "unknown":
+            self._apply_routing_result(llm_result)
+            self.context.approved = True
+            return
 
-        choice = ask_jidoka(
-            context_message=(
-                "I don't recognize this from my current vocabulary.\n"
-                "I can use the LLM to learn what you mean — the Ratchet\n"
-                "will cache it so it's free next time."
-            ),
-            options=options
+        # JIDOKA: LLM classification failed. Log diagnostic (not Stage 4).
+        log_event(
+            source="jidoka_classification_failure",
+            raw_transcript=self.context.raw_input[:200],
+            zone_context="yellow",
+            intent="unknown",
+            inferred={
+                "stage": "jidoka_llm_failure",
+                "pipeline_id": self.context.telemetry_event.get("id"),
+                "llm_classification_failed": True,
+                "subsystem": "cognitive_router._escalate_to_llm",
+            }
         )
 
-        # ---- Option 1: Consent to LLM classification ----
-        if choice == "1":
-            router = get_router()
-            llm_result = router._escalate_to_llm(self.context.raw_input)
+        fallback_options = {
+            "1": "Answer from what you already know (free)",
+            "2": "Show me what you can help with (free)",
+            "3": "I'll rephrase",
+        }
+        fallback_choice = ask_jidoka(
+            context_message=(
+                "The LLM classification didn't return a confident result.\n"
+                "No charge was applied. Here's what we can do instead:"
+            ),
+            options=fallback_options
+        )
 
-            if llm_result is not None and llm_result.intent != "unknown":
-                # LLM classified successfully — update context and proceed
-                self.context.intent = llm_result.intent
-                self.context.domain = llm_result.domain
-                self.context.zone = llm_result.zone
-                self.context.entities["routing"] = {
-                    "tier": llm_result.tier,
-                    "confidence": llm_result.confidence,
-                    "handler": llm_result.handler,
-                    "handler_args": llm_result.handler_args or {},
-                    "extracted_args": llm_result.extracted_args or {},
-                    "intent_type": llm_result.intent_type,
-                    "action_required": llm_result.action_required,
-                    "llm_metadata": llm_result.llm_metadata or {}
-                }
-                self.context.approved = True
-                log_event(
-                    source="kaizen_classification",
-                    raw_transcript=self.context.raw_input[:200],
-                    zone_context=self.context.zone,
-                    intent=self.context.intent,
-                    human_feedback="approved_classification",
-                    inferred={
-                        "stage": "approval_kaizen",
-                        "pipeline_id": self.context.telemetry_event.get("id"),
-                        "resolved_intent": self.context.intent,
-                        "classification_consented": True,
-                    }
-                )
-                return
+        if fallback_choice == "1":
+            self._kaizen_local_context()
+        elif fallback_choice == "2":
+            self._kaizen_config_menu()
+        else:
+            self._kaizen_cancel()
 
-            # JIDOKA: LLM classification failed. Stop and surface.
-            log_event(
-                source="jidoka_classification_failure",
-                raw_transcript=self.context.raw_input[:200],
-                zone_context="yellow",
-                intent="unknown",
-                inferred={
-                    "stage": "approval_jidoka",
-                    "pipeline_id": self.context.telemetry_event.get("id"),
-                    "llm_classification_failed": True,
-                    "subsystem": "cognitive_router._escalate_to_llm",
-                    "expected": "RoutingResult with classified intent",
-                    "actual": "None or unknown intent",
-                }
-            )
+    def _kaizen_local_context(self) -> None:
+        """Capability: Route to general_chat for local context response.
 
-            # KAIZEN: Propose recovery options. Operator decides.
-            fallback_options = {
-                "1": "Answer from what you already know (free)",
-                "2": "Show me what you can help with (free)",
-                "3": "I'll rephrase",
-            }
-            fallback_choice = ask_jidoka(
-                context_message=(
-                    "The LLM classification didn't return a confident result.\n"
-                    "No charge was applied. Here's what we can do instead:"
-                ),
-                options=fallback_options
-            )
+        Sets context state only. Stage 4 trace emitted by caller.
+        """
+        self.context.intent = "general_chat"
+        self.context.domain = "system"
+        self.context.zone = "green"
+        self.context.entities["routing"]["handler"] = "general_chat"
+        self.context.entities["routing"]["handler_args"] = {}
+        self.context.entities["routing"]["intent_type"] = "informational"
+        self.context.entities["routing"]["action_required"] = False
+        self.context.entities["routing"]["tier"] = 1
+        self.context.approved = True
 
-            if fallback_choice == "1":
-                # Route to local context (same as original Option 2)
-                self.context.intent = "general_chat"
-                self.context.domain = "system"
-                self.context.zone = "green"
-                self.context.entities["routing"]["handler"] = "general_chat"
-                self.context.entities["routing"]["handler_args"] = {}
-                self.context.entities["routing"]["intent_type"] = "informational"
-                self.context.entities["routing"]["action_required"] = False
-                self.context.entities["routing"]["tier"] = 1
-                self.context.approved = True
-                return
-            elif fallback_choice == "2":
-                # Route to config options (same as original Option 3)
-                config_options = get_clarification_options()
-                if config_options:
-                    sub_choice = ask_jidoka(
-                        context_message="Here's what I can help with:",
-                        options=config_options
-                    )
-                    resolved = resolve_clarification(
-                        sub_choice, self.context.raw_input
-                    )
-                    self.context.intent = resolved.intent
-                    self.context.domain = resolved.domain
-                    self.context.zone = resolved.zone
-                    self.context.entities["routing"] = {
-                        "tier": resolved.tier,
-                        "confidence": resolved.confidence,
-                        "handler": resolved.handler,
-                        "handler_args": resolved.handler_args or {},
-                        "extracted_args": resolved.extracted_args or {},
-                        "intent_type": resolved.intent_type,
-                        "action_required": resolved.action_required,
-                        "llm_metadata": resolved.llm_metadata or {}
-                    }
-                    self.context.approved = True
-                    return
+    def _kaizen_config_menu(self) -> None:
+        """Capability: Show config-driven clarification options.
 
-            # Fallback choice 3 or any unhandled: rephrase
-            self.context.approved = False
-            self.context.result = {
-                "status": "cancelled",
-                "message": "Go ahead — I'm listening."
-            }
+        Sets context state only. Stage 4 trace emitted by caller.
+        """
+        from engine.cognitive_router import get_clarification_options, resolve_clarification
+        from engine.ux import ask_jidoka
+
+        config_options = get_clarification_options()
+        if not config_options:
+            self._kaizen_cancel()
             return
 
-        # ---- Option 2: Answer from local context (free) ----
-        if choice == "2":
-            self.context.intent = "general_chat"
-            self.context.domain = "system"
-            self.context.zone = "green"
-            self.context.entities["routing"]["handler"] = "general_chat"
-            self.context.entities["routing"]["handler_args"] = {}
-            self.context.entities["routing"]["intent_type"] = "informational"
-            self.context.entities["routing"]["action_required"] = False
-            self.context.entities["routing"]["tier"] = 1
-            self.context.approved = True
-            log_event(
-                source="kaizen_classification",
-                raw_transcript=self.context.raw_input[:200],
-                zone_context="green",
-                intent="general_chat",
-                human_feedback="local_context",
-                inferred={
-                    "stage": "approval_kaizen",
-                    "pipeline_id": self.context.telemetry_event.get("id"),
-                    "used_local_context": True,
-                }
-            )
-            return
+        sub_choice = ask_jidoka(
+            context_message="Here's what I can help with:",
+            options=config_options
+        )
+        resolved = resolve_clarification(sub_choice, self.context.raw_input)
+        self._apply_routing_result(resolved)
+        self.context.approved = True
 
-        # ---- Option 3: Config-driven options (free) ----
-        if choice == "3":
-            config_options = get_clarification_options()
-            if config_options:
-                sub_choice = ask_jidoka(
-                    context_message="Here's what I can help with:",
-                    options=config_options
-                )
-                resolved = resolve_clarification(
-                    sub_choice, self.context.raw_input
-                )
-                self.context.intent = resolved.intent
-                self.context.domain = resolved.domain
-                self.context.zone = resolved.zone
-                self.context.entities["routing"] = {
-                    "tier": resolved.tier,
-                    "confidence": resolved.confidence,
-                    "handler": resolved.handler,
-                    "handler_args": resolved.handler_args or {},
-                    "extracted_args": resolved.extracted_args or {},
-                    "intent_type": resolved.intent_type,
-                    "action_required": resolved.action_required,
-                    "llm_metadata": resolved.llm_metadata or {}
-                }
-                self.context.approved = True
-                log_event(
-                    source="kaizen_classification",
-                    raw_transcript=self.context.raw_input[:200],
-                    zone_context=self.context.zone,
-                    intent=self.context.intent,
-                    human_feedback="clarified",
-                    inferred={
-                        "stage": "approval_kaizen",
-                        "pipeline_id": self.context.telemetry_event.get("id"),
-                        "resolved_intent": self.context.intent,
-                    }
-                )
-                return
-
-        # ---- Option 4 (or fallthrough): Rephrase ----
+    def _kaizen_cancel(self) -> None:
+        """Capability: Operator chose to rephrase. Pipeline halts."""
         self.context.approved = False
         self.context.result = {
             "status": "cancelled",
