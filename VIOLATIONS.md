@@ -61,7 +61,7 @@ Type "How is this different from a chatbot?" — should trigger Kaizen prompt (n
 ---
 
 ## V-003: Glass Pipeline Rendering Inconsistency
-**Status:** ⬜ Open
+**Status:** ⬜ Open (partially addressed by V-011)
 **Priority:** MEDIUM — UX issue, not architectural
 **Files:** `engine/glass.py`, `engine/pipeline.py`
 
@@ -70,6 +70,8 @@ Glass Pipeline rendering depends on telemetry traces emitted during pipeline exe
 
 **Root Cause:**
 Glass reads from the telemetry stream post-pipeline. The Kaizen prompt interrupts the pipeline mid-Stage-4, and the approval trace may not have been written yet when Glass renders. Need to audit the trace emission points in `_handle_clarification_jidoka()` and `_log_approval_trace()`.
+
+**Partial Fix (V-011):** V-011 removes the duplicate `_log_approval_trace()` call after the Kaizen handler, eliminating the double Stage 4 line. Remaining issue: audit whether ALL Kaizen exit paths emit a trace that Glass renders as Stage 4.
 
 **The Fix:**
 Ensure `_log_approval_trace()` fires for ALL exit paths from Stage 4, including every Kaizen option. Glass should always show 5 stages after pipeline completion, regardless of which Kaizen option was chosen.
@@ -82,9 +84,9 @@ Smoke Test 2-4. Glass shows Stage 4 line (approval) in all cases — green auto-
 ---
 
 ## V-004: Overly Complex _handle_clarification_jidoka()
-**Status:** ⬜ Open
+**Status:** ✅ Resolved
 **Priority:** HIGH — readability, 200+ lines of nested branching
-**Files:** `engine/pipeline.py`
+**Files:** `engine/pipeline.py`, `profiles/*/config/kaizen.yaml`
 
 **The Problem:**
 `_handle_clarification_jidoka()` in pipeline.py is ~200 lines of nested if/elif with duplicated routing logic for Options 1-4, plus a nested fallback Jidoka prompt when Option 1 fails. This is the most complex method in the entire pipeline and it's doing too much.
@@ -93,14 +95,15 @@ Smoke Test 2-4. Glass shows Stage 4 line (approval) in all cases — green auto-
 Sequential Claude Code sessions each added edge cases and fallback paths without refactoring. The method now contains: the Kaizen prompt, Option 1 (LLM classification + fallback Jidoka), Option 2 (local context routing), Option 3 (config-driven sub-menu + resolution), Option 4 (rephrase), plus telemetry for each path.
 
 **The Fix:**
-Each option should be a clean, named helper method. The main method should be a 20-line switch that reads like architecture: "If choice 1, escalate to LLM. If choice 2, route to local context. If choice 3, show config options. If choice 4, cancel." The routing logic for Options 2/3 is identical (set intent, domain, zone, handler on self.context) — extract to a shared method.
+Config-driven dispatch via `kaizen.yaml`. Options defined declaratively, capabilities implemented as `_kaizen_{capability}` methods. Capability handlers mutate context state only; single `_log_approval_trace()` at end emits one Stage 4 event. LLM failure diagnostic uses `jidoka_llm_failure` stage (not approval stage) so Glass doesn't render it as Stage 4.
 
 **Dependency:** V-001 must be resolved first (changes Option 1 flow).
 
 **Acceptance Test:**
 Smoke Test 2-4. Same behavior, half the code. A reviewer should be able to read the method and understand the consent flow in 30 seconds.
 
-**Commit:** _pending_
+**Commit:** `76b2291` V-004: Declarative Kaizen consent flow — 4 files, +214/-194 lines
+**Resolved:** 2026-03-21
 
 ---
 
@@ -123,7 +126,7 @@ Deleted all 95 `tmpclaude-*` files. `.gitignore` already contained the pattern. 
 ---
 
 ## V-006: CLAUDE.md Invariant #12 References ADR-001
-**Status:** ⬜ Open
+**Status:** ✅ Resolved (completed during V-001)
 **Priority:** MEDIUM — documentation accuracy
 **Files:** `CLAUDE.md`, `docs/ADR-001-ratchet-classification.md`
 
@@ -140,7 +143,8 @@ CLAUDE.md Invariant #12 ("Ratchet Classification") describes the two-layer archi
 **Acceptance Test:**
 Read CLAUDE.md — no references to sub-pipelines, force_route, or ratchet_classify().
 
-**Commit:** _pending_
+**Commit:** Completed as part of V-001 (`d705d40`). Invariant #12 rewritten. ADR-001 file deleted. Full codebase search confirms zero references to `ratchet_classify`, `force_route`, `ratchet_interpreter`, or `interpret_route`.
+**Resolved:** 2026-03-20 (verified 2026-03-21)
 
 ---
 
@@ -226,16 +230,29 @@ After Kaizen Option 1, Glass Stage 2 line must show the classified intent. `show
 
 ## V-011: Recognition Trace Lies About Tier and Method for Unknown Intents
 **Status:** ✅ Resolved
-**Priority:** HIGH — telemetry integrity
+**Priority:** HIGH — telemetry lies about cost on the free path
 **Files:** `engine/cognitive_router.py`, `engine/pipeline.py`
 
 **The Problem:**
-`_create_default_result()` set `tier=2` when returning unknown intent, even though no LLM was called. Glass displayed `T2 llm ~$0.003` for paths that cost nothing. Method detection used tier as proxy instead of checking for actual LLM evidence. Duplicate Stage 4 trace emitted after Kaizen handler.
+When the cognitive router returns `unknown` (no keyword match, no cache hit), `_create_default_result()` sets `tier=2`. No LLM was called. Tier 2 means "Premium Cognition — LLM classification." The trace lies. Glass renders `T2 llm ~$0.003` for a path that cost nothing. When the operator chooses Kaizen Option 2 ("Answer from what you already know — free"), they see a cost that didn't happen.
 
-**The Fix:**
-1. `_create_default_result()`: `tier=2` → `tier=1` (keyword matching ran, found nothing)
-2. Method detection: check `llm_metadata.classification_confidence` instead of `tier >= 2`
-3. Remove `_log_approval_trace()` call after Kaizen handler (handler logs its own trace)
+Additionally, `_log_approval_trace()` fires after `_handle_clarification_jidoka()` returns, producing a duplicate Stage 4 line in Glass.
+
+**Root Cause:**
+`_create_default_result()` uses `tier=2` to mean "would need Tier 2 to classify" — but the `tier` field's architectural meaning is "which tier of intelligence HANDLED this request." No LLM handled it. The method determination in the recognition trace uses `tier >= 2` as a proxy for "LLM was called," compounding the lie. The duplicate Stage 4 comes from the Kaizen handler logging its own approval event, then `_run_approval()` logging a second one.
+
+**Why tier=0 is also wrong:**
+Tier 0 means Pattern Cache HIT. There was no cache hit. The highest tier that EXECUTED was Tier 1 (keyword matching). It produced a null result. That's the truth.
+
+**The Fix (3 changes):**
+1. `_create_default_result()` in `cognitive_router.py`: Change `tier=2` → `tier=1` (keyword matching ran, returned nothing)
+2. Method determination in `_run_recognition()` trace in `pipeline.py`: Replace `tier >= 2` proxy with `llm_metadata.classification_confidence is not None` check
+3. Remove `self._log_approval_trace()` call after `_handle_clarification_jidoka()` in `_run_approval()` (Kaizen handler already logged the approval)
+
+**Acceptance Test:**
+- Test 2 (Option 2): Glass shows `intent:unknown T1 keyword $0.00`, single Stage 4 line
+- Test 3 (Option 1): Glass shows LLM tier and cost AFTER consent, reclassification arrow
+- Test 1/4: No change
 
 **Commit:** 107bf88 `V-011-tier-truth` — 2 files, +4/-4 lines
 **Resolved:** 2026-03-21
@@ -246,14 +263,15 @@ After Kaizen Option 1, Glass Stage 2 line must show the classified intent. `show
 
 1. ~~**V-005** (tmpclaude cleanup)~~ ✅
 2. ~~**V-001** (sub-pipeline removal)~~ ✅ `d705d40`
-3. **V-002** (keyword bloat — simplifies the demo experience)
-4. **V-004** (clarification jidoka simplification — depends on V-001)
-5. **V-003** (Glass consistency — UX polish)
-6. **V-010** (Glass stale intent — vet architecturally before implementing)
-7. **V-006** (documentation update — depends on V-001)
-8. **V-007** (dispatcher audit — depends on V-001)
-9. **V-008** (startup audit)
-10. **V-009** (test suite alignment — depends on V-001)
+3. ~~**V-010** (Glass stale intent)~~ ✅ `629fe5a`
+4. ~~**V-006** (documentation update)~~ ✅ (completed during V-001)
+5. ~~**V-011** (recognition trace lies — tier/method/cost)~~ ✅ `107bf88`
+6. ~~**V-004** (clarification jidoka simplification — the big readability win)~~ ✅ `76b2291`
+7. **V-002** (keyword bloat — simplifies the demo experience)
+8. **V-003** (Glass consistency — audit after V-011 lands)
+9. **V-007** (dispatcher audit)
+10. **V-008** (startup audit)
+11. **V-009** (test suite alignment)
 
 ---
 
