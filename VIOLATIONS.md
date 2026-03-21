@@ -224,6 +224,24 @@ After Kaizen Option 1, Glass Stage 2 line must show the classified intent. `show
 
 ---
 
+## V-011: Recognition Trace Lies About Tier and Method for Unknown Intents
+**Status:** ✅ Resolved
+**Priority:** HIGH — telemetry integrity
+**Files:** `engine/cognitive_router.py`, `engine/pipeline.py`
+
+**The Problem:**
+`_create_default_result()` set `tier=2` when returning unknown intent, even though no LLM was called. Glass displayed `T2 llm ~$0.003` for paths that cost nothing. Method detection used tier as proxy instead of checking for actual LLM evidence. Duplicate Stage 4 trace emitted after Kaizen handler.
+
+**The Fix:**
+1. `_create_default_result()`: `tier=2` → `tier=1` (keyword matching ran, found nothing)
+2. Method detection: check `llm_metadata.classification_confidence` instead of `tier >= 2`
+3. Remove `_log_approval_trace()` call after Kaizen handler (handler logs its own trace)
+
+**Commit:** 107bf88 `V-011-tier-truth` — 2 files, +4/-4 lines
+**Resolved:** 2026-03-21
+
+---
+
 ## Recommended Sequence
 
 1. ~~**V-005** (tmpclaude cleanup)~~ ✅
@@ -239,5 +257,5 @@ After Kaizen Option 1, Glass Stage 2 line must show the classified intent. `show
 
 ---
 
-*Last updated: 2026-03-20*
+*Last updated: 2026-03-21*
 *Register maintained by: Jim Calhoun / Grove Architecture*
