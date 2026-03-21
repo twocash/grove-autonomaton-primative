@@ -310,6 +310,10 @@ class TipEngine:
             if is_cache_hit != trigger["after_cache_hit"]:
                 return False
 
+        if "after_classification_source" in trigger:
+            if llm_meta.get("source") != trigger["after_classification_source"]:
+                return False
+
         if "after_zone" in trigger:
             if zone != trigger["after_zone"]:
                 return False

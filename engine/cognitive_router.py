@@ -435,6 +435,7 @@ class CognitiveRouter:
             intent_type = result.get("intent_type", "actionable")
             action_required = result.get("action_required", True)
             llm_metadata = {
+                "source": "llm_classify",
                 "reasoning": result.get("reasoning", ""),
                 "classification_confidence": confidence,
                 "entities": result.get("entities", {}),

@@ -10,8 +10,8 @@ tips:
 
   - id: first_llm
     trigger:
-      after_tier: 2
-    text: "That used the LLM. Try the exact same phrase again."
+      after_classification_source: "llm_classify"
+    text: "That used the LLM to classify your question. Try the exact same phrase again — the Ratchet cached it."
 
   - id: ratchet_seen
     trigger:
