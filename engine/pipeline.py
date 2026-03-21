@@ -249,7 +249,8 @@ class InvariantPipeline:
                 "intent_type": routing_info.get("intent_type"),
                 "method": (
                     "cache" if routing_info.get("llm_metadata", {}).get("source") == "pattern_cache"
-                    else ("llm" if routing_info.get("tier", 0) >= 2 else "keyword")
+                    else "llm" if routing_info.get("llm_metadata", {}).get("classification_confidence") is not None
+                    else "keyword"
                 ),
                 "entities": routing_info.get("llm_metadata", {}).get("entities", {}),
                 "sentiment": routing_info.get("llm_metadata", {}).get("sentiment"),
@@ -392,8 +393,7 @@ class InvariantPipeline:
             confidence < CognitiveRouter.CLARIFICATION_THRESHOLD):
             # Ask user to clarify instead of blanket yellow approval
             self._handle_clarification_jidoka()
-            self._log_approval_trace()
-            return
+            return  # Kaizen handler logs its own approval trace
 
         # Sprint 8: Skip approval UX for non-actionable green zone intents
         if not action_required and effective_zone == "green":

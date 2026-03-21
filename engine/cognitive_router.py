@@ -337,7 +337,7 @@ class CognitiveRouter:
             intent="unknown",
             domain="general",
             zone="yellow",
-            tier=2,
+            tier=1,  # Keyword matching (T1) ran. It found nothing.
             confidence=0.0,
             handler=None,
             handler_args={},
