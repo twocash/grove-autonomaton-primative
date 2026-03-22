@@ -263,6 +263,35 @@ Tier 0 means Pattern Cache HIT. There was no cache hit. The highest tier that EX
 
 ---
 
+## V-013: Flywheel Stage 2 — pattern_hash + DETECT
+**Status:** ✅ Resolved
+**Priority:** MEDIUM — enables "authors its own evolution"
+**Files:** `engine/telemetry.py`, `engine/pipeline.py`, `engine/flywheel.py`, `engine/dispatcher.py`, `profiles/*/config/routing.config`, `profiles/*/config/cognitive-router/prompts/classify_intent.md`, `tests/test_flywheel.py`
+
+**The Problem:**
+The Skill Flywheel is the mechanism behind "authors its own evolution." Without `pattern_hash` in telemetry, the system can't detect recurring patterns. Without DETECT, the system can't propose improvements.
+
+**The Fix:**
+1. Add `pattern_hash` optional field to telemetry schema
+2. Compute pattern_hash in `_log_pipeline_completion()` — uses pattern_label (from LLM) or intent:domain (from keyword match)
+3. Enrich LLM classification prompt to return `pattern_label` (no extra cost — same call)
+4. Cache `pattern_label` in Ratchet for free reuse on cache hits
+5. Create `engine/flywheel.py` with `detect_patterns()` function
+6. Add `flywheel` config section to routing.config (Config Over Code)
+7. Add `show_patterns` route + handler (Green zone, Tier 0)
+8. Create `tests/test_flywheel.py` with dual-write fixture for real telemetry reads
+
+**Acceptance Test:**
+- `pytest` passes (234 tests including 13 new flywheel tests)
+- `show patterns` surfaces recurring patterns as skill candidates
+- pattern_hash appears in completion telemetry traces
+- LLM classifications include pattern_label in cache entry
+
+**Commit:** `V-013-flywheel-detection`
+**Resolved:** 2026-03-22
+
+---
+
 ## Recommended Sequence
 
 1. ~~**V-005** (tmpclaude cleanup)~~ ✅
@@ -272,14 +301,15 @@ Tier 0 means Pattern Cache HIT. There was no cache hit. The highest tier that EX
 5. ~~**V-011** (recognition trace lies — tier/method/cost)~~ ✅ `107bf88`
 6. ~~**V-004** (clarification jidoka simplification)~~ ✅ `76b2291`
 7. ~~**V-009 Phase 1** (telemetry-based architecture tests 1-7)~~ ✅ `bcd4132`
-8. **V-009 Phase 2** (legacy test cleanup — deprecate coach tests, delete broken imports)
-9. **V-002** (keyword bloat — already partially addressed in reference profile)
-10. **V-007** (dispatcher audit — extract coach-specific handlers)
-11. **V-008** (startup ceremony audit — verify reference profile is clean)
-12. **V-003** (Glass consistency — audit after V-011)
-13. **V-009 Phase 3** (Flywheel tests 8-10 — defines self-authoring target)
+8. ~~**V-013** (Flywheel Stage 2 — pattern_hash + DETECT)~~ ✅
+9. **V-009 Phase 2** (legacy test cleanup — now 234 tests)
+10. **V-002** (keyword bloat — already partially addressed in reference profile)
+11. **V-007** (dispatcher audit — extract coach-specific handlers)
+12. **V-008** (startup ceremony audit — verify reference profile is clean)
+13. **V-003** (Glass consistency — audit after V-011)
+14. **V-009 Phase 3** (Flywheel Stages 3-6 — PROPOSE, APPROVE, EXECUTE, REFINE)
 
 ---
 
-*Last updated: 2026-03-21 (V-009 Phase 1 complete — 14/14 tests green)*
+*Last updated: 2026-03-22 (V-013 complete — 234 tests green, Flywheel DETECT operational)*
 *Register maintained by: Jim Calhoun / Grove Architecture*

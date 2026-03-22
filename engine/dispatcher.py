@@ -63,6 +63,7 @@ class Dispatcher:
             "status_display": self._handle_status_display,
             "show_file": self._handle_show_file,
             "show_engine_manifest": self._handle_show_engine_manifest,
+            "show_patterns": self._handle_show_patterns,
             # Core execution handlers
             "general_chat": self._handle_general_chat,
             "strategy_session": self._handle_strategy_session,
@@ -797,6 +798,62 @@ Generate a focused strategic brief (3-5 items, natural language):"""
                 if stripped:
                     return stripped
         return "No description"
+
+    def _handle_show_patterns(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Display detected Flywheel patterns.
+
+        Flywheel Stage 2 (DETECT): reads telemetry, groups by
+        pattern_hash, surfaces candidates meeting threshold.
+
+        White Paper Part III S3: "Same intent pattern 3+ times in
+        14 days -> surface as potential skill."
+        """
+        from engine.flywheel import detect_patterns
+
+        patterns = detect_patterns()
+
+        if not patterns:
+            return DispatchResult(
+                success=True,
+                message="No patterns detected yet. Use the system - the Flywheel observes every interaction.",
+                data={"type": "flywheel_patterns", "patterns": []}
+            )
+
+        # Format output
+        lines = []
+        candidates = [p for p in patterns if p["is_candidate"]]
+        others = [p for p in patterns if not p["is_candidate"]]
+
+        if candidates:
+            lines.append(f"  SKILL CANDIDATES ({len(candidates)} patterns meet threshold):")
+            lines.append("")
+            for p in candidates:
+                label = p["pattern_label"] or p["intent"]
+                lines.append(f"    * {label}  [{p['pattern_hash']}]")
+                lines.append(f"      {p['count']}x in window | intent: {p['intent']} | domain: {p['domain']}")
+                if p["sample_inputs"]:
+                    lines.append(f"      samples: {p['sample_inputs'][0]}")
+                    if len(p["sample_inputs"]) > 1:
+                        lines.append(f"               {p['sample_inputs'][1]}")
+                lines.append("")
+
+        if others:
+            lines.append(f"  OBSERVED ({len(others)} patterns below threshold):")
+            lines.append("")
+            for p in others[:10]:  # Cap display
+                label = p["pattern_label"] or p["intent"]
+                lines.append(f"    . {label}  {p['count']}x | {p['intent']}")
+
+        return DispatchResult(
+            success=True,
+            message="\n".join(lines),
+            data={"type": "flywheel_patterns", "patterns": patterns}
+        )
 
 
 # =========================================================================

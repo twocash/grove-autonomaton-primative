@@ -79,6 +79,7 @@ class TelemetryEvent:
     confidence: Optional[float] = None
     cost_usd: Optional[float] = None
     human_feedback: Optional[str] = None  # "approved", "rejected", "clarified"
+    pattern_hash: Optional[str] = None  # Flywheel Stage 2: semantic pattern grouping
 
     def __post_init__(self):
         """Validate fields after initialization."""
@@ -132,6 +133,8 @@ class TelemetryEvent:
             event["cost_usd"] = self.cost_usd
         if self.human_feedback is not None:
             event["human_feedback"] = self.human_feedback
+        if self.pattern_hash is not None:
+            event["pattern_hash"] = self.pattern_hash
         return event
 
 
@@ -149,6 +152,7 @@ def create_event(
     confidence: Optional[float] = None,
     cost_usd: Optional[float] = None,
     human_feedback: Optional[str] = None,
+    pattern_hash: Optional[str] = None,
 ) -> dict:
     """
     Create a telemetry event conforming to the required schema.
@@ -166,6 +170,7 @@ def create_event(
         confidence: Classification confidence (0.0-1.0)
         cost_usd: LLM cost for this operation
         human_feedback: Operator response ("approved", "rejected", "clarified")
+        pattern_hash: Flywheel pattern grouping hash (12-char hex)
 
     Returns:
         Dict conforming to telemetry schema
@@ -190,6 +195,7 @@ def create_event(
         confidence=confidence,
         cost_usd=cost_usd,
         human_feedback=human_feedback,
+        pattern_hash=pattern_hash,
     )
 
     return event.to_dict()
@@ -205,6 +211,7 @@ def log_event(
     confidence: Optional[float] = None,
     cost_usd: Optional[float] = None,
     human_feedback: Optional[str] = None,
+    pattern_hash: Optional[str] = None,
 ) -> dict:
     """
     Append a telemetry event to the JSONL file.
@@ -222,6 +229,7 @@ def log_event(
         confidence: Classification confidence (0.0-1.0)
         cost_usd: LLM cost for this operation
         human_feedback: Operator response ("approved", "rejected", "clarified")
+        pattern_hash: Flywheel pattern grouping hash (12-char hex)
 
     Returns:
         The logged event dict for pipeline continuity
@@ -240,6 +248,7 @@ def log_event(
         confidence=confidence,
         cost_usd=cost_usd,
         human_feedback=human_feedback,
+        pattern_hash=pattern_hash,
     )
 
     # Get profile-aware telemetry path

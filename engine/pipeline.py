@@ -158,7 +158,13 @@ class InvariantPipeline:
 
         Purity v2: First-class routing fields make pipeline decisions grep-able
         without parsing the inferred dict.
+
+        V-013: Computes pattern_hash for Flywheel Stage 2 (DETECT).
+        LLM classifications include a pattern_label (richer grouping).
+        Keyword matches use intent:domain (coarse but free).
         """
+        import hashlib
+
         routing_info = self.context.entities.get("routing", {})
 
         # Extract cost_usd: try routing metadata first, then LLM cache
@@ -172,6 +178,16 @@ class InvariantPipeline:
             except ImportError:
                 pass
 
+        # Compute pattern_hash for Flywheel Stage 2 (DETECT)
+        # LLM classifications include a pattern_label (richer grouping).
+        # Keyword matches use intent:domain (coarse but free).
+        pattern_label = llm_metadata.get("pattern_label", "")
+        if pattern_label:
+            pattern_hash = hashlib.sha256(pattern_label.encode()).hexdigest()[:12]
+        else:
+            raw_pattern = f"{self.context.intent}:{self.context.domain or 'general'}"
+            pattern_hash = hashlib.sha256(raw_pattern.encode()).hexdigest()[:12]
+
         log_event(
             source=self.context.source,
             raw_transcript=self.context.raw_input[:200],
@@ -181,6 +197,7 @@ class InvariantPipeline:
             confidence=routing_info.get("confidence"),
             human_feedback="approved" if self.context.approved else "rejected",
             cost_usd=cost,
+            pattern_hash=pattern_hash,
             inferred={
                 "stage": "execution",
                 "pipeline_id": self.context.telemetry_event.get("id"),
@@ -589,6 +606,7 @@ class InvariantPipeline:
 
             classified_intent = str(result.get("intent", "unknown")).lower()
             confidence = float(result.get("confidence", 0.5))
+            pattern_label = str(result.get("pattern_label", "")).strip()
 
             if classified_intent in valid_intents:
                 rc = router.routes[classified_intent]
@@ -602,7 +620,11 @@ class InvariantPipeline:
                     handler_args=rc.get("handler_args", {}),
                     intent_type=rc.get("intent_type", "actionable"),
                     action_required=rc.get("intent_type") != "conversational",
-                    llm_metadata={"source": "llm_classify", "classification_confidence": confidence},
+                    llm_metadata={
+                        "source": "llm_classify",
+                        "classification_confidence": confidence,
+                        "pattern_label": pattern_label,
+                    },
                     classification_source="llm"
                 )
                 self._apply_routing_result(llm_result)
@@ -842,6 +864,7 @@ class InvariantPipeline:
                     "confidence": routing_info.get("confidence", 0.0),
                     "entities": llm_metadata.get("entities", {}),
                     "sentiment": llm_metadata.get("sentiment", "neutral"),
+                    "pattern_label": llm_metadata.get("pattern_label", ""),
                 }
 
             data["cache"] = cache
