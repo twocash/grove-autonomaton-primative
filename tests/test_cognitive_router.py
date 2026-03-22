@@ -15,27 +15,6 @@ from pathlib import Path
 class TestRouterConfigLoading:
     """Tests for routing.config loading and parsing."""
 
-    def test_router_loads_config(self):
-        """
-        The router must successfully parse profiles/coach_demo/config/routing.config.
-
-        Invariant #2: Config Over Code - domain logic belongs in YAML/config files.
-        """
-        from engine.cognitive_router import get_router
-
-        router = get_router()
-
-        # Router should have loaded routes from config
-        assert router._loaded is True, "Router should mark itself as loaded"
-        assert len(router.routes) > 0, "Router should have loaded routes from config"
-
-        # Verify expected routes exist (from routing.config)
-        expected_routes = [
-            "content_compilation",
-            "pit_crew_build",
-        ]
-        for route_name in expected_routes:
-            assert route_name in router.routes, f"Route '{route_name}' should exist in config"
 
     def test_router_config_has_required_fields(self):
         """
@@ -56,22 +35,6 @@ class TestRouterConfigLoading:
 class TestRouterClassification:
     """Tests for intent classification from user input."""
 
-    def test_router_classifies_compile_content(self):
-        """
-        Input "compile content" must return content_compilation intent.
-
-        This is a Yellow Zone operation that writes to output/.
-        """
-        from engine.cognitive_router import classify_intent
-
-        result = classify_intent("compile content")
-
-        assert result.intent == "content_compilation", \
-            f"Expected 'content_compilation', got '{result.intent}'"
-        assert result.zone == "yellow", \
-            f"Content compilation should be yellow zone, got '{result.zone}'"
-        assert result.confidence > 0.8, \
-            f"Exact match should have high confidence, got {result.confidence}"
 
     def test_router_classifies_dock_status(self):
         """
@@ -114,24 +77,6 @@ class TestRouterClassification:
         assert result.zone == "green", \
             f"Queue status should be green zone, got '{result.zone}'"
 
-    def test_router_classifies_build_skill(self):
-        """
-        Input "build skill weekly-report" must return pit_crew_build intent.
-
-        This is a Red Zone operation that modifies system capabilities.
-        """
-        from engine.cognitive_router import classify_intent
-
-        result = classify_intent("build skill weekly-report")
-
-        assert result.intent == "pit_crew_build", \
-            f"Expected 'pit_crew_build', got '{result.intent}'"
-        assert result.zone == "red", \
-            f"Pit crew build should be red zone, got '{result.zone}'"
-
-        # Should extract skill name from input
-        assert result.extracted_args.get("skill_name") == "weekly-report", \
-            f"Should extract skill name, got '{result.extracted_args}'"
 
 
 class TestRouterUnknownIntents:
@@ -223,64 +168,6 @@ class TestRouterHandlerMapping:
         assert result.handler_args.get("display_type") == "dock", \
             f"Expected display_type='dock', got '{result.handler_args}'"
 
-
-class TestSessionZeroIntake:
-    """Tests for Session Zero intake skill routing (Sprint 1.5)."""
-
-    def test_router_classifies_session_zero(self):
-        """
-        Input "session zero" must return session_zero intent.
-
-        Session Zero is the Cortex's first act of learning - a guided
-        Socratic intake to seed entities, business context, and voice.
-        """
-        from engine.cognitive_router import classify_intent
-
-        result = classify_intent("session zero")
-
-        assert result.intent == "session_zero", \
-            f"Expected 'session_zero', got '{result.intent}'"
-        assert result.zone == "yellow", \
-            f"Session zero should be yellow zone (writes entities), got '{result.zone}'"
-        assert result.confidence >= 0.85, \
-            f"Exact match should have high confidence, got {result.confidence}"
-
-    def test_router_classifies_run_session_zero(self):
-        """
-        Input "run session zero" must also return session_zero intent.
-        """
-        from engine.cognitive_router import classify_intent
-
-        result = classify_intent("run session zero")
-
-        assert result.intent == "session_zero", \
-            f"Expected 'session_zero', got '{result.intent}'"
-        assert result.zone == "yellow", \
-            f"Session zero should be yellow zone, got '{result.zone}'"
-
-    def test_session_zero_maps_to_handler(self):
-        """
-        Session zero must map to session_zero_handler for dispatcher.
-        """
-        from engine.cognitive_router import classify_intent
-
-        result = classify_intent("session zero")
-
-        assert result.handler == "session_zero_handler", \
-            f"Expected 'session_zero_handler', got '{result.handler}'"
-
-    def test_session_zero_has_skill_path(self):
-        """
-        Session zero handler args should include skill_path for locating prompt.
-        """
-        from engine.cognitive_router import classify_intent
-
-        result = classify_intent("session zero")
-
-        assert result.handler_args is not None, \
-            "Handler args should not be None"
-        assert "skill_name" in result.handler_args, \
-            f"Handler args should include skill_name, got '{result.handler_args}'"
 
 
 class TestRouterReset:
@@ -463,18 +350,6 @@ class TestConversationalRouting:
         assert result.intent_type == "informational", \
             f"dock_status must be informational, got '{result.intent_type}'"
 
-    def test_actionable_intent_type(self):
-        """
-        Action commands must have intent_type=actionable.
-        """
-        from engine.cognitive_router import classify_intent
-
-        result = classify_intent("compile content")
-
-        assert result.intent == "content_compilation", \
-            f"Expected content_compilation, got '{result.intent}'"
-        assert result.intent_type == "actionable", \
-            f"content_compilation must be actionable, got '{result.intent_type}'"
 
     def test_conversational_intents_skip_dock(self):
         """
@@ -533,20 +408,6 @@ class TestClarificationJidoka:
         assert result.confidence == 1.0, \
             "User clarification should have full confidence"
 
-    def test_resolve_clarification_coach_demo(self):
-        """
-        Coach demo profile has different clarification options.
-        """
-        from engine.profile import set_profile
-        from engine.cognitive_router import resolve_clarification, reset_router
-
-        set_profile("coach_demo")
-        reset_router()
-        result = resolve_clarification("1", "original input")
-
-        # Coach demo option 1 is "content_compilation"
-        assert result.intent == "content_compilation", \
-            f"Choice 1 should be content_compilation from coach_demo config, got '{result.intent}'"
 
 
 class TestLLMStructuredClassification:

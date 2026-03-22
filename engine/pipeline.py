@@ -591,7 +591,7 @@ class InvariantPipeline:
                     intent=classified_intent,
                     domain=rc.get("domain", "general"),
                     zone=rc.get("zone", "yellow"),
-                    tier=rc.get("tier", 2),
+                    tier=2,  # LLM classification always tier 2 (enables Ratchet cache)
                     confidence=confidence,
                     handler=rc.get("handler"),
                     handler_args=rc.get("handler_args", {}),

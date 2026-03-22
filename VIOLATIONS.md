@@ -33,7 +33,10 @@ ADR-001 decided LLM classification should traverse a nested pipeline "for teleme
 Smoke Test 2-5. After Option 1 consent, `show cache` must show `intent: explain_system`, not `intent: ratchet_intent_classify`. Test 4 (THE RATCHET) must show `intent:explain_system T0 cache ✓ $0.00`.
 
 **Commit:** d705d40 `V-001-remove-sub-pipeline` — 14 files, +129/-884 lines. Removed `engine/ratchet.py`, `force_route` from pipeline, `ratchet_interpreter` from dispatcher, ratchet routes from all profiles. `_escalate_to_llm()` rewritten as direct `call_llm()`. ADR-001 superseded. Startup ceremony calls fixed to use keyword routing with `source="startup_ceremony"`.
-**Resolved:** 2026-03-20
+
+**Addendum (bcd4132):** Fixed tier bug in `_kaizen_llm_classify()`: LLM classification RoutingResult was inheriting `tier=1` from route config instead of `tier=2` (actual compute used). This prevented `_write_to_pattern_cache()` from firing (guard: `if tier < 2: return`). The Ratchet economic thesis requires the tier to reflect actual compute cost, not the route's preferred keyword tier. Single-line fix: `tier=rc.get("tier", 2)` → `tier=2`.
+
+**Resolved:** 2026-03-20 (sub-pipeline removal), 2026-03-21 (tier fix + V-009 tests confirm)
 
 **Note:** `tests/test_cortex.py` imports deleted `engine.ratchet` — will crash during pytest. Fix scope: V-009.
 
@@ -182,22 +185,23 @@ Smoke Test 1 (startup clean).
 ---
 
 ## V-009: Test Suite Alignment
-**Status:** ⬜ Open
+**Status:** 🔧 In Progress — Phase 1 complete, Phase 2 pending
 **Priority:** HIGH — tests must enforce invariants, not just pass
 **Files:** `tests/`
 
-**The Problem:**
-Tests reference removed concepts (force_route, ratchet_classify, sub-pipelines) after V-001. `tests/test_cortex.py` imports deleted `engine.ratchet` — crashes at import time. Tests may also be testing implementation details rather than architectural invariants.
+**Phase 1 — V-009 Telemetry-Based Architecture Tests: ✅ COMPLETE**
+14 tests, 14 passing. Commit `bcd4132` on branch `v009-telemetry-tests`.
+- `test_pipeline_invariant.py`: Tests 1, 7 (hourglass invariant, clean startup)
+- `test_jidoka_consent.py`: Tests 2, 6 (Digital Jidoka, config-driven routing)
+- `test_ratchet.py`: Tests 3, 4, 5 (consent-gated classification, Ratchet cache, cache integrity)
+- `conftest.py`: Reference profile, mock_llm with full signature, cache cleanup per test
+- All tests assert on telemetry traces, not PipelineContext — Feed-First Telemetry principle.
 
-**Dependency:** V-001 (resolved).
+**Phase 2 — Legacy Test Cleanup: ⬜ OPEN**
+Coach-specific tests deprecated. Old test files referencing removed concepts (`engine.ratchet`, `force_route`) need deletion or rewrite. Target: `pytest` runs clean across ALL test files, not just the V-009 files.
 
-**The Fix:**
-Audit test suite against the 7 invariant tests from the Architect SKILL. Remove tests that test removed features. Ensure the 7 mandatory invariant tests exist and pass.
-
-**Acceptance Test:**
-`pytest` passes. All 7 invariant tests from the Architect SKILL are present and green.
-
-**Commit:** _pending_
+**Phase 3 — Flywheel Tests (8-10): ⬜ OPEN**
+Tests for OBSERVE → DETECT → PROPOSE → APPROVE → EXECUTE → REFINE. These define the "authors its own evolution" target. Will likely need stub Flywheel infrastructure in the engine.
 
 ---
 
@@ -262,18 +266,20 @@ Tier 0 means Pattern Cache HIT. There was no cache hit. The highest tier that EX
 ## Recommended Sequence
 
 1. ~~**V-005** (tmpclaude cleanup)~~ ✅
-2. ~~**V-001** (sub-pipeline removal)~~ ✅ `d705d40`
+2. ~~**V-001** (sub-pipeline removal + tier fix)~~ ✅ `d705d40` + `bcd4132`
 3. ~~**V-010** (Glass stale intent)~~ ✅ `629fe5a`
 4. ~~**V-006** (documentation update)~~ ✅ (completed during V-001)
 5. ~~**V-011** (recognition trace lies — tier/method/cost)~~ ✅ `107bf88`
-6. ~~**V-004** (clarification jidoka simplification — the big readability win)~~ ✅ `76b2291`
-7. **V-002** (keyword bloat — simplifies the demo experience)
-8. **V-003** (Glass consistency — audit after V-011 lands)
-9. **V-007** (dispatcher audit)
-10. **V-008** (startup audit)
-11. **V-009** (test suite alignment)
+6. ~~**V-004** (clarification jidoka simplification)~~ ✅ `76b2291`
+7. ~~**V-009 Phase 1** (telemetry-based architecture tests 1-7)~~ ✅ `bcd4132`
+8. **V-009 Phase 2** (legacy test cleanup — deprecate coach tests, delete broken imports)
+9. **V-002** (keyword bloat — already partially addressed in reference profile)
+10. **V-007** (dispatcher audit — extract coach-specific handlers)
+11. **V-008** (startup ceremony audit — verify reference profile is clean)
+12. **V-003** (Glass consistency — audit after V-011)
+13. **V-009 Phase 3** (Flywheel tests 8-10 — defines self-authoring target)
 
 ---
 
-*Last updated: 2026-03-21*
+*Last updated: 2026-03-21 (V-009 Phase 1 complete — 14/14 tests green)*
 *Register maintained by: Jim Calhoun / Grove Architecture*

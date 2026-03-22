@@ -135,3 +135,17 @@ cache:
     last_confirmed: '2026-03-19T18:55:15.388742+00:00'
     original_input: xyzzy unknown gibberish
     confidence: 1.0
+  a32726c4e0a6cbec:
+    intent: content_compilation
+    domain: content
+    zone: yellow
+    handler: content_engine
+    handler_args:
+      action: compile
+    intent_type: actionable
+    confirmed_count: 1
+    last_confirmed: '2026-03-21T23:08:24.027611+00:00'
+    original_input: xyzzy plugh nothing
+    confidence: 1.0
+    entities: {}
+    sentiment: neutral
