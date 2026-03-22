@@ -102,6 +102,30 @@ def parse_args():
     return parser.parse_args()
 
 
+def _load_profile_handlers():
+    """
+    Load domain handlers from the active profile's handlers.py.
+
+    V-012: Profiles can provide handlers.py with a register(dispatcher) function.
+    This keeps domain logic in profiles, not engine code.
+    """
+    import importlib.util
+    from engine.profile import get_profile_path
+    from engine.dispatcher import get_dispatcher
+
+    handlers_path = get_profile_path() / "handlers.py"
+    if not handlers_path.exists():
+        return  # No profile handlers - using engine-core only
+
+    spec = importlib.util.spec_from_file_location("profile_handlers", handlers_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    if hasattr(module, "register"):
+        dispatcher = get_dispatcher()
+        module.register(dispatcher)
+
+
 def print_banner(profile: str, dock_info: str, cortex_info: str, glass_enabled: bool = False):
     """Display startup banner with profile and dock status. Minimal."""
     c = Colors
@@ -347,6 +371,9 @@ def main():
 
     # Set the active profile BEFORE importing engine modules
     set_profile(args.profile)
+
+    # Load profile-specific handlers (V-012: Domain handlers in profiles/)
+    _load_profile_handlers()
 
     # Now import engine modules (they will use the active profile)
     from engine.pipeline import run_pipeline

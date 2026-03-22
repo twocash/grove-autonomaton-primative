@@ -35,6 +35,30 @@ PIPELINE_STAGES = {"telemetry", "recognition", "compilation", "approval", "execu
 # Profile Setup — Reference Profile for ALL Architecture Tests
 # =========================================================================
 
+def _load_profile_handlers():
+    """
+    Load domain handlers from the active profile's handlers.py.
+
+    V-012: Profiles can provide handlers.py with a register(dispatcher) function.
+    This keeps domain logic in profiles, not engine code.
+    """
+    import importlib.util
+    from engine.profile import get_profile_path
+    from engine.dispatcher import get_dispatcher
+
+    handlers_path = get_profile_path() / "handlers.py"
+    if not handlers_path.exists():
+        return  # No profile handlers - using engine-core only
+
+    spec = importlib.util.spec_from_file_location("profile_handlers", handlers_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    if hasattr(module, "register"):
+        dispatcher = get_dispatcher()
+        module.register(dispatcher)
+
+
 @pytest.fixture(autouse=True)
 def setup_reference_profile():
     """
@@ -46,10 +70,19 @@ def setup_reference_profile():
 
     Also clears the pattern cache to prevent cross-test contamination.
     Fate-Sharing (TCP/IP paper §III): each test maintains its own state.
+
+    V-012: Reset dispatcher and load profile handlers after profile change.
     """
     from engine.profile import set_profile, get_config_dir
+    from engine.dispatcher import reset_dispatcher
+
+    # Reset dispatcher to clear any previously loaded handlers
+    reset_dispatcher()
 
     set_profile("reference")
+
+    # Load profile handlers (V-012: domain handlers in profiles/)
+    _load_profile_handlers()
 
     # Save and clear pattern cache before each test
     cache_path = get_config_dir() / "pattern_cache.yaml"
@@ -74,6 +107,9 @@ def setup_reference_profile():
         reset_router()
     except ImportError:
         pass
+
+    # Reset dispatcher for next test
+    reset_dispatcher()
 
 
 
@@ -150,6 +186,31 @@ def mock_ux_input():
     with patch('engine.ux.ask_jidoka', side_effect=_mock_jidoka):
         yield choices
 
+
+
+# =========================================================================
+# Profile Fixtures (V-012: Domain handlers in profiles/)
+# =========================================================================
+
+@pytest.fixture
+def coach_demo_profile():
+    """
+    Switch to coach_demo profile with handlers loaded.
+
+    V-012: Tests that need domain handlers (cortex_batch, vision_capture,
+    welcome_card, etc.) must use this fixture to load the profile handlers.
+    """
+    from engine.profile import set_profile
+    from engine.dispatcher import reset_dispatcher
+
+    # Reset and reload with coach_demo
+    reset_dispatcher()
+    set_profile("coach_demo")
+    _load_profile_handlers()
+
+    yield
+
+    # Restore reference profile (fixture cleanup handled by autouse fixture)
 
 
 # =========================================================================

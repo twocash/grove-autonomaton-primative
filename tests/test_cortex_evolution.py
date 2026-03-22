@@ -167,8 +167,8 @@ class TestCortexBatchHandler:
         assert result.handler == "cortex_batch"
         assert result.handler_args.get("lens") == "evolution_analysis"
 
-    def test_dispatcher_handles_cortex_batch(self):
-        """Verify dispatcher has cortex_batch handler."""
+    def test_dispatcher_handles_cortex_batch(self, coach_demo_profile):
+        """Verify dispatcher has cortex_batch handler (V-012: loaded from profile)."""
         from engine.dispatcher import get_dispatcher
 
         dispatcher = get_dispatcher()
@@ -218,15 +218,11 @@ class TestVisionBoardCapture:
         assert result.intent == "vision_capture"
         assert result.zone == "green"
 
-    def test_vision_capture_appends_to_vision_board(self, tmp_path, monkeypatch):
+    def test_vision_capture_appends_to_vision_board(self, tmp_path, monkeypatch, coach_demo_profile):
         """Assert vision_capture appends raw transcript to vision-board.md."""
         from engine.dispatcher import get_dispatcher, DispatchResult
         from engine.cognitive_router import RoutingResult
-        from engine.profile import set_profile
-        import engine.dispatcher as dispatcher_module
         import engine.profile as profile_module
-
-        set_profile("coach_demo")
 
         # Create temp dock structure with vision board
         system_dir = tmp_path / "system"
@@ -240,9 +236,7 @@ class TestVisionBoardCapture:
             lambda: tmp_path
         )
 
-        # Reset dispatcher to pick up new handler
-        dispatcher_module._dispatcher_instance = None
-
+        # V-012: Handlers loaded by coach_demo_profile fixture
         dispatcher = get_dispatcher()
 
         # Create mock routing result
@@ -265,8 +259,8 @@ class TestVisionBoardCapture:
         content = (tmp_path / "system" / "vision-board.md").read_text(encoding="utf-8")
         assert "I want to track tournament anxiety" in content
 
-    def test_dispatcher_has_vision_capture_handler(self):
-        """Verify dispatcher has vision_capture handler registered."""
+    def test_dispatcher_has_vision_capture_handler(self, coach_demo_profile):
+        """Verify dispatcher has vision_capture handler registered (V-012: loaded from profile)."""
         from engine.dispatcher import get_dispatcher
 
         dispatcher = get_dispatcher()

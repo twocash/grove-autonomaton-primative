@@ -39,10 +39,10 @@ class TestNoPipelineBypasses:
             assert intent in routes, \
                 f"Internal intent '{intent}' missing from routing.config"
 
-    def test_internal_intents_have_handlers(self):
-        """Internal intents must have registered dispatcher handlers."""
-        from engine.dispatcher import Dispatcher
-        d = Dispatcher()
+    def test_internal_intents_have_handlers(self, coach_demo_profile):
+        """Internal intents must have registered dispatcher handlers (V-012: loaded from profile)."""
+        from engine.dispatcher import get_dispatcher
+        d = get_dispatcher()
         for handler_name in ["welcome_card", "startup_brief", "generate_plan"]:
             assert handler_name in d._handlers, \
                 f"Handler '{handler_name}' not registered in Dispatcher"
