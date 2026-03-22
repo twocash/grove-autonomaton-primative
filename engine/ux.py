@@ -35,14 +35,24 @@ class _Colors:
 _c = _Colors
 
 
-def ask_jidoka(context_message: str, options: dict) -> str:
+def ask_jidoka(
+    context_message: str,
+    options: dict,
+    diagnostic: dict = None,
+    config: dict = None
+) -> str:
     """
     Present a Jidoka prompt requiring single-keystroke numeric response.
+
+    When diagnostic and config are provided, renders three-beat TPS display.
+    Otherwise, renders legacy single-block display for backward compatibility.
 
     Args:
         context_message: Explanation of why the system stopped
         options: Dict mapping option numbers (as strings) to descriptions
                  e.g., {"1": "Approve and continue", "2": "Cancel operation"}
+        diagnostic: Optional dict with {summary, confidence, cost} for Jidoka beat
+        config: Optional dict with {jidoka, andon, kaizen} sections for banners
 
     Returns:
         The key of the selected option (e.g., "1" or "2")
@@ -53,10 +63,51 @@ def ask_jidoka(context_message: str, options: dict) -> str:
         - Blocks until valid single-digit response
         - Rejects any non-matching input and re-prompts
     """
-    print()
-    print(f"{_c.YELLOW}{'=' * 60}{_c.RESET}")
-    print(f"{_c.BOLD}{_c.YELLOW}ANDON GATE: Stopping the line for human input{_c.RESET}")
-    print(f"{_c.YELLOW}{'=' * 60}{_c.RESET}")
+    # Three-beat TPS display when diagnostic and config with three-beat structure provided
+    # Config must have jidoka/andon/kaizen sections for three-beat display
+    has_three_beat = config and all(k in config for k in ('jidoka', 'andon', 'kaizen'))
+    if diagnostic and has_three_beat:
+        print()
+        # Beat 1: JIDOKA (cyan)
+        jidoka = config.get("jidoka", {})
+        if jidoka.get("banner"):
+            print(f"{_c.CYAN}{jidoka['banner']}{_c.RESET}")
+        if jidoka.get("bar"):
+            print(f"{_c.CYAN}{jidoka['bar']}{_c.RESET}")
+        if jidoka.get("label"):
+            print(f"  {jidoka['label']}")
+        print(f"  {diagnostic.get('summary', '')}")
+        conf = diagnostic.get('confidence', 0)
+        cost = diagnostic.get('cost', 0)
+        print(f"  Confidence: {conf:.0%}  |  Cost: ${cost:.2f}")
+        print()
+
+        # Beat 2: ANDON (yellow)
+        andon = config.get("andon", {})
+        if andon.get("banner"):
+            print(f"{_c.YELLOW}{andon['banner']}{_c.RESET}")
+        if andon.get("bar"):
+            print(f"{_c.YELLOW}{andon['bar']}{_c.RESET}")
+        if andon.get("label"):
+            print(f"  {andon['label']}")
+        print()
+
+        # Beat 3: KAIZEN (white)
+        kaizen = config.get("kaizen", {})
+        if kaizen.get("banner"):
+            print(f"{_c.WHITE}{kaizen['banner']}{_c.RESET}")
+        if kaizen.get("bar"):
+            print(f"{_c.WHITE}{kaizen['bar']}{_c.RESET}")
+        if kaizen.get("label"):
+            print(f"  {kaizen['label']}")
+        print()
+    else:
+        # Legacy display for backward compatibility
+        print()
+        print(f"{_c.YELLOW}{'=' * 60}{_c.RESET}")
+        print(f"{_c.BOLD}{_c.YELLOW}ANDON GATE: Stopping the line for human input{_c.RESET}")
+        print(f"{_c.YELLOW}{'=' * 60}{_c.RESET}")
+
     print(f"\n{context_message}\n")
 
     # Display options

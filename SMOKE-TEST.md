@@ -17,6 +17,28 @@
 
 ---
 
+## Step 0: Clear the Ratchet Cache
+
+The Ratchet persists learned classifications between sessions — that's
+the whole point. But for a clean OOBE demo, you need a fresh cache so
+the Andon Gate fires when expected.
+
+```
+cd /d C:\GitHub\grove-autonomaton-primative
+python -c "from pathlib import Path; p=Path('profiles/reference/config/pattern_cache.yaml'); p.write_text('cache: {}\n')"
+```
+
+Or from inside the running system: type `clear cache` and approve the
+Yellow zone action.
+
+> **Why this matters architecturally:** The Ratchet's persistence is a
+> feature, not a bug. A CTO who runs this demo twice will see the second
+> run resolve at T0 for phrases the first run classified — that IS the
+> Reverse Tax in action. But for a first-time walkthrough, you want the
+> full Andon Gate → Kaizen → Ratchet arc. Clear the cache to get it.
+
+---
+
 ## Launch
 
 ```
@@ -115,22 +137,48 @@ No keyword match. The Cognitive Router returns `unknown`. The pipeline
 reaches Stage 4 and the Andon Gate fires — the system stops the line
 rather than returning a confident-sounding answer it can't back up.
 
-### Expected: Andon Gate Fires
+### Expected: Three-Beat TPS Display (V-017)
 
+Three distinct roles appear in sequence — Jidoka (watchman), Andon
+(cord), Kaizen (butler). Each beat has an ASCII art banner from config:
+
+**Beat 1: JIDOKA (cyan)** — "Digital Jidoka" FIGlet banner
 ```
-============================================================
-ANDON GATE: Stopping the line for human input
-============================================================
-I don't recognize this from my current vocabulary.
-I can use the LLM to learn what you mean - the Ratchet
-will cache it so it's free next time.
+    ____  _       _ __        __       ___     __      __
+   / __ \(_)___ _(_) /_____ _/ /      / (_)___/ /___  / /______ _
+  ...
+▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
+  [ ACT ] DISCIPLINE                       [ DEF ] Quality awareness.
+  No keyword match. No cache hit. Intent: unknown
+  Confidence: 0%  |  Cost: $0.00
+```
 
-  [1] Use the LLM to classify this (fractions of a cent, cached after)
-  [2] Answer from what you already know (free)
-  [3] Show me what you can help with (free)
-  [4] I'll rephrase
+**Beat 2: ANDON (yellow)** — "Andon" FIGlet banner
+```
+    ___              __
+   /   |  ____  ____/ /___  ____
+  ...
+▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
+  [ ACT ] MECHANISM                        [ DEF ] The signal that fires.
+```
 
-Enter choice [1/2/3/4]:
+**Beat 3: KAIZEN (white)** — "Kaizen" FIGlet banner with prompt and options
+```
+    __ __      _
+   / //_/___ _(_)___  ___  ____
+  ...
+▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
+  [ ACT ] RESPONSE                         [ DEF ] The improvement proposal.
+
+  I can suggest some options here. The LLM can learn
+  what you mean - the Ratchet will cache it so it's free next time.
+
+    [1] Use the LLM to classify (cached after)
+    [2] Answer from what you already know (free)
+    [3] Show me what you can help with (free)
+    [4] I'll rephrase
+
+  Enter choice [1/2/3/4]:
 ```
 
 ### Choose Option 2: Local Context (Free Path)
@@ -153,32 +201,38 @@ LLM-classified — the system used what it already knows.
 
 ### What This Proves
 
-**Digital Jidoka (Deck Slide 2 — Self-Identifying):** The system detected
-its own uncertainty. It didn't hallucinate. It didn't guess. It stopped.
-This is Toyoda's "andon cord" digitized — the machine has the authority
-to stop the world when it needs human judgment.
+**Jidoka — The Watchman (Deck Slide 3 — Foundations):** The Jidoka box
+shows what the watchman detected: no keyword match, no cache hit,
+intent unknown, confidence 0%. The white paper says the system "surfaces
+diagnostic context." This is the diagnostic — visible, specific, honest.
+The watchman doesn't propose fixes. It reports what it saw.
 
-**Kaizen Proposal (Deck Slide 2 — Self-Fixing):** The four options ARE
-the Kaizen proposal. The system doesn't just stop — it proposes
-improvement paths. Option 1 would teach the system a new classification.
-Option 2 uses existing knowledge. Option 3 shows what it can do.
-Option 4 lets the operator rephrase. Each option is a different
-cost/capability trade-off, declared in `kaizen.yaml`.
+**Andon Gate — The Cord (Deck Slide 2 — Self-Identifying):** One line.
+"Line stopped." The system has the authority to halt rather than produce
+a confident-sounding answer from an uncertain pipeline. This is Toyoda's
+andon cord digitized — the cord PULL, not the whole factory response.
+
+**Kaizen — The Butler (Deck Slide 2 — Self-Fixing):** The butler
+arrives after the line stops. Calm, informed, helpful. The four options
+are Kaizen's proposals — each a cost/capability trade-off. Option 1
+teaches the system (costs money, cached after). Options 2-4 are free.
+The butler proposes. The operator decides. This is Kaizen as the white
+paper describes it: "proposes a specific improvement."
 
 **Consent-Gated Compute (Deck Slide 5 — The Cognitive Router):** The
-system will not spend money without consent. Option 1 costs fractions
-of a cent. Options 2-4 are free. The operator decides. This is the
-sovereignty guardrail in action — the system proposes, the human
-makes the call.
+system will not spend money without consent. The Kaizen butler shows
+the cost of each option. The operator chooses. This is the sovereignty
+guardrail in action.
 
-**Config Over Code:** The Andon Gate prompt text comes from `kaizen.yaml`.
-The four options come from `kaizen.yaml`. The clarification submenu
-(Option 3) comes from `clarification.yaml`. A non-technical reviewer
-can read these files and understand what the system does when it's
-uncertain — without reading a single line of Python.
+**Config Over Code:** All three beats are config-driven. The Jidoka
+diagnostic template, the Andon message, and the Kaizen options all
+come from `kaizen.yaml`. A non-technical reviewer can read this file
+and understand the full stop-and-propose flow without reading Python.
 
-**FAIL if:** No Andon Gate fires. Fewer than 4 options. LLM call fires
-before consent. Glass shows a classified intent (should be `unknown`).
+**FAIL if:** Three beats not visually distinct. Jidoka box missing
+diagnostic context. Andon and Kaizen collapsed into one block. Fewer
+than 4 Kaizen options. LLM call fires before consent. Glass shows a
+classified intent (should be `unknown`).
 
 ---
 
@@ -188,9 +242,9 @@ before consent. Glass shows a classified intent (should be `unknown`).
 
 **Type:** `What about enterprise data residency requirements?`
 
-No keyword match. Andon Gate fires again.
+No keyword match. Andon Gate fires — three-beat TPS display appears.
 
-**Press:** `1` (Use the LLM to classify this)
+**Press:** `1` (Use the LLM to classify)
 
 ### Expected: LLM Classifies Successfully
 
@@ -463,7 +517,7 @@ code.
 
 **Type:** `xyzzy plugh nothing`
 
-Gibberish. No keyword match, no cache hit. Andon Gate fires.
+Gibberish. No keyword match, no cache hit. Three-beat TPS display fires.
 
 **Press:** `3` (Show me what you can help with)
 
@@ -556,8 +610,9 @@ to an architectural claim from the Pattern Release:
 | 1 | Five-stage invariant pipeline | 4: The Pipeline |
 | 1 | Config-driven keyword routing | 5: Cognitive Router |
 | 1 | Green zone auto-approve | 6: Sovereignty Guardrails |
-| 2 | Digital Jidoka — stop on uncertainty | 2: The Promise |
-| 2 | Kaizen — propose improvement paths | 2: The Promise |
+| 2 | Jidoka — watchman detects uncertainty | 3: Foundations |
+| 2 | Andon Gate — cord stops the line | 2: The Promise |
+| 2 | Kaizen — butler proposes options | 2: The Promise |
 | 2 | Consent-gated compute | 5: Cognitive Router |
 | 3 | LLM classification with consent | 5: Cognitive Router |
 | 3 | Glass reclassification transparency | 8: Transparency |
@@ -572,7 +627,7 @@ to an architectural claim from the Pattern Release:
 
 The test script walks the deck's narrative arc:
 **Problem** (the system is honest about uncertainty) →
-**Promise** (self-identifying, self-fixing, self-authoring) →
+**Promise** (Jidoka watches, Andon stops, Kaizen proposes) →
 **Architecture** (pipeline, router, zones, flywheel, telemetry) →
 **Ratchet** (compounding economics) →
 **Transparency** (inspect everything) →

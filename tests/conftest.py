@@ -175,10 +175,12 @@ def mock_ux_input():
 
     Queue choices in the order they'll be requested:
         "1" = LLM classify, "2" = local context, "3" = config menu, "4" = cancel
+
+    V-017: Updated to accept diagnostic and config params for three-beat display.
     """
     choices = []
 
-    def _mock_jidoka(context_message, options):
+    def _mock_jidoka(context_message, options, diagnostic=None, config=None):
         if choices:
             return choices.pop(0)
         return "1"

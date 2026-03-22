@@ -521,6 +521,8 @@ class InvariantPipeline:
 
         V-004: Config-driven dispatch. Options defined in kaizen.yaml,
         capabilities implemented as _kaizen_{capability} methods.
+
+        V-017: Three-beat TPS display with diagnostic context.
         """
         from engine.ux import ask_jidoka
 
@@ -528,13 +530,41 @@ class InvariantPipeline:
         self.context.events.append("kaizen_fired")
 
         config = self._load_kaizen_config()
-        prompt = config.get("prompt", "I don't recognize this input.")
-        options_config = config.get("options", {})
+        routing_info = self.context.entities.get("routing", {})
+
+        # Build DYNAMIC diagnostic from what the pipeline actually observed
+        confidence = routing_info.get("confidence", 0.0)
+        source = getattr(self.context, 'classification_source', None)
+
+        parts = []
+        if source == "keyword":
+            parts.append("Keyword matched but below confidence threshold.")
+        elif source == "cache":
+            parts.append("Cache hit but below confidence threshold.")
+        else:
+            parts.append("No keyword match. No cache hit.")
+        parts.append(f"Intent: {self.context.intent or 'unknown'}")
+
+        diagnostic = {
+            "summary": " ".join(parts),
+            "confidence": confidence,
+            "cost": 0.00,
+        }
+
+        # Get prompt and options from kaizen section (fallback to top-level for backward compat)
+        kaizen_section = config.get("kaizen", {})
+        prompt = kaizen_section.get("prompt", config.get("prompt", "I don't recognize this input."))
+        options_config = kaizen_section.get("options", config.get("options", {}))
 
         # Build options dict for ask_jidoka: key -> label
         options = {k: v.get("label", k) for k, v in options_config.items()}
 
-        choice = ask_jidoka(context_message=prompt, options=options)
+        choice = ask_jidoka(
+            context_message=prompt,
+            options=options,
+            diagnostic=diagnostic,
+            config=config
+        )
 
         # Dispatch to capability handler
         capability = options_config.get(choice, {}).get("capability", "cancel")
@@ -542,12 +572,6 @@ class InvariantPipeline:
 
         # ALL paths log approval trace — including cancel
         self._log_approval_trace()
-
-    def _present_kaizen_options(self, config: dict) -> tuple:
-        """Render Kaizen menu from config. Returns (options_dict, options_config)."""
-        options_config = config.get("options", {})
-        options = {k: v.get("label", k) for k, v in options_config.items()}
-        return options, options_config
 
     def _dispatch_kaizen_capability(self, capability: str) -> None:
         """Route to the appropriate capability handler."""

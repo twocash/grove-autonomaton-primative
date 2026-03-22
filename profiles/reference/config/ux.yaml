@@ -34,7 +34,7 @@ tips:
       message: "That used the LLM. Try the exact same phrase again."
     kaizen_fired:
       priority: 3
-      message: "That was Jidoka stopping the line. The system won't spend money without your consent."
+      message: "Jidoka detected uncertainty. Andon stopped the line. Kaizen proposed options. Three TPS roles in one interaction."
     keyword_match:
       priority: 4
       message: "Try something the system won't recognize to see what happens."
