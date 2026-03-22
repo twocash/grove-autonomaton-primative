@@ -114,13 +114,12 @@ class TestRedZoneUX:
 class TestDefensiveHardening:
     """Verify ghost failure prevention and telemetry on errors."""
 
-    def test_mcp_pipeline_has_exception_handling(self):
-        from engine.pipeline import run_pipeline_with_mcp
-        src = inspect.getsource(run_pipeline_with_mcp)
-        has_try = "try:" in src or "except" in src
-        has_delegation = ".run(" in src
-        assert has_try or has_delegation, \
-            "run_pipeline_with_mcp has no exception handling"
+    def test_pipeline_has_exception_handling(self):
+        """V-010: Single pipeline path must have exception handling."""
+        from engine.pipeline import InvariantPipeline
+        src = inspect.getsource(InvariantPipeline.run)
+        assert "try:" in src and "except" in src, \
+            "InvariantPipeline.run has no exception handling"
 
     def test_standing_context_failure_logs_telemetry(self):
         from engine.config_loader import PersonaConfig
