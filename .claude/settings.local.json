@@ -41,7 +41,10 @@
       "Bash(findstr:*)",
       "Bash(cd:*)",
       "Bash(git -C:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(python3:*)",
+      "Bash(cmd //c v009-merge.bat)",
+      "Bash(cmd //c \"C:\\\\GitHub\\\\grove-autonomaton-primative\\\\v009-merge.bat\")"
     ]
   }
 }
