@@ -3,6 +3,7 @@
 **Sprint:** V-017-tps-three-beat-ux
 **For:** Claude Code Executor
 **Date:** 2026-03-22
+**Status:** APPROVED WITH CORRECTIONS (see SPRINT-CONTRACT.md)
 
 ---
 
@@ -31,6 +32,31 @@ Transform the Kaizen prompt from a single "ANDON GATE" block into three visually
 
 ---
 
+## PM Corrections Incorporated
+
+Six corrections from SPRINT-CONTRACT.md:
+
+1. **FIGlet banners** — Generate fresh ASCII art at execution time, verify in PowerShell
+2. **ux.yaml already current** — Verify tip, skip if correct (VERIFIED: already has three-TPS message)
+3. **Delete dead code** — Remove `_present_kaizen_options()` from pipeline.py
+4. **Dynamic diagnostic** — Build summary from actual routing_info, not static string
+5. **Update SMOKE-TEST.md** — Add to file list, update Test 2 expected output
+6. **"Andon" not "Andon Gate"** — Banner text should be just "Andon"
+
+---
+
+## File List (5 files)
+
+| Order | File | Action | Est. Lines Changed |
+|-------|------|--------|-------------------|
+| 1 | `profiles/reference/config/kaizen.yaml` | REPLACE — three-beat structure with verified FIGlet banners | ~55 (full rewrite) |
+| 2 | `engine/ux.py` | MODIFY — add optional params, conditional three-beat render | ~35 net addition |
+| 3 | `engine/pipeline.py` | MODIFY — build diagnostic, pass config, delete dead helper | ~15 net |
+| 4 | `profiles/reference/config/ux.yaml` | VERIFY — tip already current, skip if confirmed | 0 |
+| 5 | `SMOKE-TEST.md` | MODIFY — update Test 2 expected output | ~8 |
+
+---
+
 ## Pre-Execution Verification
 
 ```bash
@@ -49,9 +75,29 @@ python -m pytest
 
 ## Execution Steps
 
-### Step 1: Update kaizen.yaml
+### Step 0: Generate and Verify Banners (CRITICAL)
 
-Replace `profiles/reference/config/kaizen.yaml` with three-beat structure:
+**Why:** ASCII art in planning docs is corrupted. Fresh generation prevents the most visible failure mode.
+
+```bash
+pip install pyfiglet
+python -c "import pyfiglet; print(pyfiglet.figlet_format('Digital Jidoka', font='slant'))"
+python -c "import pyfiglet; print(pyfiglet.figlet_format('Andon', font='slant'))"
+python -c "import pyfiglet; print(pyfiglet.figlet_format('Kaizen', font='slant'))"
+```
+
+**Verification checklist:**
+- [ ] Each banner ≤67 characters wide (matches bar length)
+- [ ] Renders legibly in PowerShell
+- [ ] Survives `yaml.safe_load()` round-trip
+
+If `slant` exceeds width, try `small` or `standard`.
+
+### Step 1: Replace kaizen.yaml
+
+Replace `profiles/reference/config/kaizen.yaml` with three-beat structure.
+
+**Use the FIGlet output from Step 0** — do NOT copy from planning docs.
 
 ```yaml
 # Three-Beat TPS Display
@@ -59,30 +105,19 @@ Replace `profiles/reference/config/kaizen.yaml` with three-beat structure:
 
 jidoka:
   banner: |
-       ___  _       _ __        __         ___     __      __
-      / _ \(_)___ _(_) /_____ _/ /        / (_)___/ /___  / /______ _
-     / // / / __ `/ / __/ __ `/ /    __  / / / __  / __ \/ //_/ __ `/
-    /____/_/\__, /_/\__/\__,_/_/    /___/_/\__,_/\____/_/|_|\__,_/
-           /____/
+    [PASTE FIGLET OUTPUT FOR "Digital Jidoka" HERE]
   bar: "▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰"
   label: "[ ACT ] DISCIPLINE                       [ DEF ] Quality awareness."
 
 andon:
   banner: |
-       ___              __               ______      __
-      / _ | ___  ___/ /___  ___     / ____/___ _/ /____
-     / __ |/ _ \/ __  / __ \/ _ \  / / __/ __ `/ __/ _ \
-    /_/ |_/_/ /_/\__,_/\____/_/ /_/ \____/\__,_/\__/\___/
+    [PASTE FIGLET OUTPUT FOR "Andon" HERE]
   bar: "▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰"
   label: "[ ACT ] MECHANISM                        [ DEF ] The signal that fires."
 
 kaizen:
   banner: |
-       __ __       _
-      / //_/____ _(_)___  ___  ____
-     / ,<  / __ `/ /_  / / _ \/ __ \
-    / /| |/ /_/ / / / /_/  __/ / / /
-    /_/ |_|\__,_/_/ /___/\___/_/ /_/
+    [PASTE FIGLET OUTPUT FOR "Kaizen" HERE]
   bar: "▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰"
   label: "[ ACT ] RESPONSE                         [ DEF ] The improvement proposal."
   prompt: |
@@ -169,24 +204,43 @@ def ask_jidoka(
         print(f"{_c.YELLOW}{'=' * 60}{_c.RESET}")
 ```
 
-### Step 3: Modify _handle_kaizen_proposal() in pipeline.py
+### Step 3: Modify pipeline.py
 
-**Location:** `engine/pipeline.py` (around line 520)
+**Location:** `engine/pipeline.py`
 
-**Replace:**
+#### 3a: Delete dead code `_present_kaizen_options()` (lines 546-550)
+
+This helper becomes dead code after we inline the logic. Delete it entirely.
+
+#### 3b: Update `_handle_kaizen_proposal()` with dynamic diagnostic
+
+**Replace the method with:**
 ```python
 def _handle_kaizen_proposal(self) -> None:
     config = self._load_kaizen_config()
     routing_info = self.context.entities.get("routing", {})
 
-    # Build diagnostic from pipeline context
+    # Build DYNAMIC diagnostic from what the pipeline actually observed
+    tier = routing_info.get("tier", "unknown")
+    confidence = routing_info.get("confidence", 0.0)
+    source = self.context.classification_source if hasattr(self.context, 'classification_source') else None
+
+    parts = []
+    if source == "keyword":
+        parts.append("Keyword matched but below confidence threshold.")
+    elif source == "cache":
+        parts.append("Cache hit but below confidence threshold.")
+    else:
+        parts.append("No keyword match. No cache hit.")
+    parts.append(f"Intent: {self.context.intent or 'unknown'}")
+
     diagnostic = {
-        "summary": "No keyword match. No cache hit. Intent: unknown.",
-        "confidence": routing_info.get("confidence", 0.0),
+        "summary": " ".join(parts),
+        "confidence": confidence,
         "cost": 0.00,
     }
 
-    # Get prompt and options from kaizen section (fallback to top-level)
+    # Get prompt and options from kaizen section (fallback to top-level for backward compat)
     kaizen_section = config.get("kaizen", {})
     prompt = kaizen_section.get("prompt", config.get("prompt", "I don't recognize this input."))
     options_config = kaizen_section.get("options", config.get("options", {}))
@@ -198,18 +252,31 @@ def _handle_kaizen_proposal(self) -> None:
         diagnostic=diagnostic,
         config=config
     )
-    # ... rest of method unchanged
+    # ... rest of method unchanged (capability dispatch)
 ```
 
-### Step 4: Update ux.yaml tip
+### Step 4: Verify ux.yaml (Skip if correct)
 
-**Location:** `profiles/reference/config/ux.yaml`
-
-**Change kaizen_fired message:**
+**Already verified:** The tip reads:
 ```yaml
 kaizen_fired:
   priority: 3
   message: "Jidoka detected uncertainty. Andon stopped the line. Kaizen proposed options. Three TPS roles in one interaction."
+```
+
+**Action:** Skip. Note in DEVLOG that this was pre-completed.
+
+### Step 5: Update SMOKE-TEST.md
+
+**Location:** `SMOKE-TEST.md`, Test 2 section
+
+Update the "Expected Kaizen prompt" to describe three-beat display:
+
+```markdown
+**Expected:** Three distinct TPS beats:
+  - JIDOKA banner (cyan) with diagnostic: confidence, cost
+  - ANDON banner (yellow) — line stopped
+  - KAIZEN banner (white) with prompt and 4 numbered options
 ```
 
 ---
@@ -230,38 +297,76 @@ echo "Step N complete. Tests: PASS/FAIL" >> docs/sprints/V-017-tps-three-beat-ux
 
 ---
 
-## Final Verification
+## Acceptance Test
 
 ```bash
-# Full test suite
+# 1. YAML validates
+python -c "import yaml; c = yaml.safe_load(open('profiles/reference/config/kaizen.yaml')); assert all(k in c for k in ['jidoka','andon','kaizen'])"
+
+# 2. Signature correct
+python -c "from engine.ux import ask_jidoka; import inspect; sig = inspect.signature(ask_jidoka); assert 'diagnostic' in sig.parameters and 'config' in sig.parameters"
+
+# 3. Dead code removed (should return nothing)
+grep -r "_present_kaizen_options" engine/
+
+# 4. Full test suite
 python -m pytest
 
-# YAML validation
-python -c "import yaml; yaml.safe_load(open('profiles/reference/config/kaizen.yaml'))"
-
-# Manual smoke test
+# 5. Manual smoke test
 python autonomaton.py --profile reference
 # Type: "How does this handle regulatory compliance?"
-# Expect: Three ASCII art banners (JIDOKA cyan, ANDON yellow, KAIZEN white)
-# Press: 2
-# Expect: Normal response
+# EXPECT: Three ASCII art banners render sequentially:
+#   - "Digital Jidoka" in CYAN with diagnostic line (confidence, cost)
+#   - "Andon" in YELLOW with mechanism label
+#   - "Kaizen" in WHITE with prompt and 4 numbered options
+# Press: 2 (local context)
+# EXPECT: Normal dock-informed response. Glass shows kaizen flow.
 ```
+
+---
+
+## Quality Gate
+
+Before committing, ALL must be YES:
+
+1. Does each banner render as legible ASCII art in PowerShell?
+2. Can a non-engineer reading kaizen.yaml understand what the three beats are?
+3. Does the diagnostic line show what the system actually detected?
+4. Does typing `hello` (keyword match) skip the three-beat display entirely?
+5. Does the blank_template profile still start without errors?
+6. Would a CTO watching this demo understand three distinct TPS roles without explanation?
+
+---
+
+## What NOT to Touch
+
+- `_kaizen_llm_classify()` — internal LLM dispatch, not display
+- `_kaizen_local_context()` — internal dock query, not display
+- `_dispatch_kaizen_capability()` — routing logic, not display
+- Keystroke capture functions — zero changes
+- `confirm_yellow_zone()`, `confirm_red_zone_with_context()`, `resolve_entity_ambiguity()` — zero changes
+- Pipeline stage logic (Stages 1-5) — zero changes
+- `blank_template` profile — must still work with no kaizen.yaml
+- Any test file — tests should pass as-is
 
 ---
 
 ## Commit
 
+Single atomic commit after all steps verified:
+
 ```bash
-git add profiles/reference/config/kaizen.yaml engine/ux.py engine/pipeline.py profiles/reference/config/ux.yaml
+git add profiles/reference/config/kaizen.yaml engine/ux.py engine/pipeline.py SMOKE-TEST.md
 git commit -m "$(cat <<'EOF'
 V-017-tps-three-beat-ux: Transform Kaizen prompt into three TPS beats
 
-- kaizen.yaml: Three-beat structure with ASCII art banners
+- kaizen.yaml: Three-beat structure with FIGlet ASCII art banners
 - ux.py: Add diagnostic/config params to ask_jidoka(), conditional render
-- pipeline.py: Build diagnostic dict, pass config to ask_jidoka()
-- ux.yaml: Update tip message for three TPS roles
+- pipeline.py: Build dynamic diagnostic dict, pass config, delete dead helper
+- SMOKE-TEST.md: Update Test 2 expected output for three-beat display
 
 Config Over Code: Banners live in YAML, not Python.
+TPS lineage made visible: Jidoka (watchman) → Andon (cord) → Kaizen (butler)
 
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 EOF
@@ -270,26 +375,11 @@ EOF
 
 ---
 
-## What NOT to Touch
-
-- `_kaizen_llm_classify()`, `_kaizen_local_context()`, etc.
-- `_dispatch_kaizen_capability()`
-- Keystroke capture logic
-- Any pipeline stage logic
-- Yellow zone, Red zone, entity resolution callers
-
----
-
 ## Artifacts Location
 
 All sprint artifacts in: `docs/sprints/V-017-tps-three-beat-ux/`
 
-- `REPO_AUDIT.md` — Current state analysis
+- `INDEX.md` — Sprint navigation
+- `SPRINT-CONTRACT.md` — PM review with corrections
 - `SPEC.md` — Goals, acceptance criteria (re-read frequently!)
-- `ARCHITECTURE.md` — Target state design
-- `MIGRATION_MAP.md` — File-by-file changes
-- `DECISIONS.md` — ADRs
-- `SPRINTS.md` — Epic/story breakdown
 - `EXECUTION_PROMPT.md` — This file
-- `DEVLOG.md` — Execution tracking
-- `CONTINUATION_PROMPT.md` — Session handoff

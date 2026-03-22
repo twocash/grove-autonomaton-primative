@@ -6,16 +6,24 @@
 
 ---
 
-## Execution Order
+## Execution Order (PM Corrected)
 
 Files must be modified in this order to maintain a working system:
 
 | Order | File | Type | Reason |
 |-------|------|------|--------|
-| 1 | `profiles/reference/config/kaizen.yaml` | MODIFY | Add three-beat structure (banners, bars, labels) |
+| 0 | (FIGlet generation) | PREREQUISITE | Generate fresh ASCII art banners |
+| 1 | `profiles/reference/config/kaizen.yaml` | REPLACE | Three-beat structure with verified FIGlet banners |
 | 2 | `engine/ux.py` | MODIFY | Add optional params, conditional three-beat render |
-| 3 | `engine/pipeline.py` | MODIFY | Build diagnostic dict, pass config to ask_jidoka |
-| 4 | `profiles/reference/config/ux.yaml` | MODIFY | Update tip message |
+| 3 | `engine/pipeline.py` | MODIFY | Build dynamic diagnostic, pass config, delete dead code |
+| 4 | `profiles/reference/config/ux.yaml` | VERIFY | Already current — skip if confirmed |
+| 5 | `SMOKE-TEST.md` | MODIFY | Update Test 2 expected output |
+
+**PM Corrections Applied:**
+- Step 0: Generate FIGlet banners at execution time (planning doc banners corrupted)
+- Step 3: Delete `_present_kaizen_options()` dead code, use dynamic diagnostic
+- Step 4: ux.yaml already has correct tip — verify, don't modify
+- Step 5: SMOKE-TEST.md added to file list
 
 ---
 
@@ -204,36 +212,54 @@ def ask_jidoka(
 
 ## File 3: `engine/pipeline.py`
 
-**Type:** MODIFY (`_handle_kaizen_proposal()` method)
+**Type:** MODIFY (`_handle_kaizen_proposal()` method + delete dead code)
 
-### Change 1: Build Diagnostic Dict
+### Change 1: Delete Dead Code (PM Correction 3)
+
+**Location:** Lines 546-550
+
+**Delete entirely:**
+```python
+def _present_kaizen_options(self, config: dict) -> tuple:
+    """Render Kaizen menu from config. Returns (options_dict, options_config)."""
+    options_config = config.get("options", {})
+    options = {k: v.get("label", k) for k, v in options_config.items()}
+    return options, options_config
+```
+
+This helper becomes dead code after we inline the logic in `_handle_kaizen_proposal()`.
+
+### Change 2: Build DYNAMIC Diagnostic Dict (PM Correction 4)
 
 **Location:** `_handle_kaizen_proposal()` (around line 520)
 
-**Before:**
-```python
-def _handle_kaizen_proposal(self) -> None:
-    config = self._load_kaizen_config()
-    prompt = config.get("prompt", "I don't recognize this input.")
-    options_config = config.get("options", {})
-    options = {k: v.get("label", k) for k, v in options_config.items()}
-    choice = ask_jidoka(context_message=prompt, options=options)
-```
-
-**After:**
+**Replace with:**
 ```python
 def _handle_kaizen_proposal(self) -> None:
     config = self._load_kaizen_config()
     routing_info = self.context.entities.get("routing", {})
 
-    # Build diagnostic from pipeline context
+    # Build DYNAMIC diagnostic from what the pipeline actually observed
+    tier = routing_info.get("tier", "unknown")
+    confidence = routing_info.get("confidence", 0.0)
+    source = self.context.classification_source if hasattr(self.context, 'classification_source') else None
+
+    parts = []
+    if source == "keyword":
+        parts.append("Keyword matched but below confidence threshold.")
+    elif source == "cache":
+        parts.append("Cache hit but below confidence threshold.")
+    else:
+        parts.append("No keyword match. No cache hit.")
+    parts.append(f"Intent: {self.context.intent or 'unknown'}")
+
     diagnostic = {
-        "summary": "No keyword match. No cache hit. Intent: unknown.",
-        "confidence": routing_info.get("confidence", 0.0),
+        "summary": " ".join(parts),
+        "confidence": confidence,
         "cost": 0.00,
     }
 
-    # Get prompt and options from kaizen section (not top-level for new structure)
+    # Get prompt and options from kaizen section (fallback to top-level)
     kaizen_section = config.get("kaizen", {})
     prompt = kaizen_section.get("prompt", config.get("prompt", "I don't recognize this input."))
     options_config = kaizen_section.get("options", config.get("options", {}))
@@ -245,36 +271,51 @@ def _handle_kaizen_proposal(self) -> None:
         diagnostic=diagnostic,
         config=config
     )
+    # ... rest of method unchanged (capability dispatch)
 ```
 
 **Notes:**
+- Diagnostic summary is DYNAMIC based on actual routing_info
 - Falls back to top-level `prompt` and `options` for backward compatibility
-- Diagnostic data comes from `routing_info` in context
 - Full config passed for banner rendering
 
 ---
 
 ## File 4: `profiles/reference/config/ux.yaml`
 
-**Type:** MODIFY (update tip message)
+**Type:** VERIFY (PM Correction 2 — already current)
 
-### Change: kaizen_fired Tip
+### Status: PRE-COMPLETED
 
-**Location:** `kaizen_fired` section
-
-**Before:**
-```yaml
-kaizen_fired:
-  priority: 3
-  message: "Kaizen prompt fired. The system needs clarification."
-```
-
-**After:**
+The tip already reads:
 ```yaml
 kaizen_fired:
   priority: 3
   message: "Jidoka detected uncertainty. Andon stopped the line. Kaizen proposed options. Three TPS roles in one interaction."
 ```
+
+**Action:** Verify and skip. Note in DEVLOG that this was pre-completed.
+
+---
+
+## File 5: `SMOKE-TEST.md` (PM Correction 5)
+
+**Type:** MODIFY (update Test 2 expected output)
+
+### Change: Test 2 Expected Kaizen Prompt
+
+**Location:** Test 2 section
+
+**Update expected output to describe three-beat display:**
+
+```markdown
+**Expected:** Three distinct TPS beats:
+  - JIDOKA banner (cyan) with diagnostic: confidence, cost
+  - ANDON banner (yellow) — line stopped
+  - KAIZEN banner (white) with prompt and 4 numbered options
+```
+
+**Why:** After V-017, the single "ANDON GATE" block becomes three ASCII art banners. Test expectations must match.
 
 ---
 
