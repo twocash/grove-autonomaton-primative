@@ -23,6 +23,7 @@ This document defines the sprint backlog to bring the reference implementation i
 | **5** | V-014 | OOBE config annotation pass | MEDIUM | TRIVIAL | Three-files-and-a-loop story |
 | **6** | V-015 | Red zone spec reconciliation | MEDIUM | LOW | Zone governance accuracy |
 | **7** | V-005 | Repo hygiene (tmpclaude, nul, stale pycache) | LOW | TRIVIAL | External review readiness |
+| **8** | V-016 | TPS Taxonomy as Code + Andon Gate UX | MEDIUM | LOW | TPS lineage self-documenting in runtime |
 
 **Session discipline:** Read this document FIRST. Read the white paper SECOND. Then read the code for the specific sprint. Do not modify code outside the sprint scope. Do not add features. The correct direction for line count is DOWN.
 
@@ -434,6 +435,109 @@ LOW — cosmetic, but signals process discipline to external reviewers.
 
 ---
 
+## Sprint 8: V-016 — TPS Taxonomy as Code + Andon Gate UX
+
+### Title
+Embed the Toyota Production System taxonomy as structured data in the codebase and render it in the Andon Gate UX display.
+
+### Priority
+MEDIUM — The TPS lineage is the pattern's most distinctive architectural claim (established by V-011). This sprint makes that lineage self-documenting at runtime, not just in comments.
+
+### The Problem
+
+V-011 aligned naming correctly: Jidoka (discipline), Andon (mechanism), Kaizen (response). But the taxonomy exists only in comments, docstrings, and CLAUDE.md prose. A CTO running the reference profile sees `ANDON GATE: Stopping the line for human input` — correct terminology, but no structural indication of *why* these three terms matter or how they relate.
+
+The pattern claims manufacturing-grade quality discipline. The runtime UX should prove it.
+
+### The Fix — Two Parts
+
+**Part A: TPS Taxonomy Constant**
+
+Add a structured taxonomy to the engine that codifies the three TPS concepts:
+
+```python
+# engine/ux.py (or a new engine/tps.py if cleaner)
+TPS_TAXONOMY = {
+    "jidoka": {
+        "label": "Digital Jidoka",
+        "attribute": "DISCIPLINE",
+        "function": "Quality awareness",
+        "icon": "●"
+    },
+    "andon": {
+        "label": "Andon Gate",
+        "attribute": "MECHANISM",
+        "function": "The signal that fires",
+        "icon": "▲"
+    },
+    "kaizen": {
+        "label": "Kaizen",
+        "attribute": "RESPONSE",
+        "function": "The improvement proposal",
+        "icon": "★"
+    }
+}
+```
+
+This constant is referenced by the Andon Gate display, by `show tps` (if added to routing.config), and is importable by any module that needs TPS context.
+
+**Part B: Stylized Andon Gate Display**
+
+Replace the current plain-text display header in `ask_jidoka()` with ASCII art banners using figlet-style typography. When the Andon Gate fires, the operator sees:
+
+```
+    ___              __               ______      __
+   /   |  ____  ____/ /___  ____     / ____/___ _/ /____
+  / /| | / __ \/ __  / __ \/ __ \   / / __/ __ `/ __/ _ \
+ / ___ |/ / / / /_/ / /_/ / / / /  / /_/ / /_/ / /_/  __/
+/_/  |_/_/ /_/\__,_/\____/_/ /_/   \____/\__,_/\__/\___/
+
+███████████████████████████████████████████████████████████
+>> [ MECHANISM ] :: The signal that fires.               [///]
+███████████████████████████████████████████████████████████
+```
+
+The ASCII art is stored as a multi-line string constant (not generated at runtime). The taxonomy metadata line (`[ MECHANISM ] :: The signal that fires.`) is assembled from `TPS_TAXONOMY["andon"]`.
+
+**Optional: `show tps` route**
+
+Add a `show_tps` intent to the reference profile's `routing.config` that renders all three TPS concepts with their banners, attributes, and functions — a quick architectural reference visible from the REPL.
+
+### Architectural Justification
+
+- **Config Over Code (Invariant #2):** The taxonomy is structured data, not hardcoded prose scattered across comments. One source of truth.
+- **Extended Mind (Principle #1):** The CTO operator sees the architectural lineage in the runtime UX, not just in documentation. The system teaches its own heritage.
+- **Transparency as Architecture (White Paper Part V):** "Every property regulators demand — traceability, explainability — is a structural consequence." The TPS taxonomy being visible at runtime makes the quality discipline inspectable.
+- **TPS Lineage (White Paper Part II):** "Jidoka transforms a machine from a blind, repetitive engine into an active partner in quality control." The three concepts working together should be visible where they work — in the stop mechanism itself.
+
+### Files to Touch
+
+| File | Action |
+|---|---|
+| `engine/ux.py` | Add `TPS_TAXONOMY` constant, update `ask_jidoka()` display rendering |
+| `profiles/reference/config/routing.config` | (Optional) Add `show_tps` route |
+| `engine/dispatcher.py` | (Optional) Add `show_tps` handler |
+| `tests/test_andon_consent.py` | Update expected output assertions if display format changed |
+
+### Acceptance Test
+
+1. When Andon Gate fires, the operator sees the ASCII art banner with `[ MECHANISM ] :: The signal that fires.`
+2. `TPS_TAXONOMY` constant exists and is importable
+3. (Optional) `show tps` command renders all three concepts
+4. All 221+ tests pass
+5. Zero functional change to pipeline behavior — this is display-only
+
+### Anti-Requirements
+
+- Do NOT generate ASCII art at runtime via a library. Store as string constants. Zero new dependencies.
+- Do NOT change when the Andon Gate fires or what options it presents. Display-only enhancement.
+- Do NOT move `ask_jidoka()` or rename it. V-011 established the boundary: function name stays, display changes.
+
+### Commit Message
+`V-016-tps-taxonomy-ux`
+
+---
+
 ## Audit Context: What's Already Compliant
 
 These elements PASSED the compliance review and should NOT be modified during these sprints:
@@ -452,6 +556,8 @@ These elements PASSED the compliance review and should NOT be modified during th
 | Clean startup (no LLM before operator input) | **PASS** | `test_no_telemetry_before_operator_input` |
 | V-001 sub-pipeline removal | **PASS** | `ratchet.py` deleted, `force_route` gone |
 | V-009 telemetry-based tests | **PASS** | 221 tests, all green |
+| V-010 single pipeline path | **PASS** | `run_pipeline_with_mcp()` deleted, `b0811b3` |
+| V-011 TPS terminology alignment | **PASS** | Jidoka/Andon/Kaizen distinct in code, `5cec892` |
 
 ---
 
@@ -470,6 +576,6 @@ Run the full compliance audit again. The target grade is A.
 
 ---
 
-*Last updated: 2026-03-21 (V-010 complete, test policy added)*
+*Last updated: 2026-03-22 (V-011 validated, V-016 added)*
 *Author: Jim Calhoun / Grove Architecture*
 *Audit partner: Claude (Opus 4.6)*
