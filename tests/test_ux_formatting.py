@@ -144,12 +144,17 @@ class TestConfirmYellowZoneWithTranslation:
         assert result is True
 
 
-class TestChiefOfStaffPersona:
-    """Tests for Chief of Staff persona in translations."""
+class TestPersonaInTranslations:
+    """Tests for persona inclusion in translations (config-driven)."""
 
-    def test_translation_prompt_includes_chief_of_staff(self):
-        """Assert translation prompt instructs LLM to act as Chief of Staff."""
+    def test_translation_prompt_includes_persona_name(self):
+        """Assert translation prompt includes the configured persona name."""
         from engine.ux import translate_action_for_approval
+        from engine.config_loader import get_persona
+
+        # Get persona name from config (profile-agnostic)
+        persona = get_persona()
+        persona_name = persona.name
 
         raw_payload = {"intent": "test_action"}
         captured_calls = []
@@ -163,8 +168,8 @@ class TestChiefOfStaffPersona:
 
         if captured_calls:
             call = captured_calls[0]
-            # Chief of Staff persona can be in prompt OR system prompt
+            # Persona name can be in prompt OR system prompt
             prompt = call["prompt"]
             system = call["kwargs"].get("system", "")
             combined = f"{prompt} {system}"
-            assert "Chief of Staff" in combined or "chief of staff" in combined.lower()
+            assert persona_name in combined or persona_name.lower() in combined.lower(),                 f"Persona name '{persona_name}' should appear in translation prompt"
