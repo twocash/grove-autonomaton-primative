@@ -357,8 +357,20 @@ class InvariantPipeline:
         )
 
     def _log_approval_trace(self, label: str = None) -> None:
-        """Log Stage 4 approval trace with label for Glass rendering."""
+        """Log Stage 4 approval trace with label for Glass rendering.
+
+        V-010 / V-003: When Kaizen reclassifies the intent (Option 1),
+        emits stage 'approval_kaizen' with 'resolved_intent' so Glass
+        can render the reclassification arrow (e.g., unknown → explain_system).
+        """
         routing_info = self.context.entities.get("routing", {})
+
+        # Determine if Kaizen reclassified the intent
+        kaizen_reclassified = (
+            "kaizen_fired" in self.context.events
+            and "llm_classification" in self.context.events
+            and self.context.approved
+        )
 
         # Generate label based on approval state and zone
         if label is None:
@@ -377,20 +389,30 @@ class InvariantPipeline:
             else:
                 label = f"{zone_upper} kaizen → rephrase"
 
+        # Use approval_kaizen stage when Kaizen reclassified, so Glass
+        # can find the resolved_intent and render the arrow notation
+        stage = "approval_kaizen" if kaizen_reclassified else "approval"
+
+        inferred = {
+            "stage": stage,
+            "stage_name": "Approval",
+            "label": label,
+            "pipeline_id": self.context.telemetry_event.get("id"),
+            "effective_zone": self.context.zone,
+            "action_required": routing_info.get("action_required", True),
+        }
+
+        # V-010: Include resolved_intent so Glass renders the arrow
+        if kaizen_reclassified:
+            inferred["resolved_intent"] = self.context.intent
+
         log_event(
             source=self.context.source,
             raw_transcript=self.context.raw_input[:200],
             zone_context=self.context.zone,
             intent=self.context.intent,
             human_feedback="approved" if self.context.approved else "rejected",
-            inferred={
-                "stage": "approval",
-                "stage_name": "Approval",
-                "label": label,
-                "pipeline_id": self.context.telemetry_event.get("id"),
-                "effective_zone": self.context.zone,
-                "action_required": routing_info.get("action_required", True),
-            }
+            inferred=inferred,
         )
 
     def _run_approval(self) -> None:
