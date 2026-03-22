@@ -133,8 +133,9 @@ def mock_ux_input():
     """
     Simulates operator choices at Kaizen prompts.
 
-    Digital Jidoka (white paper Part II): the system stops when uncertain.
-    Tests mock the operator's menu selections to exercise each consent path.
+    Digital Jidoka principle: the system stops when uncertain.
+    The Andon Gate fires via ask_jidoka(); these mocks supply
+    the operator's menu selections to exercise each consent path.
 
     Queue choices in the order they'll be requested:
         "1" = LLM classify, "2" = local context, "3" = config menu, "4" = cancel
@@ -157,13 +158,13 @@ def mock_ux_input():
 
 @pytest.fixture
 def mock_jidoka_approve():
-    """Auto-approve Jidoka prompts for testing yellow/red zone commands."""
+    """Auto-approve Andon Gate prompts for testing yellow/red zone commands."""
     with patch('engine.ux.confirm_yellow_zone', return_value=True):
         yield
 
 
 @pytest.fixture
 def mock_jidoka_reject():
-    """Auto-reject Jidoka prompts for testing rejection flows."""
+    """Auto-reject Andon Gate prompts for testing rejection flows."""
     with patch('engine.ux.confirm_yellow_zone', return_value=False):
         yield

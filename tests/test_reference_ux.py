@@ -3,7 +3,7 @@ Reference Profile UX Test Script
 Run: python tests/test_reference_ux.py
 
 Tests the demo flow a CTO would experience.
-Each step checks: routing, tier, Jidoka (should NOT fire), dock context, Ratchet.
+Each step checks: routing, tier, Andon Gate (should NOT fire), dock context, Ratchet.
 """
 
 import json

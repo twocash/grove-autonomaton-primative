@@ -1,7 +1,8 @@
 """
-ux.py - Digital Jidoka
+ux.py - Andon Gate & Jidoka UX
 
-Implements "stop the line" user interaction patterns.
+Implements "stop the line" user interaction patterns (Andon)
+in service of the Digital Jidoka quality discipline.
 When ambiguity or approval is required, the system halts
 and surfaces a numbered, single-keystroke prompt.
 
@@ -54,7 +55,7 @@ def ask_jidoka(context_message: str, options: dict) -> str:
     """
     print()
     print(f"{_c.YELLOW}{'=' * 60}{_c.RESET}")
-    print(f"{_c.BOLD}{_c.YELLOW}JIDOKA: Stopping the line for human input{_c.RESET}")
+    print(f"{_c.BOLD}{_c.YELLOW}ANDON GATE: Stopping the line for human input{_c.RESET}")
     print(f"{_c.YELLOW}{'=' * 60}{_c.RESET}")
     print(f"\n{context_message}\n")
 

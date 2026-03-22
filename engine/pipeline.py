@@ -208,7 +208,7 @@ class InvariantPipeline:
 
         Keyword matching via Cognitive Router, with pattern cache (Ratchet)
         for previously LLM-classified intents. Unknown intents default to
-        yellow zone per Digital Jidoka principle.
+        yellow zone — the Andon Gate fires in Stage 4.
         """
         from engine.cognitive_router import classify_intent
 
@@ -385,7 +385,7 @@ class InvariantPipeline:
         - If action_required=False AND zone=green: auto-approve, no UX
         - This allows conversational intents to skip approval prompts entirely
 
-        Sprint 8: Clarification Jidoka
+        Sprint 8: Andon Gate for Unknown Intents
         - If intent is unknown with low confidence: ask user to clarify
         - This prevents blanket yellow approval for ambiguous input
 
@@ -398,7 +398,7 @@ class InvariantPipeline:
         The most restrictive zone wins.
 
         Green zone: Auto-approve
-        Yellow zone: Require Jidoka confirmation
+        Yellow zone: Require Andon Gate confirmation
         Red zone: Require explicit approval with context
         """
         # Get routing metadata for action_required check
@@ -411,10 +411,10 @@ class InvariantPipeline:
         # Update context with effective zone
         self.context.zone = effective_zone
 
-        # Clarification Jidoka for unknown intents (no confident match)
+        # Andon Gate: unknown intent detected, present Kaizen options
         if self.context.intent == "unknown":
             # Ask user to clarify instead of blanket yellow approval
-            self._handle_clarification_jidoka()
+            self._handle_kaizen_proposal()
             return  # Kaizen handler logs its own approval trace
 
         # Sprint 8: Skip approval UX for non-actionable green zone intents
@@ -471,9 +471,14 @@ class InvariantPipeline:
             pass
         return {}
 
-    def _handle_clarification_jidoka(self) -> None:
+    def _handle_kaizen_proposal(self) -> None:
         """
         Kaizen classification proposal for unknown input.
+
+        When the Andon Gate fires for an unknown intent, this method
+        presents the operator with Kaizen options: improve the system's
+        vocabulary (LLM classify), answer from local context, show
+        config-driven options, or rephrase.
 
         V-004: Config-driven dispatch. Options defined in kaizen.yaml,
         capabilities implemented as _kaizen_{capability} methods.

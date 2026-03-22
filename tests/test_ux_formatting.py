@@ -1,17 +1,18 @@
 """
-test_ux_formatting.py - Tests for UX formatting and Conversational Jidoka
+test_ux_formatting.py - Tests for UX formatting and Conversational Andon Gate
 
-Sprint 7.5: The Chief of Staff UX & Conversational Jidoka
+Sprint 7.5: The Chief of Staff UX & Conversational Andon
 
-Tests for conversational translation of Jidoka halts.
+Tests for conversational translation of Andon Gate halts.
+The Andon mechanism fires; Jidoka is the discipline that authorizes it.
 """
 
 import pytest
 from unittest.mock import patch, MagicMock
 
 
-class TestConversationalJidoka:
-    """Tests for conversational translation of Jidoka halts."""
+class TestConversationalAndon:
+    """Tests for conversational translation of Andon Gate halts."""
 
     def test_yellow_zone_generates_conversational_summary(self):
         """Assert confirm_yellow_zone uses LLM for conversational explanation."""
@@ -64,11 +65,11 @@ class TestConversationalJidoka:
             assert call_kwargs.get("tier", 1) == 1
 
 
-class TestJidokaOutputFormat:
-    """Tests for Jidoka output formatting."""
+class TestAndonOutputFormat:
+    """Tests for Andon Gate output formatting."""
 
-    def test_jidoka_output_includes_conversational_summary(self):
-        """Assert Jidoka output shows conversational summary at top."""
+    def test_andon_output_includes_conversational_summary(self):
+        """Assert Andon Gate output shows conversational summary at top."""
         from engine.ux import format_jidoka_display
 
         conversational = "I need to schedule a lesson on the calendar. This is a Yellow Zone action."
@@ -82,8 +83,8 @@ class TestJidokaOutputFormat:
 
         assert conv_pos < raw_pos or "schedule" in output
 
-    def test_jidoka_output_includes_raw_payload_section(self):
-        """Assert Jidoka output includes separated raw payload for transparency."""
+    def test_andon_output_includes_raw_payload_section(self):
+        """Assert Andon Gate output includes separated raw payload for transparency."""
         from engine.ux import format_jidoka_display
 
         conversational = "I want to send an email."
@@ -94,7 +95,7 @@ class TestJidokaOutputFormat:
         # Should have some indicator of raw/system payload
         assert "PAYLOAD" in output.upper() or "SYSTEM" in output.upper() or "RAW" in output.upper() or "email_parent" in output
 
-    def test_jidoka_output_shows_both_summary_and_technical(self):
+    def test_andon_output_shows_both_summary_and_technical(self):
         """Assert both conversational and technical info are present."""
         from engine.ux import format_jidoka_display
 

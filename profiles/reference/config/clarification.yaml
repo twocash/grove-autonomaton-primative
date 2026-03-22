@@ -1,5 +1,6 @@
 # clarification.yaml
-# Fallback options when Jidoka fires for ambiguous input.
+# Fallback options when the Andon Gate fires for ambiguous input.
+# These feed the Kaizen proposal flow in Stage 4.
 # Each option resolves to an intent in THIS profile's routing.config.
 
 fallback_options:

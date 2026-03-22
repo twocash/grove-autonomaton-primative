@@ -64,7 +64,7 @@ Every time the operator types something, the pipeline runs once. When the pipeli
 │  Query Dock for strategic context                           │
 ├─────────────────────────────────────────────────────────────┤
 │  Stage 4: APPROVAL                                          │
-│  Unified governance - Yellow/Red zones require Jidoka       │
+│  Unified governance - Andon Gate for Yellow/Red/Unknown      │
 ├─────────────────────────────────────────────────────────────┤
 │  Stage 5: EXECUTION                                         │
 │  Dispatcher routes to appropriate handler                   │
@@ -115,9 +115,14 @@ intent_zone = green,  mcp_zone = red   → effective = red
 
 ---
 
-### Invariant #4: Digital Jidoka
+### Invariant #4: Digital Jidoka (Andon + Kaizen)
 
 **No silent failures or graceful degradation for ambiguity.**
+
+Three TPS concepts work together:
+- **Jidoka** — the discipline. The system has quality awareness and the authority to stop.
+- **Andon** — the mechanism. `ask_jidoka()` in `ux.py` fires the stop signal with options.
+- **Kaizen** — the response. `_handle_kaizen_proposal()` in `pipeline.py` presents improvement options.
 
 When the system encounters:
 - Unknown intent (confidence < threshold)
@@ -352,7 +357,7 @@ The Dock answers: *"What is this Autonomaton trying to achieve?"*
 The REPL interface that:
 - Receives human input
 - Routes through the Invariant Pipeline
-- Surfaces Jidoka prompts for Yellow/Red zones
+- Surfaces Andon Gate prompts for Yellow/Red zones
 - Displays results and telemetry
 
 The Operator answers: *"What does the human want to do?"*
@@ -416,7 +421,7 @@ profiles/
 3. **Config first, code last** - Express intent in YAML before writing handlers
 4. **Zones are non-negotiable** - Every action has a zone, always
 5. **Telemetry is sacred** - Schema validation protects data integrity
-6. **The human decides** - Jidoka surfaces decisions, never hides them
+6. **The human decides** - Andon surfaces decisions, never hides them
 7. **Skills compose** - Output data, not prose
 8. **The Judge validates** - No unchecked generative code
 

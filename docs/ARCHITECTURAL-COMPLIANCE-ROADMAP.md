@@ -17,7 +17,7 @@ This document defines the sprint backlog to bring the reference implementation i
 | Sprint | ID | Title | Impact | Complexity | Unblocks |
 |---|---|---|---|---|---|
 | **1** | V-010 | ~~Pipeline Invariant Bug: `run_pipeline_with_mcp()` second code path~~ | CRITICAL | LOW | ✅ `b0811b3` |
-| **2** | V-011 | Jidoka / Andon / Kaizen terminology alignment | HIGH | LOW | Reviewer clarity, TPS lineage |
+| **2** | V-011 | ~~Jidoka / Andon / Kaizen terminology alignment~~ | HIGH | LOW | ✅ TPS lineage legible |
 | **3** | V-012 | Dispatcher domain extraction | HIGH | MEDIUM | Config Over Code, Profile Isolation |
 | **4** | V-013 | `pattern_hash` in telemetry + Flywheel Stage 2 stub | HIGH | MEDIUM | Self-improvement claim |
 | **5** | V-014 | OOBE config annotation pass | MEDIUM | TRIVIAL | Three-files-and-a-loop story |
@@ -132,7 +132,7 @@ Do NOT create a new convenience wrapper. If MCP-specific setup is needed, it bel
 
 ---
 
-## Sprint 2: V-011 — Jidoka / Andon / Kaizen Terminology Alignment
+## Sprint 2: V-011 — Jidoka / Andon / Kaizen Terminology Alignment ✅ COMPLETE
 
 ### Title
 Align code terminology with Toyota Production System lineage as defined in the white paper.
@@ -185,6 +185,21 @@ Do NOT change behavior. This is a naming pass. Zero functional change.
 
 ### Commit Message
 `V-011-tps-terminology`
+
+### Result
+- **Status:** ✅ COMPLETE
+- **Commit:** On branch `v011-tps-terminology`
+- **Changes:**
+  - `engine/ux.py`: Display header "JIDOKA" → "ANDON GATE", updated module docstring
+  - `engine/pipeline.py`: Renamed `_handle_clarification_jidoka()` → `_handle_kaizen_proposal()`, updated comments
+  - `profiles/reference/config/clarification.yaml`: Updated comment
+  - `CLAUDE.md`: Updated Invariant #4 with TPS breakdown, Stage 4 description, Layer 2, Principle #6
+  - `tests/test_jidoka_consent.py` → `tests/test_andon_consent.py`: Renamed file, class, method
+  - `tests/test_ux_formatting.py`: Renamed classes and methods
+  - `tests/test_reference_ux.py`: Updated comment
+  - `tests/conftest.py`: Updated docstrings
+- **Verification:** grep "clarification_jidoka" returns zero in active code, grep "JIDOKA: Stopping" returns zero, 221 tests pass
+- **Date:** 2026-03-21
 
 ---
 

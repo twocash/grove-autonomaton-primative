@@ -1,7 +1,7 @@
 """
-test_jidoka_consent.py - V-009 Digital Jidoka Tests
+test_andon_consent.py - V-009 Andon Gate Tests
 
-Tests 2 and 6: Digital Jidoka consent flow.
+Tests 2 and 6: Andon Gate consent flow.
 
 White paper Part II ("Where Jidoka Meets Kaizen"): "When a machine detects
 a quality problem, it stops the production line automatically and signals
@@ -18,12 +18,13 @@ from unittest.mock import patch
 from tests.conftest import PIPELINE_STAGES
 
 
-class TestDigitalJidoka:
+class TestAndonGate:
     """
-    Test 2: Digital Jidoka — Unknown Input Stops the Line
+    Test 2: Andon Gate — Unknown Input Stops the Line
 
-    Jidoka means the system stops when uncertain. Unknown input triggers
-    the consent mechanism (Kaizen prompt), not silent fallback.
+    Digital Jidoka principle: the system stops when uncertain.
+    The Andon Gate fires, presenting Kaizen options. Unknown input
+    triggers the consent mechanism, not silent fallback.
     """
 
     def test_unknown_input_stops_the_line(self, telemetry_sink, mock_ux_input):
@@ -151,7 +152,7 @@ class TestConfigDrivenRouting:
         assert context.result.get("status") == "cancelled", \
             f"Expected status 'cancelled', got '{context.result.get('status')}'"
 
-    def test_jidoka_fires_for_low_confidence(self, telemetry_sink, mock_ux_input):
+    def test_andon_fires_for_low_confidence(self, telemetry_sink, mock_ux_input):
         """
         Unknown input with zero confidence triggers Kaizen consent flow.
 
