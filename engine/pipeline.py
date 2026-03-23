@@ -654,7 +654,11 @@ class InvariantPipeline:
             confidence = float(result.get("confidence", 0.5))
             pattern_label = str(result.get("pattern_label", "")).strip()
 
-            if classified_intent in valid_intents:
+            # V-018: Classification quality gate — reject low-confidence classifications
+            config = self._load_kaizen_config()
+            min_conf = config.get("classification", {}).get("min_confidence", 0.6)
+
+            if classified_intent in valid_intents and confidence >= min_conf:
                 rc = router.routes[classified_intent]
                 llm_result = RoutingResult(
                     intent=classified_intent,
@@ -871,6 +875,13 @@ class InvariantPipeline:
             return  # Red zone: always require human judgment
         if llm_metadata.get("source") == "pattern_cache":
             return  # Already from cache — don't re-cache
+
+        # V-018: Don't cache low-confidence classifications (garbage doesn't compound)
+        confidence = routing_info.get("confidence", 0.0)
+        config = self._load_kaizen_config()
+        min_conf = config.get("classification", {}).get("min_confidence", 0.6)
+        if confidence < min_conf:
+            return  # Jidoka: garbage doesn't compound
 
         input_hash = hashlib.sha256(
             self.context.raw_input.lower().strip().encode()

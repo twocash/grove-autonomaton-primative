@@ -11,6 +11,7 @@ No silent failures. No graceful degradation.
 
 import sys
 import os
+import time
 
 
 # =========================================================================
@@ -67,39 +68,38 @@ def ask_jidoka(
     # Config must have jidoka/andon/kaizen sections for three-beat display
     has_three_beat = config and all(k in config for k in ('jidoka', 'andon', 'kaizen'))
     if diagnostic and has_three_beat:
-        print()
-        # Beat 1: JIDOKA (cyan)
+        beat_delay = config.get('timing', {}).get('beat_delay', 0.8)
+        bar_char = config.get('jidoka', {}).get('bar', '━')
+        width = 60
+
+        # Beat 1: JIDOKA (cyan) — the watchman reports
         jidoka = config.get("jidoka", {})
-        if jidoka.get("banner"):
-            print(f"{_c.CYAN}{jidoka['banner']}{_c.RESET}")
-        if jidoka.get("bar"):
-            print(f"{_c.CYAN}{jidoka['bar']}{_c.RESET}")
-        if jidoka.get("label"):
-            print(f"  {jidoka['label']}")
+        header = jidoka.get('header', 'JIDOKA')
+        bar_line = f"  ▰ {header} {bar_char * (width - len(header) - 5)}"
+        print(f"\n{_c.CYAN}{bar_line}{_c.RESET}")
+        print(f"  {_c.CYAN}{jidoka.get('role', '')}{_c.RESET}")
         print(f"  {diagnostic.get('summary', '')}")
         conf = diagnostic.get('confidence', 0)
         cost = diagnostic.get('cost', 0)
         print(f"  Confidence: {conf:.0%}  |  Cost: ${cost:.2f}")
-        print()
+        sys.stdout.flush()
+        time.sleep(beat_delay)
 
-        # Beat 2: ANDON (yellow)
+        # Beat 2: ANDON (yellow) — the cord pulls
         andon = config.get("andon", {})
-        if andon.get("banner"):
-            print(f"{_c.YELLOW}{andon['banner']}{_c.RESET}")
-        if andon.get("bar"):
-            print(f"{_c.YELLOW}{andon['bar']}{_c.RESET}")
-        if andon.get("label"):
-            print(f"  {andon['label']}")
-        print()
+        header = andon.get('header', 'ANDON')
+        bar_line = f"  ▰ {header} {bar_char * (width - len(header) - 5)}"
+        print(f"\n{_c.YELLOW}{bar_line}{_c.RESET}")
+        print(f"  {_c.YELLOW}{andon.get('role', '')}{_c.RESET}")
+        sys.stdout.flush()
+        time.sleep(beat_delay)
 
-        # Beat 3: KAIZEN (white)
+        # Beat 3: KAIZEN (white) — the butler arrives
         kaizen = config.get("kaizen", {})
-        if kaizen.get("banner"):
-            print(f"{_c.WHITE}{kaizen['banner']}{_c.RESET}")
-        if kaizen.get("bar"):
-            print(f"{_c.WHITE}{kaizen['bar']}{_c.RESET}")
-        if kaizen.get("label"):
-            print(f"  {kaizen['label']}")
+        header = kaizen.get('header', 'KAIZEN')
+        bar_line = f"  ▰ {header} {bar_char * (width - len(header) - 5)}"
+        print(f"\n{_c.WHITE}{bar_line}{_c.RESET}")
+        print(f"  {kaizen.get('role', '')}")
         print()
     else:
         # Legacy display for backward compatibility

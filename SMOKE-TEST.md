@@ -137,41 +137,35 @@ No keyword match. The Cognitive Router returns `unknown`. The pipeline
 reaches Stage 4 and the Andon Gate fires — the system stops the line
 rather than returning a confident-sounding answer it can't back up.
 
-### Expected: Three-Beat TPS Display (V-017)
+### Expected: Three-Beat Slim TPS Display (V-018)
 
 Three distinct roles appear in sequence — Jidoka (watchman), Andon
-(cord), Kaizen (butler). Each beat has an ASCII art banner from config:
+(cord), Kaizen (butler). Each beat has a slim single-line header with
+a visible pause (~0.8s) between beats:
 
-**Beat 1: JIDOKA (cyan)** — "Digital Jidoka" FIGlet banner
+**Beat 1: JIDOKA (cyan)** — the watchman reports
 ```
-    ____  _       _ __        __       ___     __      __
-   / __ \(_)___ _(_) /_____ _/ /      / (_)___/ /___  / /______ _
-  ...
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-  [ ACT ] DISCIPLINE                       [ DEF ] Quality awareness.
+  ▰ JIDOKA ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  The watchman detected something.
   No keyword match. No cache hit. Intent: unknown
   Confidence: 0%  |  Cost: $0.00
+                                              [0.8s pause]
 ```
 
-**Beat 2: ANDON (yellow)** — "Andon" FIGlet banner
+**Beat 2: ANDON (yellow)** — the cord pulls
 ```
-    ___              __
-   /   |  ____  ____/ /___  ____
-  ...
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-  [ ACT ] MECHANISM                        [ DEF ] The signal that fires.
+  ▰ ANDON ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  The line is stopped.
+                                              [0.8s pause]
 ```
 
-**Beat 3: KAIZEN (white)** — "Kaizen" FIGlet banner with prompt and options
+**Beat 3: KAIZEN (white)** — the butler arrives with options
 ```
-    __ __      _
-   / //_/___ _(_)___  ___  ____
-  ...
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-  [ ACT ] RESPONSE                         [ DEF ] The improvement proposal.
+  ▰ KAIZEN ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  The improvement proposal.
 
-  I can suggest some options here. The LLM can learn
-  what you mean - the Ratchet will cache it so it's free next time.
+  The LLM can learn what you mean — the Ratchet
+  will cache it so it's free next time.
 
     [1] Use the LLM to classify (cached after)
     [2] Answer from what you already know (free)
@@ -225,14 +219,82 @@ the cost of each option. The operator chooses. This is the sovereignty
 guardrail in action.
 
 **Config Over Code:** All three beats are config-driven. The Jidoka
-diagnostic template, the Andon message, and the Kaizen options all
-come from `kaizen.yaml`. A non-technical reviewer can read this file
-and understand the full stop-and-propose flow without reading Python.
+header/role, the Andon message, the Kaizen options, and the timing
+between beats all come from `kaizen.yaml`. A non-technical reviewer
+can read this file and understand the full stop-and-propose flow
+without reading Python.
+
+**Extended Mind Principle (V-018):** Slim single-line headers replace
+FIGlet walls. Three beats. Three moments. Twelve lines total. Each
+one scannable at a glance. The visual weight matches the information
+content — three distinct TPS roles rendered as three readable moments.
 
 **FAIL if:** Three beats not visually distinct. Jidoka box missing
 diagnostic context. Andon and Kaizen collapsed into one block. Fewer
 than 4 Kaizen options. LLM call fires before consent. Glass shows a
-classified intent (should be `unknown`).
+classified intent (should be `unknown`). No visible pause between beats.
+
+---
+
+## Test 3a: Classification Guard — Garbage Rejection (V-018)
+
+**Demonstrates:** Classification quality gate, Jidoka confidence threshold, Ratchet protection
+
+**Type:** `1`
+
+A single character with no semantic content. No keyword match. The
+three-beat TPS display fires.
+
+**Press:** `1` (Use the LLM to classify)
+
+### Expected: LLM Returns Low Confidence — Rejected
+
+The LLM attempts to classify `"1"` but cannot do so with confidence.
+The classification guard in `_kaizen_llm_classify()` checks the
+`min_confidence` threshold (0.6) and rejects the result.
+
+### Expected Behavior
+
+The system does NOT proceed with a garbage classification. Instead,
+it falls through to the existing fallback:
+
+```
+The LLM classification didn't return a confident result.
+```
+
+The four Kaizen options reappear. The operator can rephrase or
+choose a different path.
+
+### Expected: Cache NOT Poisoned
+
+**Type:** `show cache`
+
+There should be NO entry for `"1"` in the cache. The Ratchet refused
+to cache garbage. This is the inverse of Test 3 — a low-confidence
+classification is rejected, not persisted.
+
+### What This Proves
+
+**Digital Jidoka (Deck Slide 3):** The system detected low quality
+and stopped. It did not produce a confident-sounding answer from an
+uncertain classification. This is the loom stopping when quality
+degrades — Jidoka's entire purpose.
+
+**The Ratchet Protects Itself:** `_write_to_pattern_cache()` checks
+confidence before caching. A 0.3-confidence classification doesn't
+become a Tier 0 rule. Garbage doesn't compound. The Ratchet learns
+from good decisions, not bad ones.
+
+**Config Over Code:** The confidence threshold (0.6) is declared in
+`kaizen.yaml` under `classification.min_confidence`. An operator
+deploying in a high-stakes domain can raise it. An operator with a
+highly accurate LLM can lower it. The threshold is declared, not
+hardcoded.
+
+**FAIL if:** The LLM classification proceeds despite low confidence.
+`"1"` appears in the pattern cache. The system returns a garbage
+response like "Not sure what you're looking for with '1'." The
+fallback prompt doesn't fire.
 
 ---
 
@@ -576,7 +638,8 @@ After running all tests, verify:
 |---|------|--------------|-------|
 | — | Startup | No LLM calls before `autonomaton>` | |
 | 1 | `hello` | Glass: 5 stages, T1 keyword, GREEN auto-approve | |
-| 2 | Unknown → Option 2 | Andon Gate fires, 4 options, dock-informed answer | |
+| 2 | Unknown → Option 2 | Slim three-beat display, 4 options, dock-informed answer | |
+| 3a | `1` → Option 1 | Low-confidence rejection, cache NOT poisoned | |
 | 3 | Unknown → Option 1 | LLM classifies with consent, Glass shows arrow | |
 | 4 | Same input again | RATCHET fires, T0 cache ✓, $0.00 | |
 | 5 | `show cache` | Correct intent cached (not `ratchet_intent_classify`) | |
@@ -595,6 +658,7 @@ These specific assertions guard against known architectural violations:
 - **V-003 (Glass Arrow):** Test 3 Glass Stage 2 shows `intent:unknown → explain_system` arrow notation
 - **V-010 (Pipeline Invariant):** `grep -r "run_pipeline_with_mcp" .` returns zero results
 - **V-011 (Tier Truth):** Test 2 Glass shows `T1 keyword $0.00` for the free path, not `T2 llm`
+- **V-018 (Classification Guard):** Test 3a garbage input `"1"` does NOT appear in pattern cache; low-confidence classification rejected
 
 ---
 
@@ -614,6 +678,9 @@ to an architectural claim from the Pattern Release:
 | 2 | Andon Gate — cord stops the line | 2: The Promise |
 | 2 | Kaizen — butler proposes options | 2: The Promise |
 | 2 | Consent-gated compute | 5: Cognitive Router |
+| 2 | Extended Mind — slim beats reduce load | White Paper Part IX |
+| 3a | Classification quality gate | 3: Foundations |
+| 3a | Ratchet protects itself from garbage | 9: The Ratchet |
 | 3 | LLM classification with consent | 5: Cognitive Router |
 | 3 | Glass reclassification transparency | 8: Transparency |
 | 4 | The Ratchet — Reverse Tax | 9: The Ratchet |
@@ -638,6 +705,6 @@ architectural commitment demonstrated, not described. That's the OOBE.
 
 ---
 
-*Last updated: 2026-03-22*
+*Last updated: 2026-03-23*
 *Author: Jim Calhoun / Grove Architecture*
 *Validates against: Pattern Release Draft 1.3, Autonomaton Deck v1*

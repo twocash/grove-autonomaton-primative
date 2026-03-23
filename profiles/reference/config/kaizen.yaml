@@ -1,44 +1,39 @@
 # kaizen.yaml
 # Three-Beat TPS Display
 # Jidoka (watchman) -> Andon (cord) -> Kaizen (butler)
+
+# Timing: seconds between beats. Each role lands before the next appears.
+timing:
+  beat_delay: 0.8
+
+# Classification quality gate
+# LLM classifications below this confidence are rejected (Jidoka stops the line)
+# and not cached by the Ratchet (garbage doesn't compound)
+classification:
+  min_confidence: 0.6
+
 #
-# V-017: Transform Kaizen prompt into three visually distinct TPS beats
+# V-017: Three visually distinct TPS beats
+# V-017b: Slim single-line headers replace FIGlet walls
 # Each option maps to a capability handler method: _kaizen_{capability}
 
 jidoka:
-  banner: |2
-        ____  _       _ __        __       ___     __      __
-       / __ \(_)___ _(_) /_____ _/ /      / (_)___/ /___  / /______ _
-      / / / / / __ `/ / __/ __ `/ /  __  / / / __  / __ \/ //_/ __ `/
-     / /_/ / / /_/ / / /_/ /_/ / /  / /_/ / / /_/ / /_/ / ,< / /_/ /
-    /_____/_/\__, /_/\__/\__,_/_/   \____/_/\__,_/\____/_/|_|\__,_/
-            /____/
-  bar: "▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰"
-  label: "[ ACT ] DISCIPLINE                       [ DEF ] Quality awareness."
+  header: "JIDOKA"
+  role: "The watchman detected something."
+  bar: "━"
 
 andon:
-  banner: |2
-        ___              __
-       /   |  ____  ____/ /___  ____
-      / /| | / __ \/ __  / __ \/ __ \
-     / ___ |/ / / / /_/ / /_/ / / / /
-    /_/  |_/_/ /_/\__,_/\____/_/ /_/
-  bar: "▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰"
-  label: "[ ACT ] MECHANISM                        [ DEF ] The signal that fires."
+  header: "ANDON"
+  role: "The line is stopped."
+  bar: "━"
 
 kaizen:
-  banner: |2
-        __ __      _
-       / //_/___ _(_)___  ___  ____
-      / ,< / __ `/ /_  / / _ \/ __ \
-     / /| / /_/ / / / /_/  __/ / / /
-    /_/ |_\__,_/_/ /___/\___/_/ /_/
-  bar: "▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰"
-  label: "[ ACT ] RESPONSE                         [ DEF ] The improvement proposal."
+  header: "KAIZEN"
+  role: "The improvement proposal."
+  bar: "━"
   prompt: |
-    I can suggest some options here. The LLM can learn
-    what you mean - the Ratchet will cache it so it's
-    free next time.
+    The LLM can learn what you mean — the Ratchet
+    will cache it so it's free next time.
   options:
     "1":
       label: "Use the LLM to classify (cached after)"
