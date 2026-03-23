@@ -6,11 +6,10 @@
 timing:
   beat_delay: 0.8
 
-# Classification quality gate
-# LLM classifications below this confidence are rejected (Jidoka stops the line)
-# and not cached by the Ratchet (garbage doesn't compound)
-classification:
-  min_confidence: 0.6
+# Classification quality thresholds live in routing.config
+# (router.classification.min_confidence) — not here.
+# Kaizen governs the improvement RESPONSE. Classification
+# quality is a Cognitive Router concern (Jidoka, not Kaizen).
 
 #
 # V-017: Three visually distinct TPS beats

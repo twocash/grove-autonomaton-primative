@@ -654,9 +654,9 @@ class InvariantPipeline:
             confidence = float(result.get("confidence", 0.5))
             pattern_label = str(result.get("pattern_label", "")).strip()
 
-            # V-018: Classification quality gate — reject low-confidence classifications
-            config = self._load_kaizen_config()
-            min_conf = config.get("classification", {}).get("min_confidence", 0.6)
+            # Classification quality gate (Jidoka): reject low-confidence LLM results
+            # Threshold declared in routing.config → router.classification.min_confidence
+            min_conf = router.config.get("router", {}).get("classification", {}).get("min_confidence", 0.6)
 
             if classified_intent in valid_intents and confidence >= min_conf:
                 rc = router.routes[classified_intent]
@@ -876,12 +876,9 @@ class InvariantPipeline:
         if llm_metadata.get("source") == "pattern_cache":
             return  # Already from cache — don't re-cache
 
-        # V-018: Don't cache low-confidence classifications (garbage doesn't compound)
-        confidence = routing_info.get("confidence", 0.0)
-        config = self._load_kaizen_config()
-        min_conf = config.get("classification", {}).get("min_confidence", 0.6)
-        if confidence < min_conf:
-            return  # Jidoka: garbage doesn't compound
+        # Classification quality gate already enforced in _kaizen_llm_classify().
+        # If execution reached this point, confidence passed the threshold.
+        # The Ratchet caches confirmed results — not re-validates them.
 
         input_hash = hashlib.sha256(
             self.context.raw_input.lower().strip().encode()
