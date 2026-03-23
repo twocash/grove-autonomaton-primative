@@ -402,9 +402,20 @@ class InvariantPipeline:
             "action_required": routing_info.get("action_required", True),
         }
 
-        # V-010: Include resolved_intent so Glass renders the arrow
+        # V-010 + V-020: Include full reclassified routing metadata so
+        # Glass renders the truth — intent, tier, method, cost, confidence.
+        # routing_info already contains the RECLASSIFIED values because
+        # _apply_routing_result() updated context before this function runs.
         if kaizen_reclassified:
             inferred["resolved_intent"] = self.context.intent
+            inferred["resolved_tier"] = routing_info.get("tier", 2)
+            inferred["resolved_confidence"] = routing_info.get("confidence", 0.0)
+            # Determine method from llm_metadata (same logic as Stage 2 trace)
+            llm_meta = routing_info.get("llm_metadata", {})
+            if llm_meta.get("classification_confidence") is not None:
+                inferred["resolved_method"] = "llm"
+            else:
+                inferred["resolved_method"] = "keyword"
 
         log_event(
             source=self.context.source,

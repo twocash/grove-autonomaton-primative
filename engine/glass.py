@@ -85,7 +85,8 @@ def read_pipeline_events(pipeline_id: str) -> list[dict]:
 
 def _render_stage_from_event(lines: list, event: dict,
                               stage: str, level: str,
-                              reclassified_intent: str = None) -> None:
+                              reclassified_intent: str = None,
+                              reclassified_meta: dict = None) -> None:
     """Render one stage line from a telemetry event."""
     inf = event.get("inferred", {})
 
@@ -102,14 +103,24 @@ def _render_stage_from_event(lines: list, event: dict,
         tier = event.get("tier", 0)
         conf = event.get("confidence", 0.0)
         method = inf.get("method", "unknown")
+
+        # V-020: When Kaizen reclassified, use the FINAL routing truth
+        # from the approval_kaizen event — not the original Stage 2 values.
+        # The recognition line should show what the pipeline ACTUALLY did,
+        # not what Stage 2 initially returned before Kaizen intervened.
+        rm = reclassified_meta or {}
+        if reclassified_intent and reclassified_intent != intent:
+            intent_display = f"{intent} {_c.DIM}→{_c.RESET} {reclassified_intent}"
+            tier = rm.get("tier") or tier
+            method = rm.get("method") or method
+            conf = rm.get("confidence") or conf
+        else:
+            intent_display = intent
+
         is_cache = method == "cache"
         cost = "$0.00" if tier < 2 or is_cache else "~$0.003"
         cache_marker = f" {_c.GREEN}✓{_c.RESET}" if is_cache else ""
-        # V-010: Show reclassification arrow if Kaizen changed the intent
-        if reclassified_intent and reclassified_intent != intent:
-            intent_display = f"{intent} {_c.DIM}→{_c.RESET} {reclassified_intent}"
-        else:
-            intent_display = intent
+
         lines.append(
             f"  {_c.DIM}│{_c.RESET} {_c.CYAN}2{_c.RESET} Recognition "
             f"{_c.DIM}intent:{_c.RESET}{intent_display} "
@@ -177,12 +188,21 @@ def display_glass_from_telemetry(pipeline_id: str,
     if not events:
         return None
 
-    # V-010: Check if Kaizen reclassified the intent
+    # V-010 + V-020: Extract full reclassification metadata from approval_kaizen event.
+    # When Kaizen reclassifies, the approval event carries the FINAL routing truth:
+    # resolved_intent, resolved_tier, resolved_method, resolved_confidence.
+    # Glass renders these on the recognition line so the trace shows what actually happened.
     reclassified_intent = None
+    reclassified_meta = {}
     for event in events:
         inf = event.get("inferred", {})
         if inf.get("stage") == "approval_kaizen" and inf.get("resolved_intent"):
             reclassified_intent = inf["resolved_intent"]
+            reclassified_meta = {
+                "tier": inf.get("resolved_tier"),
+                "method": inf.get("resolved_method"),
+                "confidence": inf.get("resolved_confidence"),
+            }
             break
 
     lines = []
@@ -194,7 +214,8 @@ def display_glass_from_telemetry(pipeline_id: str,
 
     for event in events:
         stage = event.get("inferred", {}).get("stage", "")
-        _render_stage_from_event(lines, event, stage, level, reclassified_intent)
+        _render_stage_from_event(lines, event, stage, level,
+                                 reclassified_intent, reclassified_meta)
 
     lines.append(f"  {border}")
     print("\n".join(lines))
