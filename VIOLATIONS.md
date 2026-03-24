@@ -43,7 +43,7 @@ Smoke Test 2-5. After Option 1 consent, `show cache` must show `intent: explain_
 ---
 
 ## V-002: Keyword List Bloat in routing.config
-**Status:** ⬜ Open
+**Status:** ✅ Resolved
 **Priority:** HIGH — obscures the architecture for reviewers
 **Files:** `profiles/reference/config/routing.config`
 
@@ -59,7 +59,8 @@ Strip `explain_system` keywords to the core architectural terms only (pipeline, 
 **Acceptance Test:**
 Type "How is this different from a chatbot?" — should trigger Kaizen prompt (not keyword match). After Option 1 consent and Ratchet cache, the same input should resolve at T0 next time.
 
-**Commit:** _pending_
+**Commit:** `V-002-keyword-strip-verified`
+**Resolved:** 2026-03-24 — Keywords already stripped to 18 core architectural terms. Verified grep shows no chatbot/conversational/competitive keywords remain.
 
 ---
 
@@ -329,7 +330,7 @@ Six places where code decides tiers instead of config: classification tier, recl
 8. ~~**V-013** (Flywheel Stage 2 — pattern_hash + DETECT)~~ ✅
 9. ~~**V-014** (Config-driven tiers — zero hardcoded tier assignments)~~ ✅
 10. **V-009 Phase 2** (legacy test cleanup — now 195 tests)
-11. **V-002** (keyword bloat — already partially addressed in reference profile)
+11. ~~**V-002** (keyword bloat)~~ ✅ `V-002-keyword-strip-verified`
 12. **V-007** (dispatcher audit — extract coach-specific handlers)
 13. **V-008** (startup ceremony audit — verify reference profile is clean)
 14. **V-003** (Glass consistency — audit after V-011)
