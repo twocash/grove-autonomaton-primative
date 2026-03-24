@@ -66,6 +66,24 @@ Four companies committed $650 billion to AI infrastructure in a single year. A 6
 
 The structural risk is not dependency alone. It is epistemic capture — the gradual migration of knowledge production behind private walls. A university researching a monopoly's impact using that monopoly's AI is a closed loop. An investigative newsroom running on infrastructure owned by its subjects has a structural conflict. Courts operating on unauditable AI logic have replaced due process with faith. These are not hypothetical scenarios. They are the current trajectory.
 
+### The Exploration Surface
+
+The sphere of knowledge is an old idea. The geometric insight — as knowledge grows, so does awareness of what remains unknown — dates to Plato. Marcelo Gleiser formalized it: knowledge is the volume of a sphere, awareness of ignorance is the surface area. Volume grows as the cube of the radius. Surface area grows as the square. The more you know, the more frontier you discover. That frontier — the boundary between known and unknown — is where all productive inquiry happens.
+
+Apply this geometry to network architecture and the structural problem becomes visible.
+
+In a distributed AI model, each node's frontier surface area faces outward — toward undiscovered knowledge. Six nodes exploring six different slices of knowledge space create six independent exploration surfaces. Each domain added creates additional frontier. The network's collective awareness of ignorance — its productive research surface — scales with the number of sovereign nodes. The node explores, the node discovers, the node keeps the map.
+
+In a centralized AI model, the exploration surface is internal to the provider. Route all queries through a single hub and the frontier does not expand. It consolidates. One entity's version of what matters. One entity's map of what its users do not know.
+
+This is not an abstraction. Every query sent to a centralized provider reveals specific information about the sender: what they asked, what they do not know, what they are researching, how they think. The user's areas of ignorance become the provider's new knowledge surfaces. The user explores. The provider keeps the map.
+
+We watched what happened when a handful of companies captured the social graph. We watched what happened when they captured search intent. Centralized AI captures the cognitive frontier itself — the boundary between what people know and what they are trying to figure out. The most valuable thing about a thinking person is not what they know. It is what they are trying to figure out. In the centralized model, that signal routes to a single owner.
+
+The end-to-end argument in system design — Saltzer, Reed, and Clark's 1984 proof that intelligence at endpoints structurally outperforms intelligence in the network core — predicted this. Reed's Law shows group-forming networks scale as 2^n. Star topologies collapse both Metcalfe and Reed scaling to n×1. The distributed model is not just philosophically preferable. It is mathematically superior for knowledge production.
+
+The Autonomaton Pattern implements the distributed topology. Each node maintains sovereign control over its exploration surface. The Skill Flywheel accumulates the operator's frontier map locally. The Dock preserves strategic context across sessions. The zone model ensures the operator — not the provider — decides what crosses the boundary. Sovereignty over the exploration surface is not a feature. It is the architecture.
+
 ### The Capability Propagation Curve
 
 METR data tracking AI capability trajectories since 2019 reveals a consistent pattern: frontier model capability doubles roughly every seven months. Local models follow the same trajectory with a 21-month lag and an 8x performance gap that stays remarkably constant. Six years of data. Exponential fit. R² > 0.95.
