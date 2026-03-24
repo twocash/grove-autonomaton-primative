@@ -445,6 +445,40 @@ class InvariantPipeline:
             f"[STRATEGIC CONTEXT]\n{dock_context}"
         )
 
+        # V-019: Flywheel APPROVE enrichment for informed consent.
+        # When intent is approve_skill, load proposal details so Stage 4
+        # shows the operator what they're approving, not just that they're approving.
+        # Sovereignty requires informed consent.
+        if self.context.intent == "approve_skill":
+            routing_info = self.context.entities.get("routing", {})
+            ph = routing_info.get("extracted_args", {}).get("pattern_hash", "").strip()
+            if ph:
+                # Sanitize: first token only, max 12 chars
+                ph = ph.split()[0][:12]
+                routing_info.get("extracted_args", {})["pattern_hash"] = ph
+                try:
+                    from engine.flywheel import _get_proposal_dir
+                    import yaml
+                    proposal_path = _get_proposal_dir() / f"{ph}.yaml"
+                    if proposal_path.exists():
+                        with open(proposal_path, "r", encoding="utf-8") as f:
+                            proposal = yaml.safe_load(f) or {}
+                        skill = proposal.get("skill", {})
+                        name = skill.get("name", "unknown")
+                        count = skill.get("provenance", {}).get("occurrences", 0)
+                        examples = skill.get("trigger", {}).get("example_inputs", [])
+                        self.context.proposed_action = (
+                            f"Deploy skill '{name}' to pattern cache "
+                            f"({count} occurrences, {len(examples)} example input(s)). "
+                            f"Resolves at Tier 0 from now on."
+                        )
+                    else:
+                        self.context.proposed_action = (
+                            f"Approve skill (proposal {ph} not found)"
+                        )
+                except Exception:
+                    pass  # Compilation enrichment is non-fatal
+
         # --- End of _run_compilation ---
         routing_info = self.context.entities.get("routing", {})
         log_event(
@@ -506,6 +540,11 @@ class InvariantPipeline:
             "effective_zone": self.context.zone,
             "action_required": routing_info.get("action_required", True),
         }
+
+        # V-019: Include proposed_action in exhaust for audit trail.
+        # What the operator saw when they made their governance decision.
+        if self.context.proposed_action:
+            inferred["proposed_action"] = self.context.proposed_action
 
         # V-010 + V-020: Include full reclassified routing metadata so
         # Glass renders the truth — intent, tier, method, cost, confidence.

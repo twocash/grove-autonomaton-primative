@@ -204,13 +204,17 @@ def mock_ux_input():
 
 @pytest.fixture
 def mock_jidoka_approve():
-    """Auto-approve Andon Gate prompts for testing yellow/red zone commands."""
-    with patch('engine.ux.confirm_yellow_zone', return_value=True):
+    """Auto-approve Andon Gate prompts for testing yellow/red zone commands.
+
+    Patches where the function is USED (pipeline.py), not where it's DEFINED.
+    This is required because pipeline.py uses: from engine.ux import confirm_yellow_zone
+    """
+    with patch('engine.pipeline.confirm_yellow_zone', return_value=True):
         yield
 
 
 @pytest.fixture
 def mock_jidoka_reject():
     """Auto-reject Andon Gate prompts for testing rejection flows."""
-    with patch('engine.ux.confirm_yellow_zone', return_value=False):
+    with patch('engine.pipeline.confirm_yellow_zone', return_value=False):
         yield

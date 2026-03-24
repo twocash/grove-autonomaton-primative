@@ -67,9 +67,10 @@ class Dispatcher:
             "show_file": self._handle_show_file,
             "show_engine_manifest": self._handle_show_engine_manifest,
             "show_patterns": self._handle_show_patterns,
-            # Flywheel PROPOSE handlers (V-016)
+            # Flywheel handlers (V-016, V-019)
             "propose_skills": self._handle_propose_skills,
             "show_proposals": self._handle_show_proposals,
+            "approve_skill": self._handle_approve_skill,  # V-019: Stage 4 APPROVE
             # Core execution handlers
             "general_chat": self._handle_general_chat,
             "strategy_session": self._handle_strategy_session,
@@ -1032,13 +1033,82 @@ Generate a focused strategic brief (3-5 items, natural language):"""
             lines.append(f"    File: {p['file']}")
             lines.append("")
 
-        lines.append("  Approval workflow coming in a future sprint (Stage 4: APPROVE).")
+        # V-019: Show approval command for each proposal
+        lines.append("  To approve a proposal:")
+        for p in proposals:
+            ph = p.get("pattern_hash", "")[:12]
+            lines.append(f"    → approve skill {ph}")
 
         return DispatchResult(
             success=True,
             message="\n".join(lines),
             data={"type": "flywheel_proposals", "proposals": proposals}
         )
+
+    def _handle_approve_skill(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Approve a Flywheel skill proposal. Yellow-zone.
+
+        V-019: Flywheel Stage 4 (APPROVE). By the time this handler
+        executes, Stage 4 has already obtained operator confirmation.
+        The handler is a dumb pipe. Governance lives in the pipeline.
+
+        If no pattern_hash provided, lists available proposals.
+        If pattern_hash provided, calls approve_skill() from flywheel.
+        """
+        from engine.flywheel import approve_skill, load_proposals
+
+        # Get pattern_hash from extracted_args
+        pattern_hash = routing_result.extracted_args.get("pattern_hash", "").strip()
+
+        if not pattern_hash:
+            # No hash provided — show available proposals
+            proposals = load_proposals()
+
+            if not proposals:
+                return DispatchResult(
+                    success=True,
+                    message="No pending proposals to approve.\n"
+                            "Type 'propose skills' to generate proposals from detected patterns.",
+                    data={"type": "approve_skill", "action": "list_empty"}
+                )
+
+            lines = ["Usage: approve skill <pattern_hash>", ""]
+            lines.append("Available proposals:")
+            for p in proposals:
+                ph = p.get("pattern_hash", "")[:12]
+                name = p.get("name", "unknown")
+                lines.append(f"  {ph}  {name}")
+
+            return DispatchResult(
+                success=True,
+                message="\n".join(lines),
+                data={"type": "approve_skill", "action": "list", "proposals": proposals}
+            )
+
+        # Hash provided — execute approval
+        result = approve_skill(pattern_hash)
+
+        if result.get("approved"):
+            return DispatchResult(
+                success=True,
+                message=(
+                    f"Skill '{result['skill_name']}' approved.\n"
+                    f"  {result['entries_written']} input(s) deployed to pattern cache.\n"
+                    f"  Resolves at Tier 0 from now on."
+                ),
+                data={"type": "approve_skill", "action": "approved", "result": result}
+            )
+        else:
+            return DispatchResult(
+                success=False,
+                message=f"Approval failed: {result.get('error', 'Unknown error')}",
+                data={"type": "approve_skill", "action": "failed", "result": result}
+            )
 
 
 # =========================================================================

@@ -1,5 +1,5 @@
 """
-flywheel.py - Skill Flywheel (DETECT + PROPOSE)
+flywheel.py - Skill Flywheel (DETECT + PROPOSE + APPROVE)
 
 White Paper Part III S3: "Same intent pattern 3+ times in 14 days
 -> surface as potential skill."
@@ -12,7 +12,9 @@ Stages implemented:
   1. OBSERVE - feed-first telemetry (telemetry.py)
   2. DETECT  - detect_patterns() in this module
   3. PROPOSE - propose_skills() in this module (V-016)
-  4-6: Future sprints
+  4. APPROVE - approve_skill() in this module (V-019)
+  5. EXECUTE - implicit via pattern cache (Tier 0 resolution)
+  6. REFINE  - future sprint
 """
 
 import json
@@ -305,3 +307,239 @@ def propose_skills() -> list[dict]:
         })
 
     return new_proposals
+
+
+def _load_single_proposal(pattern_hash: str) -> tuple[dict, str]:
+    """Load a single proposal by pattern hash.
+
+    Returns (proposal_dict, status) where status is one of:
+      - "found": proposal exists in pending queue
+      - "already_approved": proposal exists in approved/ directory
+      - "not_found": proposal doesn't exist
+
+    Config Over Code: reads from proposal_dir in routing.config.
+    """
+    import yaml
+    proposal_dir = _get_proposal_dir()
+    proposal_path = proposal_dir / f"{pattern_hash}.yaml"
+
+    if proposal_path.exists():
+        with open(proposal_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return data, "found"
+
+    # Check approved directory
+    approved_dir = proposal_dir / "approved"
+    approved_path = approved_dir / f"{pattern_hash}.yaml"
+    if approved_path.exists():
+        with open(approved_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return data, "already_approved"
+
+    return {}, "not_found"
+
+
+def _get_route_metadata(intent: str) -> dict:
+    """Look up full route metadata from routing.config.
+
+    Returns dict with handler, handler_args, intent_type, zone, domain.
+    Used by approve_skill() to populate cache entries.
+    """
+    import yaml
+    try:
+        config_path = get_config_dir() / "routing.config"
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            route = data.get("routes", {}).get(intent, {})
+            return {
+                "handler": route.get("handler", intent),
+                "handler_args": route.get("handler_args", {}),
+                "intent_type": route.get("intent_type", "informational"),
+                "zone": route.get("zone", "green"),
+                "domain": route.get("domain", "system"),
+            }
+    except Exception:
+        pass
+    return {
+        "handler": intent,
+        "handler_args": {},
+        "intent_type": "informational",
+        "zone": "green",
+        "domain": "system",
+    }
+
+
+def approve_skill(pattern_hash: str) -> dict:
+    """
+    Flywheel Stage 4: APPROVE.
+
+    Reads proposal, writes example_inputs to pattern cache,
+    archives proposal to approved/ directory.
+
+    Yellow-zone: caller must have obtained operator confirmation
+    before calling this function. The handler is a dumb pipe.
+    Governance lives in the pipeline (Stage 4 Andon Gate).
+
+    NOTE: This writes directly to pattern_cache.yaml, bypassing
+    pipeline._write_to_pattern_cache(). That method gates on
+    classification_source == "llm" (the Ratchet auto-cache path).
+    Flywheel approval is a different write path with different
+    semantics: the operator explicitly endorsed this pattern,
+    so the source is "flywheel_approve", not "llm".
+    Two write paths, same cache format, different provenance.
+
+    Args:
+        pattern_hash: The 12-char hash identifying the proposal
+
+    Returns:
+        dict with approval result:
+        {
+            "approved": True/False,
+            "skill_name": str,
+            "entries_written": int,
+            "proposal_archived": True/False,
+            "error": str or None
+        }
+    """
+    import yaml
+    import hashlib
+    import shutil
+
+    # Sanitize input: first token only, max 12 chars
+    pattern_hash = pattern_hash.strip().split()[0][:12] if pattern_hash else ""
+
+    if not pattern_hash:
+        return {
+            "approved": False,
+            "skill_name": "",
+            "entries_written": 0,
+            "proposal_archived": False,
+            "error": "No pattern hash provided",
+        }
+
+    # Load the proposal
+    proposal, status = _load_single_proposal(pattern_hash)
+
+    if status == "not_found":
+        return {
+            "approved": False,
+            "skill_name": "",
+            "entries_written": 0,
+            "proposal_archived": False,
+            "error": f"Proposal {pattern_hash} not found",
+        }
+
+    if status == "already_approved":
+        skill_name = proposal.get("skill", {}).get("name", "unknown")
+        return {
+            "approved": False,
+            "skill_name": skill_name,
+            "entries_written": 0,
+            "proposal_archived": False,
+            "error": f"Proposal {pattern_hash} already approved",
+        }
+
+    # Extract skill metadata
+    skill = proposal.get("skill", {})
+    skill_name = skill.get("name", "unknown")
+    trigger = skill.get("trigger", {})
+    example_inputs = trigger.get("example_inputs", [])
+
+    if not example_inputs:
+        return {
+            "approved": False,
+            "skill_name": skill_name,
+            "entries_written": 0,
+            "proposal_archived": False,
+            "error": "Proposal has no example inputs to cache",
+        }
+
+    # Get route metadata for cache entries
+    route_meta = _get_route_metadata(skill_name)
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Load existing cache
+    from engine.profile import get_profile_path
+    cache_path = get_profile_path() / "config" / "pattern_cache.yaml"
+    try:
+        if cache_path.exists():
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cache_data = yaml.safe_load(f) or {}
+        else:
+            cache_data = {}
+    except Exception:
+        cache_data = {}
+
+    if "cache" not in cache_data:
+        cache_data["cache"] = {}
+
+    # Write cache entries for each example input
+    entries_written = 0
+    for example in example_inputs:
+        # Compute input_hash: sha256 of lowered/stripped input, first 16 hex chars
+        normalized = example.lower().strip()
+        input_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+        # Build cache entry — same format as Ratchet, different source
+        cache_entry = {
+            "intent": skill_name,
+            "domain": route_meta["domain"],
+            "zone": route_meta["zone"],
+            "handler": route_meta["handler"],
+            "handler_args": route_meta["handler_args"],
+            "intent_type": route_meta["intent_type"],
+            "confirmed_count": 1,
+            "last_confirmed": now,
+            "original_input": example,
+            "confidence": 0.95,
+            "pattern_label": trigger.get("pattern_label", ""),
+            "source": "flywheel_approve",
+            "proposal_hash": pattern_hash,
+        }
+
+        cache_data["cache"][input_hash] = cache_entry
+        entries_written += 1
+
+    # Write updated cache
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as f:
+            yaml.dump(cache_data, f, default_flow_style=False, sort_keys=False)
+    except Exception as e:
+        return {
+            "approved": False,
+            "skill_name": skill_name,
+            "entries_written": 0,
+            "proposal_archived": False,
+            "error": f"Failed to write cache: {e}",
+        }
+
+    # Archive the proposal
+    proposal_dir = _get_proposal_dir()
+    approved_dir = proposal_dir / "approved"
+    approved_dir.mkdir(parents=True, exist_ok=True)
+
+    proposal_path = proposal_dir / f"{pattern_hash}.yaml"
+    archived_path = approved_dir / f"{pattern_hash}.yaml"
+
+    try:
+        shutil.move(str(proposal_path), str(archived_path))
+        proposal_archived = True
+    except Exception:
+        proposal_archived = False
+
+    # Invalidate router's in-memory cache so it picks up new entries
+    try:
+        from engine.cognitive_router import get_router
+        get_router().load_cache()
+    except Exception:
+        pass  # Non-fatal — router will reload on next request
+
+    return {
+        "approved": True,
+        "skill_name": skill_name,
+        "entries_written": entries_written,
+        "proposal_archived": proposal_archived,
+        "error": None,
+    }

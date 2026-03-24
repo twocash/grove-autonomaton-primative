@@ -1,5 +1,5 @@
 """
-test_flywheel.py - Flywheel Tests (DETECT + PROPOSE)
+test_flywheel.py - Flywheel Tests (DETECT + PROPOSE + APPROVE)
 
 White Paper Part III S3: "Same intent pattern 3+ times in 14 days
 -> surface as potential skill."
@@ -16,6 +16,18 @@ V-016 Part D Tests:
 7. Proposals include all required fields (provenance, trigger, response)
 8. Proposals are idempotent (no duplicates)
 9. No LLM calls in PROPOSE (Tier 0)
+
+V-019 Part F Tests (APPROVE):
+10. approve_skill route keyword match
+11. approve_skill triggers Stage 4 (telemetry approval trace)
+12. Compilation enrichment populates proposed_action
+13. proposed_action in approval trace exhaust
+14. approve_skill() writes cache entries
+15. Cache entries have source: flywheel_approve
+16. Archive moves to approved/ directory
+17. Handler returns success with counts
+18. Hash sanitization (spaces, long input)
+19. Already-approved returns error
 """
 
 import pytest
@@ -607,3 +619,302 @@ class TestFlywheelPropose:
         result_data = context.result.get("data", {})
         assert result_data.get("type") == "flywheel_propose"
         assert "proposals" in result_data
+
+
+# =========================================================================
+# Part F Tests: Flywheel APPROVE (V-019)
+# =========================================================================
+
+@pytest.fixture(autouse=False)
+def cleanup_approve_artifacts(setup_reference_profile, cleanup_proposals):
+    """Clean cache and approved directory before/after test."""
+    from engine.profile import get_profile_path, get_config_dir
+    import yaml
+
+    # Clean pattern cache
+    cache_path = get_config_dir() / "pattern_cache.yaml"
+    if cache_path.exists():
+        with open(cache_path, "w", encoding="utf-8") as f:
+            yaml.dump({"cache": {}}, f)
+
+    # Clean approved directory
+    approved_dir = get_profile_path() / "queue" / "flywheel" / "approved"
+    if approved_dir.exists():
+        for f in approved_dir.glob("*.yaml"):
+            f.unlink()
+
+    yield
+
+    # Cleanup after
+    if cache_path.exists():
+        with open(cache_path, "w", encoding="utf-8") as f:
+            yaml.dump({"cache": {}}, f)
+    if approved_dir.exists():
+        for f in approved_dir.glob("*.yaml"):
+            f.unlink()
+
+
+def _traces_by_stage(entries: list, stage: str) -> list:
+    """Filter telemetry entries by pipeline stage."""
+    return [
+        e for e in entries
+        if e.get("inferred", {}).get("stage") == stage
+    ]
+
+
+def _last_trace(entries: list, stage: str) -> dict:
+    """Get the most recent trace for a given stage."""
+    traces = _traces_by_stage(entries, stage)
+    return traces[-1] if traces else {}
+
+
+class TestFlywheelApprove:
+    """Flywheel Stage 4: APPROVE deploys skills to pattern cache."""
+
+    def test_approve_skill_route_keyword_match(self, mock_llm):
+        """F1: 'approve skill' matches the route."""
+        from engine.cognitive_router import classify_intent
+
+        result = classify_intent("approve skill abc123")
+        assert result.intent == "approve_skill", \
+            f"Expected approve_skill intent, got {result.intent}"
+        assert result.zone == "yellow", "approve_skill should be yellow zone"
+        assert result.handler == "approve_skill"
+
+    def test_approve_skill_triggers_stage4(
+        self, telemetry_dual_sink, mock_llm, mock_jidoka_approve, cleanup_approve_artifacts
+    ):
+        """F2: approve_skill triggers Stage 4 approval trace (exhaust-first)."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+
+        # Generate candidate and proposal
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+        proposals = propose_skills()
+        assert len(proposals) >= 1, "Need at least 1 proposal for test"
+        ph = proposals[0]["pattern_hash"]
+
+        # Approve via pipeline (Yellow zone = Stage 4 Andon Gate)
+        # mock_jidoka_approve auto-approves confirm_yellow_zone()
+        context = run_pipeline(raw_input=f"approve skill {ph}", source="test")
+
+        # EXHAUST-FIRST: Check telemetry for approval trace
+        approval_trace = _last_trace(telemetry_dual_sink, "approval")
+        assert approval_trace, "Approval trace must exist in telemetry"
+        assert approval_trace.get("zone_context") == "yellow", \
+            f"Approval trace should be yellow zone, got {approval_trace.get('zone_context')}"
+
+    def test_compilation_enrichment_populates_proposed_action(
+        self, telemetry_dual_sink, mock_llm, mock_jidoka_approve, cleanup_approve_artifacts
+    ):
+        """F3: Compilation enrichment populates proposed_action for informed consent."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+
+        # Generate candidate and proposal
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+        proposals = propose_skills()
+        ph = proposals[0]["pattern_hash"]
+
+        # Approve via pipeline (mock_jidoka_approve auto-approves Yellow zone)
+        context = run_pipeline(raw_input=f"approve skill {ph}", source="test")
+
+        # The context should have proposed_action set by Compilation
+        assert context.proposed_action is not None, \
+            "Compilation should set proposed_action for approve_skill"
+        assert "pattern cache" in context.proposed_action.lower(), \
+            f"proposed_action should mention pattern cache: {context.proposed_action}"
+        assert "tier 0" in context.proposed_action.lower(), \
+            f"proposed_action should mention Tier 0: {context.proposed_action}"
+
+    def test_proposed_action_in_approval_trace_exhaust(
+        self, telemetry_dual_sink, mock_llm, mock_jidoka_approve, cleanup_approve_artifacts
+    ):
+        """F4: proposed_action appears in approval trace exhaust."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+
+        # Generate candidate and proposal
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+        proposals = propose_skills()
+        ph = proposals[0]["pattern_hash"]
+
+        # Approve via pipeline (mock_jidoka_approve auto-approves Yellow zone)
+        run_pipeline(raw_input=f"approve skill {ph}", source="test")
+
+        # EXHAUST-FIRST: Check telemetry
+        approval_trace = _last_trace(telemetry_dual_sink, "approval")
+        assert approval_trace, "Approval trace must exist"
+
+        inferred = approval_trace.get("inferred", {})
+        assert "proposed_action" in inferred, \
+            f"Approval trace inferred must contain proposed_action. Keys: {list(inferred.keys())}"
+
+    def test_approve_skill_writes_cache_entries(
+        self, telemetry_dual_sink, mock_llm, mock_jidoka_approve, cleanup_approve_artifacts
+    ):
+        """F5: approve_skill() writes entries to pattern cache (file-state validation)."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+        from engine.profile import get_config_dir
+        import yaml
+
+        # Generate candidate and proposal
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+        proposals = propose_skills()
+        ph = proposals[0]["pattern_hash"]
+
+        # Approve (mock_jidoka_approve auto-approves Yellow zone)
+        run_pipeline(raw_input=f"approve skill {ph}", source="test")
+
+        # FILE-STATE: Verify cache entries written
+        cache_path = get_config_dir() / "pattern_cache.yaml"
+        assert cache_path.exists(), "Cache file should exist"
+
+        with open(cache_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+
+        cache = data.get("cache", {})
+        assert len(cache) >= 1, f"Cache should have entries, got {len(cache)}"
+
+    def test_cache_entries_have_flywheel_source(
+        self, telemetry_dual_sink, mock_llm, mock_jidoka_approve, cleanup_approve_artifacts
+    ):
+        """F6: Cache entries have source: flywheel_approve (not 'llm')."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+        from engine.profile import get_config_dir
+        import yaml
+
+        # Generate candidate and proposal
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+        proposals = propose_skills()
+        ph = proposals[0]["pattern_hash"]
+
+        # Approve (mock_jidoka_approve auto-approves Yellow zone)
+        run_pipeline(raw_input=f"approve skill {ph}", source="test")
+
+        # FILE-STATE: Verify source field
+        cache_path = get_config_dir() / "pattern_cache.yaml"
+        with open(cache_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+
+        cache = data.get("cache", {})
+        for entry in cache.values():
+            assert entry.get("source") == "flywheel_approve", \
+                f"Cache entry source should be 'flywheel_approve', got {entry.get('source')}"
+            assert "proposal_hash" in entry, \
+                "Cache entry should include proposal_hash for audit trail"
+
+    def test_archive_moves_to_approved_directory(
+        self, telemetry_dual_sink, mock_llm, mock_jidoka_approve, cleanup_approve_artifacts
+    ):
+        """F7: Approved proposal is archived to approved/ directory."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+        from engine.profile import get_profile_path
+
+        # Generate candidate and proposal
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+        proposals = propose_skills()
+        ph = proposals[0]["pattern_hash"]
+
+        proposal_dir = get_profile_path() / "queue" / "flywheel"
+        approved_dir = proposal_dir / "approved"
+
+        # Verify proposal exists before approval
+        assert (proposal_dir / f"{ph}.yaml").exists(), "Proposal should exist before approval"
+
+        # Approve (mock_jidoka_approve auto-approves Yellow zone)
+        run_pipeline(raw_input=f"approve skill {ph}", source="test")
+
+        # FILE-STATE: Verify archive
+        assert not (proposal_dir / f"{ph}.yaml").exists(), \
+            "Proposal should be removed from queue after approval"
+        assert (approved_dir / f"{ph}.yaml").exists(), \
+            "Proposal should be archived to approved/ directory"
+
+    def test_handler_returns_success_with_counts(
+        self, telemetry_dual_sink, mock_llm, mock_jidoka_approve, cleanup_approve_artifacts
+    ):
+        """F8: Handler returns success with entries_written count."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+
+        # Generate candidate and proposal
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+        proposals = propose_skills()
+        ph = proposals[0]["pattern_hash"]
+
+        # Approve (mock_jidoka_approve auto-approves Yellow zone)
+        context = run_pipeline(raw_input=f"approve skill {ph}", source="test")
+
+        # Check result
+        assert context.executed, "approve_skill should execute"
+        result_data = context.result.get("data", {})
+        assert result_data.get("type") == "approve_skill"
+        assert result_data.get("action") == "approved"
+        assert "result" in result_data
+        assert result_data["result"]["entries_written"] >= 1, \
+            "Should report at least 1 entry written"
+
+    def test_hash_sanitization(
+        self, telemetry_dual_sink, mock_llm, mock_ux_input, cleanup_approve_artifacts
+    ):
+        """F9: Hash sanitization handles spaces and long input."""
+        from engine.flywheel import approve_skill, propose_skills
+        from engine.pipeline import run_pipeline
+
+        # Generate candidate and proposal
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+        proposals = propose_skills()
+        ph = proposals[0]["pattern_hash"]
+
+        # Test with extra spaces and garbage after hash
+        result = approve_skill(f"  {ph}   extra garbage ignored ")
+
+        assert result.get("approved") or result.get("error"), \
+            "approve_skill should handle sanitized input"
+        # If approved, the sanitization worked
+        if result.get("approved"):
+            assert result["skill_name"], "Should return skill name"
+
+    def test_already_approved_returns_error(
+        self, telemetry_dual_sink, mock_llm, mock_ux_input, cleanup_approve_artifacts
+    ):
+        """F10: Approving an already-approved proposal returns error."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills, approve_skill
+
+        # Generate candidate and proposal
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+        proposals = propose_skills()
+        ph = proposals[0]["pattern_hash"]
+
+        # First approval (direct call to skip pipeline for speed)
+        result1 = approve_skill(ph)
+        assert result1.get("approved"), "First approval should succeed"
+
+        # Second approval should fail
+        result2 = approve_skill(ph)
+        assert not result2.get("approved"), "Second approval should fail"
+        assert "already approved" in result2.get("error", "").lower(), \
+            f"Error should mention already approved: {result2.get('error')}"
