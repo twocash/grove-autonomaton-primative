@@ -318,6 +318,36 @@ Six places where code decides tiers instead of config: classification tier, recl
 
 ---
 
+## V-016: Flywheel Stage 3 — PROPOSE
+**Status:** ✅ Resolved
+**Priority:** MEDIUM — enables "authors its own evolution"
+**Files:** `engine/flywheel.py`, `engine/dispatcher.py`, `profiles/reference/config/routing.config`, `tests/test_flywheel.py`
+
+**The Problem:**
+The Skill Flywheel requires PROPOSE (Stage 3) to generate structured proposals from detected patterns. Without PROPOSE, DETECT just displays information — it doesn't create actionable artifacts.
+
+**What PROPOSE Does:**
+1. Reads candidates from `detect_patterns()` (DETECT)
+2. Generates structured YAML proposals for each qualifying candidate
+3. Writes proposals to `profiles/{profile}/queue/flywheel/{pattern_hash}.yaml`
+4. Every field is deterministic — Tier 0, no LLM, purely data assembly
+
+**The Fix:**
+1. Add `propose_skills()` function to `engine/flywheel.py`
+2. Add `_get_route_description()` helper for config lookup
+3. Add `load_proposals()` to read existing proposals
+4. Add `propose_skills` and `show_proposals` handlers to `engine/dispatcher.py`
+5. Add 2 routes + `flywheel.propose` config to `routing.config`
+6. Add hint to `show_patterns` output when candidates exist
+7. Add 8 Part D tests to `tests/test_flywheel.py`
+
+**Acceptance Tests:** All 203 tests pass (8 new PROPOSE tests).
+
+**Commit:** `V-016-flywheel-propose`
+**Resolved:** 2026-03-24
+
+---
+
 ## Recommended Sequence
 
 1. ~~**V-005** (tmpclaude cleanup)~~ ✅
@@ -334,9 +364,10 @@ Six places where code decides tiers instead of config: classification tier, recl
 12. **V-007** (dispatcher audit — extract coach-specific handlers)
 13. **V-008** (startup ceremony audit — verify reference profile is clean)
 14. **V-003** (Glass consistency — audit after V-011)
-15. **V-009 Phase 3** (Flywheel Stages 3-6 — PROPOSE, APPROVE, EXECUTE, REFINE)
+15. ~~**V-016** (Flywheel Stage 3 — PROPOSE)~~ ✅ `V-016-flywheel-propose`
+16. **V-009 Phase 3** (Flywheel Stages 4-6 — APPROVE, EXECUTE, REFINE)
 
 ---
 
-*Last updated: 2026-03-24 (V-014 complete — 195 tests green, zero hardcoded tiers)*
+*Last updated: 2026-03-24 (V-016 complete — 203 tests green, Flywheel PROPOSE operational)*
 *Register maintained by: Jim Calhoun / Grove Architecture*
