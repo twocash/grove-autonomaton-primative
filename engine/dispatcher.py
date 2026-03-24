@@ -174,7 +174,7 @@ class Dispatcher:
     def _display_queue(self) -> DispatchResult:
         """Display Kaizen queue status.
 
-        V-021: Cortex removed. Queue is read from YAML if it exists.
+        Queue is read from YAML if it exists.
         """
         import yaml
         from engine.profile import get_profile_path

@@ -4,7 +4,7 @@ telemetry.py - The Feed-First Engine
 Every interaction MUST be logged as structured data before any processing.
 This enforces the first stage of the Invariant Pipeline.
 
-Sprint 6: Strict schema validation ensures the Cortex never ingests malformed data.
+Sprint 6: Strict schema validation ensures malformed data is never ingested.
 """
 
 import json
@@ -48,7 +48,7 @@ class TelemetryEvent:
     Formal schema for telemetry events.
 
     All events MUST conform to this schema before being logged.
-    This ensures the Cortex analytical engine never ingests malformed data.
+    This ensures malformed data is never ingested.
 
     Required Fields:
         - id: UUID v4 (auto-generated if not provided)

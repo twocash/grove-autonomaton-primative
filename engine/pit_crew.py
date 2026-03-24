@@ -475,12 +475,12 @@ VALIDATION CRITERIA:
 Return a JSON object with exactly these keys:
 - "compliant": boolean - true if ALL criteria pass, false if ANY fail
 - "violations": array of strings - specific violations found (empty if compliant)
-- "telemetry_exhaust_unlocks": array of 2-3 strings - IF compliant, describe specific ways the telemetry data emitted by this skill could be consumed by future Autonomatons or the Cortex. Be creative and specific.
+- "telemetry_exhaust_unlocks": array of 2-3 strings - IF compliant, describe specific ways the telemetry data emitted by this skill could be consumed by future Autonomatons or analytical pipelines. Be creative and specific.
 
 Return ONLY valid JSON. No markdown code blocks.
 
 Example for a compliant skill:
-{{"compliant": true, "violations": [], "telemetry_exhaust_unlocks": ["Cortex can track skill usage frequency for load balancing", "Chain with reporting-skill for weekly summaries", "Feed output to dashboard for real-time visualization"]}}
+{{"compliant": true, "violations": [], "telemetry_exhaust_unlocks": ["Analytical pipelines can track skill usage frequency for load balancing", "Chain with reporting-skill for weekly summaries", "Feed output to dashboard for real-time visualization"]}}
 
 Example for a non-compliant skill:
 {{"compliant": false, "violations": ["prompt.md missing Output Format section", "No chain_context in output schema"], "telemetry_exhaust_unlocks": []}}
@@ -560,7 +560,7 @@ Example for a non-compliant skill:
 
         Sprint 4.75: After a skill passes compliance, the Judge's
         telemetry_exhaust_unlocks are appended to the global registry.
-        This serves as a strategic resource for the Cortex.
+        This serves as a strategic resource for analytical pipelines.
         """
         try:
             exhaust_path = get_dock_dir() / "system" / "exhaust-board.md"

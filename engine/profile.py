@@ -31,7 +31,7 @@ def set_profile(profile_name: str, repo_root: Optional[Path] = None) -> None:
     Set the active profile for this session.
 
     Args:
-        profile_name: Name of the profile (e.g., 'coach_demo')
+        profile_name: Name of the profile (e.g., 'reference')
         repo_root: Repository root path (defaults to parent of engine/)
     """
     global _active_profile, _profile_base_path

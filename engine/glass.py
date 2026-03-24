@@ -181,7 +181,7 @@ def display_glass_from_telemetry(pipeline_id: str,
     """Render glass pipeline from telemetry events.
 
     This is the architecturally correct glass renderer.
-    It reads from the same telemetry stream as Cortex, Ratchet,
+    It reads from the same telemetry stream as Ratchet
     and Skill Flywheel. No PipelineContext needed.
     """
     events = read_pipeline_events(pipeline_id)
