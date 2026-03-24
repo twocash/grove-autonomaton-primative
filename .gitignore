@@ -26,3 +26,6 @@ tmpclaude-*
 .DS_Store
 Thumbs.db
 nul
+
+# Stale development directories
+.coach/

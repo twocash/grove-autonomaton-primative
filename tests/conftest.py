@@ -194,25 +194,8 @@ def mock_ux_input():
 # Profile Fixtures (V-012: Domain handlers in profiles/)
 # =========================================================================
 
-@pytest.fixture
-def coach_demo_profile():
-    """
-    Switch to coach_demo profile with handlers loaded.
-
-    V-012: Tests that need domain handlers (cortex_batch, vision_capture,
-    welcome_card, etc.) must use this fixture to load the profile handlers.
-    """
-    from engine.profile import set_profile
-    from engine.dispatcher import reset_dispatcher
-
-    # Reset and reload with coach_demo
-    reset_dispatcher()
-    set_profile("coach_demo")
-    _load_profile_handlers()
-
-    yield
-
-    # Restore reference profile (fixture cleanup handled by autouse fixture)
+# V-021: coach_demo_profile fixture removed — coach_demo profile deleted.
+# The reference profile is now the canonical test profile.
 
 
 # =========================================================================

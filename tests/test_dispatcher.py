@@ -18,7 +18,7 @@ class TestGeneralChatIntent:
         from engine.cognitive_router import classify_intent, reset_router
         from engine.profile import set_profile
 
-        set_profile("coach_demo")
+        set_profile("reference")
         reset_router()
 
         result = classify_intent("hello")
@@ -32,7 +32,7 @@ class TestGeneralChatIntent:
         from engine.cognitive_router import classify_intent, reset_router
         from engine.profile import set_profile
 
-        set_profile("coach_demo")
+        set_profile("reference")
         reset_router()
 
         result = classify_intent("hi there")
@@ -45,7 +45,7 @@ class TestGeneralChatIntent:
         from engine.cognitive_router import classify_intent, reset_router
         from engine.profile import set_profile
 
-        set_profile("coach_demo")
+        set_profile("reference")
         reset_router()
 
         result = classify_intent("hey!")
@@ -58,7 +58,7 @@ class TestGeneralChatIntent:
         from engine.cognitive_router import classify_intent, reset_router
         from engine.profile import set_profile
 
-        set_profile("coach_demo")
+        set_profile("reference")
         reset_router()
 
         result = classify_intent("who are you")
@@ -73,7 +73,7 @@ class TestGeneralChatIntent:
         from engine.profile import set_profile
         import engine.dispatcher as dispatcher_module
 
-        set_profile("coach_demo")
+        set_profile("reference")
 
         # Reset dispatcher
         dispatcher_module._dispatcher_instance = None
@@ -115,7 +115,7 @@ class TestGeneralChatNoYellowZone:
         from engine.pipeline import run_pipeline
         from engine.profile import set_profile
 
-        set_profile("coach_demo")
+        set_profile("reference")
 
         mock_llm_response = "Hello! Ready to serve the mission."
 
@@ -131,7 +131,7 @@ class TestGeneralChatNoYellowZone:
         from engine.pipeline import run_pipeline
         from engine.profile import set_profile
 
-        set_profile("coach_demo")
+        set_profile("reference")
 
         mock_llm_response = "Good morning! The @ChristInTheFairway channels await."
 

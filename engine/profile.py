@@ -85,11 +85,6 @@ def get_dock_dir() -> Path:
     return get_profile_path() / "dock"
 
 
-def get_entities_dir() -> Path:
-    """Get the entities directory for the active profile."""
-    return get_profile_path() / "entities"
-
-
 def get_skills_dir() -> Path:
     """Get the skills directory for the active profile."""
     return get_profile_path() / "skills"
@@ -100,11 +95,6 @@ def get_telemetry_dir() -> Path:
     return get_profile_path() / "telemetry"
 
 
-def get_queue_dir() -> Path:
-    """Get the queue directory for the active profile."""
-    return get_profile_path() / "queue"
-
-
 def get_output_dir() -> Path:
     """Get the output directory for the active profile."""
     return get_profile_path() / "output"
@@ -113,11 +103,6 @@ def get_output_dir() -> Path:
 def get_telemetry_path() -> Path:
     """Get the path to telemetry.jsonl for the active profile."""
     return get_telemetry_dir() / "telemetry.jsonl"
-
-
-def get_pending_queue_path() -> Path:
-    """Get the path to pending.yaml for the active profile."""
-    return get_queue_dir() / "pending.yaml"
 
 
 def list_available_profiles(repo_root: Optional[Path] = None) -> list[str]:

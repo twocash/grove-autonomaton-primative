@@ -172,10 +172,22 @@ class Dispatcher:
         )
 
     def _display_queue(self) -> DispatchResult:
-        """Display Kaizen queue status."""
-        from engine.cortex import load_pending_queue
+        """Display Kaizen queue status.
 
-        pending = load_pending_queue()
+        V-021: Cortex removed. Queue is read from YAML if it exists.
+        """
+        import yaml
+        from engine.profile import get_profile_path
+
+        pending = []
+        queue_path = get_profile_path() / "queue" / "kaizen.yaml"
+        if queue_path.exists():
+            try:
+                with open(queue_path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+                pending = data.get("pending", [])
+            except Exception:
+                pass
 
         return DispatchResult(
             success=True,
@@ -737,7 +749,6 @@ Generate a focused strategic brief (3-5 items, natural language):"""
             "dispatcher.py",
             "telemetry.py",
             "ux.py",
-            "cortex.py",
             "compiler.py",
             "dock.py",
             "llm_client.py",

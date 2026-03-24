@@ -47,7 +47,13 @@
       "Bash(cmd //c \"C:\\\\GitHub\\\\grove-autonomaton-primative\\\\v009-merge.bat\")",
       "Bash(git tag -a v0.1.0-pattern-proven -m \"$\\(cat <<''EOF''\nPipeline invariant verified. V-009 architecture tests enforce five-stage pipeline, Digital Jidoka, Ratchet cache, and clean startup. Full pytest green.\nEOF\n\\)\")",
       "Bash(of the cognitive hourglass\"\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git mv:*)"
+      "Bash(git mv:*)",
+      "Bash(git stash:*)",
+      "Skill(grove-foundation-loop)",
+      "Bash(pip install:*)",
+      "Bash(taskkill:*)",
+      "Bash(git tag:*)",
+      "Bash(ls:*)"
     ]
   }
 }

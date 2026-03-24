@@ -30,7 +30,6 @@ class TestProfileLoading:
         from engine.profile import list_available_profiles
         profiles = list_available_profiles()
         assert "reference" in profiles
-        assert "coach_demo" in profiles
         assert "blank_template" in profiles
 
 
@@ -354,17 +353,7 @@ class TestProfileIsolation:
         assert ref_context.telemetry_event is not None
         assert blank_context.telemetry_event is not None
 
-    def test_coach_demo_unaffected(self):
-        """coach_demo loads and runs without changes."""
-        from engine.profile import set_profile
-        from engine.pipeline import run_pipeline
-
-        set_profile("coach_demo")
-        context = run_pipeline("hello", source="test")
-
-        # Should route to general_chat
-        assert context.intent == "general_chat"
-        assert context.executed is True
+    # V-021: test_coach_demo_unaffected removed — coach_demo profile deleted.
 
 
 class TestReferenceProfileConfig:

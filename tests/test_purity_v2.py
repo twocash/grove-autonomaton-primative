@@ -55,10 +55,10 @@ class TestModelConfig:
     """Verify model config loads from YAML."""
 
     def test_models_yaml_exists(self):
-        assert Path("profiles/coach_demo/config/models.yaml").exists()
+        assert Path("profiles/reference/config/models.yaml").exists()
 
     def test_models_yaml_has_three_tiers(self):
-        with open("profiles/coach_demo/config/models.yaml") as f:
+        with open("profiles/reference/config/models.yaml") as f:
             data = yaml.safe_load(f)
         assert 1 in data["tiers"]
         assert 2 in data["tiers"]

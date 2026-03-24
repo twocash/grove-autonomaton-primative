@@ -6,14 +6,9 @@ The Autonomaton REPL - a domain-agnostic agentic system.
 ALL user input passes through the Invariant Pipeline.
 No direct function calls - everything is routed through the 5-stage pipeline.
 
-Sprint 1: Strict Pipeline Enforcement
-- Cognitive Router classifies intents from routing.config
-- Dispatcher routes to handlers in Stage 5
-- Every command generates telemetry with all 5 stages
-
 Usage:
-    python autonomaton.py                          # Uses default profile (coach_demo)
-    python autonomaton.py --profile coach_demo     # Explicit profile selection
+    python autonomaton.py                          # Uses default profile (reference)
+    python autonomaton.py --profile reference      # Explicit profile selection
     python autonomaton.py --verbose                # Show dock context in responses
     python autonomaton.py --list-profiles          # List available profiles
 """
@@ -71,8 +66,8 @@ def parse_args():
     )
     parser.add_argument(
         "--profile", "-p",
-        default="coach_demo",
-        help="Profile to load (default: coach_demo)"
+        default="reference",
+        help="Profile to load (default: reference)"
     )
     parser.add_argument(
         "--list-profiles",
@@ -83,11 +78,6 @@ def parse_args():
         "--verbose", "-v",
         action="store_true",
         help="Show dock context in responses"
-    )
-    parser.add_argument(
-        "--skip-queue",
-        action="store_true",
-        help="Skip processing pending Kaizen queue at startup"
     )
     parser.add_argument(
         "--skip-welcome",
@@ -126,7 +116,7 @@ def _load_profile_handlers():
         module.register(dispatcher)
 
 
-def print_banner(profile: str, dock_info: str, cortex_info: str, glass_enabled: bool = False):
+def print_banner(profile: str, dock_info: str, glass_enabled: bool = False):
     """Display startup banner with profile and dock status. Minimal."""
     c = Colors
     print()
@@ -135,7 +125,6 @@ def print_banner(profile: str, dock_info: str, cortex_info: str, glass_enabled: 
     print(f"{c.DIM}  Profile: {c.CYAN}{profile}{c.RESET}")
     print(f"{c.CYAN}{'=' * 60}{c.RESET}")
     print(f"  {c.DIM}{dock_info}{c.RESET}")
-    print(f"  {c.DIM}{cortex_info}{c.RESET}")
     if glass_enabled:
         print(f"  {c.MAGENTA}Glass Pipeline: ACTIVE{c.RESET}")
     print(f"{c.CYAN}{'=' * 60}{c.RESET}")
@@ -148,69 +137,6 @@ def print_banner(profile: str, dock_info: str, cortex_info: str, glass_enabled: 
         print(f"  {c.DIM}Type anything to see the architecture in motion.{c.RESET}")
 
     print()
-
-
-def process_pending_queue() -> int:
-    """
-    Process pending Kaizen items at startup using Jidoka UX.
-
-    Returns the number of items processed.
-    """
-    from engine.cortex import load_pending_queue, remove_from_queue
-    from engine.ux import ask_jidoka
-
-    c = Colors
-    pending = load_pending_queue()
-
-    if not pending:
-        return 0
-
-    print()
-    print(f"{c.MAGENTA}{'=' * 60}{c.RESET}")
-    print(f"  {c.BOLD}{c.MAGENTA}PENDING KAIZEN ITEMS{c.RESET}")
-    print(f"  {c.DIM}The Cortex has identified improvement opportunities.{c.RESET}")
-    print(f"{c.MAGENTA}{'=' * 60}{c.RESET}")
-    print()
-
-    processed = 0
-
-    for item in pending[:]:  # Copy list since we modify during iteration
-        proposal = item.get("proposal", "Unknown proposal")
-        trigger = item.get("trigger", "unknown")
-        item_id = item.get("id", "unknown")
-
-        result = ask_jidoka(
-            context_message=f"KAIZEN PROPOSAL (trigger: {trigger}):\n\n{proposal}",
-            options={
-                "1": "Accept - Add to my task list",
-                "2": "Dismiss - Not relevant now",
-                "3": "Defer - Ask me later"
-            }
-        )
-
-        if result == "1":
-            print(f"  {c.GREEN}Accepted:{c.RESET} {proposal[:50]}...")
-            remove_from_queue(item_id)
-
-            # Sprint 5: Handle plan_update proposals by refreshing standing context
-            proposal_type = item.get("proposal_type", "general")
-            if proposal_type == "plan_update":
-                # The proposal was accepted - refresh standing context
-                from engine.compiler import reset_standing_context
-                reset_standing_context()
-                print(f"  {c.DIM}(Standing context refreshed for plan update){c.RESET}")
-
-            processed += 1
-        elif result == "2":
-            print(f"  {c.YELLOW}Dismissed:{c.RESET} {item_id}")
-            remove_from_queue(item_id)
-            processed += 1
-        else:
-            print(f"  {c.DIM}Deferred:{c.RESET} {item_id}")
-            processed += 1
-
-    print()
-    return processed
 
 
 def display_result(context, verbose: bool) -> None:
@@ -292,44 +218,6 @@ def display_result(context, verbose: bool) -> None:
         # Usage instructions (missing name or description)
         print(f"\n  {c.RED}[PIT CREW]{c.RESET} {context.result.get('message')}\n")
 
-    elif data_type == "session_zero":
-        # Session Zero intake - display the Socratic prompt
-        print(f"\n  {c.CYAN}[SESSION ZERO]{c.RESET} Cortex Intake Interview")
-        print(f"{c.CYAN}{'=' * 60}{c.RESET}")
-        prompt_content = data.get("prompt_content", "")
-        if prompt_content:
-            # Display the prompt (Sprint 2: send to LLM instead)
-            print(prompt_content)
-        else:
-            print(f"  {c.RED}Error:{c.RESET} No prompt content available")
-        print(f"{c.CYAN}{'=' * 60}{c.RESET}")
-        if data.get("note"):
-            print(f"\n  {c.DIM}Note: {data.get('note')}{c.RESET}\n")
-
-    elif data_type and data_type.startswith("cortex_"):
-        # Cortex batch analysis results
-        zc = zone_color(zone)
-        print(f"\n  {c.MAGENTA}[CORTEX]{c.RESET} {context.result.get('message', 'Analysis complete')}")
-        if data.get("patterns_detected"):
-            print(f"  {c.DIM}Patterns:{c.RESET}")
-            for pattern in data["patterns_detected"][:3]:
-                print(f"    {c.DIM}-{c.RESET} {pattern}")
-        if data.get("kaizen_proposals"):
-            print(f"  {c.DIM}Kaizen Proposals:{c.RESET}")
-            for proposal in data["kaizen_proposals"][:3]:
-                priority = proposal.get("priority", "medium")
-                pc = c.RED if priority == "high" else (c.YELLOW if priority == "medium" else c.GREEN)
-                print(f"    {pc}[{priority.upper()}]{c.RESET} {proposal.get('proposal', '?')}")
-        if data.get("ratchet_proposals"):
-            print(f"  {c.DIM}Ratchet Proposals:{c.RESET}")
-            for proposal in data["ratchet_proposals"][:3]:
-                print(f"    {c.CYAN}[{proposal.get('intent', '?')}]{c.RESET} {proposal.get('proposed_action', '?')}")
-        if data.get("evolution_proposals"):
-            print(f"  {c.DIM}Evolution Proposals:{c.RESET}")
-            for proposal in data["evolution_proposals"][:3]:
-                print(f"    {c.BLUE}[{proposal.get('skill_name', '?')}]{c.RESET} {proposal.get('description', '?')}")
-        print()
-
     elif data_type == "skill_execution":
         # Skill execution results - show the actual LLM output
         response = data.get("response", "")
@@ -364,7 +252,7 @@ def main():
         profiles = list_available_profiles()
         print("\nAvailable profiles:")
         for p in profiles:
-            marker = " (default)" if p == "coach_demo" else ""
+            marker = " (default)" if p == "reference" else ""
             print(f"  - {p}{marker}")
         print()
         return
@@ -378,7 +266,6 @@ def main():
     # Now import engine modules (they will use the active profile)
     from engine.pipeline import run_pipeline
     from engine.dock import get_dock
-    from engine.cortex import run_tail_pass, load_pending_queue
 
     # Load profile config (presentation layer flags)
     from engine.config_loader import load_profile_config
@@ -398,7 +285,6 @@ def main():
     # Startup gating: profile.yaml flags OR CLI flags (either can suppress)
     startup_config = profile_config["startup"]
     skip_welcome = startup_config["skip_welcome"] or args.skip_welcome
-    skip_queue = startup_config["skip_queue"] or args.skip_queue
     skip_plan = startup_config["skip_plan_generation"]
     skip_brief = startup_config["skip_startup_brief"]
 
@@ -409,11 +295,7 @@ def main():
     dock = get_dock()
     dock_info = f"Dock: {dock.get_chunk_count()} chunks from {len(dock.list_sources())} sources"
 
-    # Check pending queue count
-    pending = load_pending_queue()
-    cortex_info = f"Cortex: {len(pending)} pending Kaizen item(s)"
-
-    print_banner(profile, dock_info, cortex_info, glass_enabled)
+    print_banner(profile, dock_info, glass_enabled)
 
     # Check for structured plan — generate on first boot (Sprint 5)
     # Now routed through the pipeline (purity-audit-v1)
@@ -444,10 +326,6 @@ def main():
         else:
             print(f"  {c.YELLOW}[DEFERRED]{c.RESET} Plan generation skipped.")
         print()
-
-    # Process pending Kaizen items at startup (unless skipped)
-    if not skip_queue and pending:
-        process_pending_queue()
 
     # Welcome Briefing (replaces cold command list)
     # Now routed through the pipeline (purity-audit-v1)
@@ -546,15 +424,6 @@ def main():
                 if tip_text:
                     from engine.glass import display_tip
                     display_tip(tip_text)
-
-            # Run Cortex tail-pass analysis (Layer 3)
-            cortex_result = run_tail_pass()
-            if cortex_result.get("entities", 0) > 0 or cortex_result.get("kaizen", 0) > 0:
-                print(f"  {c.MAGENTA}[CORTEX]{c.RESET} Extracted {cortex_result.get('entities', 0)} entities, "
-                      f"{cortex_result.get('kaizen', 0)} Kaizen proposals\n")
-                # Refresh standing context when Cortex extracts new data
-                from engine.compiler import reset_standing_context
-                reset_standing_context()
 
         except KeyboardInterrupt:
             print(f"\n\n{c.YELLOW}Session interrupted.{c.RESET} Exiting...\n")

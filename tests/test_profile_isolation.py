@@ -79,7 +79,7 @@ class TestCognitiveRouterWithBlankTemplate:
         assert result.intent in ("ratchet_intent_classify", "general_chat", "unknown")
 
     def test_router_still_works_after_blank_template(self):
-        """Assert router can switch back to coach_demo."""
+        """Assert router can switch back to reference."""
         from engine.cognitive_router import classify_intent, reset_router
         from engine.profile import set_profile
 
@@ -91,8 +91,8 @@ class TestCognitiveRouterWithBlankTemplate:
         # Blank template has no dock route - should be unknown
         # (unless we add basic system routes)
 
-        # Switch to coach_demo
-        set_profile("coach_demo")
+        # Switch to reference
+        set_profile("reference")
         reset_router()
         result = classify_intent("dock")
 
@@ -216,8 +216,8 @@ class TestProfileIsolation:
         from engine.cognitive_router import classify_intent, reset_router
         from engine.profile import set_profile
 
-        # Load coach_demo
-        set_profile("coach_demo")
+        # Load reference
+        set_profile("reference")
         reset_router()
         result1 = classify_intent("dock")
         assert result1.intent == "dock_status"
@@ -228,15 +228,15 @@ class TestProfileIsolation:
         result2 = classify_intent("dock")
 
         # Should be different (blank has no dock route unless added)
-        # The key is that it doesn't use coach_demo's routing
+        # The key is that it doesn't use reference's routing
 
     def test_profile_switch_uses_correct_telemetry_path(self):
         """Assert telemetry writes to correct profile directory."""
         from engine.profile import set_profile, get_telemetry_path
 
-        set_profile("coach_demo")
+        set_profile("reference")
         path1 = get_telemetry_path()
-        assert "coach_demo" in str(path1)
+        assert "reference" in str(path1)
 
         set_profile("blank_template")
         path2 = get_telemetry_path()

@@ -108,7 +108,7 @@ class TestProfileIsolation:
             get_clarification_options, resolve_clarification,
             get_router, reset_router
         )
-        for profile in ["reference", "coach_demo"]:
+        for profile in ["reference"]:
             set_profile(profile)
             reset_router()
             router = get_router()
@@ -174,7 +174,7 @@ class TestDeclarativeClarification:
     """V8: Clarification behavior is declarative (config-driven)."""
 
     def test_clarification_yaml_exists_all_profiles(self):
-        profiles = ["reference", "coach_demo", "blank_template"]
+        profiles = ["reference", "blank_template"]
         for profile in profiles:
             path = Path(f"profiles/{profile}/config/clarification.yaml")
             assert path.exists(), f"Missing clarification.yaml in {profile}"
@@ -230,7 +230,7 @@ class TestCrossProfileClassification:
     """Architect §II Test 4: accuracy across ALL profiles."""
 
     @pytest.mark.parametrize("profile",
-        ["reference", "coach_demo", "blank_template"])
+        ["reference", "blank_template"])
     def test_hello_classifies_across_profiles(self, profile):
         from engine.profile import set_profile
         from engine.cognitive_router import classify_intent, reset_router
@@ -271,15 +271,5 @@ class TestMCPConfigConsistency:
     def test_mcp_formatter_templates_exist(self):
         """Every MCP route with mcp_formatter handler must have a template."""
         import yaml
-        for profile in ["coach_demo"]:
-            config_path = Path(f"profiles/{profile}/config/routing.config")
-            with open(config_path) as f:
-                config = yaml.safe_load(f)
-            for intent, route in config.get("routes", {}).items():
-                if route.get("handler") == "mcp_formatter":
-                    args = route.get("handler_args", {})
-                    template = args.get("formatter_template", "")
-                    if template:
-                        tpath = Path(f"profiles/{profile}/config/mcp-formatters/{template}.md")
-                        assert tpath.exists(), \
-                            f"{profile}/{intent}: template {template}.md not found"
+        # V-021: coach_demo removed. reference profile has no mcp_formatter routes.
+        pass
