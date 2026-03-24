@@ -38,13 +38,16 @@ class Dispatcher:
     """
     Maps classified intents to execution handlers.
 
-    Engine-Core Handlers (9):
+    Engine-Core Handlers (11):
     - status_display: dock, queue, skills display (Green Zone)
     - general_chat: conversational responses (Green Zone)
     - strategy_session: strategic synthesis (Green Zone)
     - clear_cache: pattern cache management (Yellow Zone)
     - show_file: display profile files (Green Zone)
     - show_engine_manifest: display engine structure (Green Zone)
+    - show_patterns: display Flywheel DETECT patterns (Green Zone)
+    - propose_skills: generate Flywheel PROPOSE proposals (Green Zone)
+    - show_proposals: display pending proposals (Green Zone)
     - skill_executor: run Pit Crew generated skills (Zone from config)
     - pit_crew: skill building (Red Zone)
     - mcp_formatter: MCP payload formatting (Yellow Zone)
@@ -64,6 +67,9 @@ class Dispatcher:
             "show_file": self._handle_show_file,
             "show_engine_manifest": self._handle_show_engine_manifest,
             "show_patterns": self._handle_show_patterns,
+            # Flywheel PROPOSE handlers (V-016)
+            "propose_skills": self._handle_propose_skills,
+            "show_proposals": self._handle_show_proposals,
             # Core execution handlers
             "general_chat": self._handle_general_chat,
             "strategy_session": self._handle_strategy_session,
@@ -860,10 +866,135 @@ Generate a focused strategic brief (3-5 items, natural language):"""
                 label = p["pattern_label"] or p["intent"]
                 lines.append(f"    . {label}  {p['count']}x | {p['intent']}")
 
+        # V-016: Hint to generate proposals when candidates exist
+        if candidates:
+            lines.append("")
+            lines.append(f"  {len(candidates)} pattern(s) meet the skill candidate threshold.")
+            lines.append("  Type 'propose skills' to generate proposals.")
+
         return DispatchResult(
             success=True,
             message="\n".join(lines),
             data={"type": "flywheel_patterns", "patterns": patterns}
+        )
+
+    def _handle_propose_skills(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Generate Flywheel skill proposals from detected patterns.
+
+        Flywheel Stage 3 (PROPOSE): reads candidates from DETECT,
+        generates structured YAML proposals for human review.
+
+        Green Zone — proposals are inert documents until approved.
+        Tier 0 — no LLM, purely deterministic assembly.
+        """
+        from engine.flywheel import propose_skills
+
+        proposals = propose_skills()
+
+        if not proposals:
+            # Check if there are candidates but all already proposed
+            from engine.flywheel import detect_patterns, load_proposals
+            patterns = detect_patterns()
+            candidates = [p for p in patterns if p.get("is_candidate")]
+            existing = load_proposals()
+
+            if not candidates:
+                return DispatchResult(
+                    success=True,
+                    message="No patterns meet the skill candidate threshold yet.\n"
+                            "Use the system — the Flywheel observes every interaction.",
+                    data={"type": "flywheel_propose", "proposals": []}
+                )
+            else:
+                return DispatchResult(
+                    success=True,
+                    message=f"All {len(candidates)} candidate(s) already have pending proposals.\n"
+                            f"Type 'show proposals' to review them.",
+                    data={"type": "flywheel_propose", "proposals": [], "existing": len(existing)}
+                )
+
+        # Format output
+        lines = [f"  {len(proposals)} new proposal(s) generated:"]
+        lines.append("")
+        for p in proposals:
+            lines.append(f"    * {p['name']}")
+            lines.append(f"      {p['description']}")
+            lines.append(f"      File: queue/flywheel/{p['file']}")
+            lines.append("")
+
+        lines.append("  Type 'show proposals' to review.")
+
+        return DispatchResult(
+            success=True,
+            message="\n".join(lines),
+            data={"type": "flywheel_propose", "proposals": proposals}
+        )
+
+    def _handle_show_proposals(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Display pending Flywheel skill proposals.
+
+        Reads YAML files from queue/flywheel/ and formats for display.
+        Green Zone — purely informational.
+        """
+        from engine.flywheel import load_proposals
+
+        proposals = load_proposals()
+
+        if not proposals:
+            return DispatchResult(
+                success=True,
+                message="No pending proposals.\n"
+                        "Type 'propose skills' to generate proposals from detected patterns.",
+                data={"type": "flywheel_proposals", "proposals": []}
+            )
+
+        # Format output
+        lines = [f"  PENDING PROPOSALS ({len(proposals)}):"]
+        lines.append("")
+
+        for p in proposals:
+            data = p.get("data", {})
+            skill = data.get("skill", {})
+            trigger = skill.get("trigger", {})
+            provenance = skill.get("provenance", {})
+            response = skill.get("response", {})
+
+            lines.append(f"  ── {p['name']} ──")
+            lines.append(f"  {skill.get('description', '')}")
+            lines.append("")
+            lines.append(f"    Pattern: {trigger.get('pattern_hash', '')[:12]}...")
+            if trigger.get("pattern_label"):
+                lines.append(f"    Label: {trigger.get('pattern_label')}")
+            lines.append(f"    Occurrences: {provenance.get('occurrences', 0)}")
+            lines.append(f"    First seen: {provenance.get('first_seen', '')[:10]}")
+            lines.append(f"    Last seen: {provenance.get('last_seen', '')[:10]}")
+            lines.append(f"    Zone: {response.get('zone', 'green')} | Tier: {response.get('tier', 0)}")
+
+            examples = trigger.get("example_inputs", [])
+            if examples:
+                lines.append("    Examples:")
+                for ex in examples[:3]:
+                    lines.append(f"      - \"{ex}\"")
+
+            lines.append(f"    File: {p['file']}")
+            lines.append("")
+
+        lines.append("  Approval workflow coming in a future sprint (Stage 4: APPROVE).")
+
+        return DispatchResult(
+            success=True,
+            message="\n".join(lines),
+            data={"type": "flywheel_proposals", "proposals": proposals}
         )
 
 

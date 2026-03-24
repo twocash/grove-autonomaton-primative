@@ -1,5 +1,5 @@
 """
-test_flywheel.py - Flywheel Stage 2 (DETECT) Tests
+test_flywheel.py - Flywheel Tests (DETECT + PROPOSE)
 
 White Paper Part III S3: "Same intent pattern 3+ times in 14 days
 -> surface as potential skill."
@@ -10,6 +10,12 @@ Tests validate that:
 3. detect_patterns() surfaces candidates at threshold
 4. LLM-classified intents include pattern_label in hash
 5. Ratchet cache preserves pattern_label for free reuse
+
+V-016 Part D Tests:
+6. propose_skills() generates YAML proposals from candidates
+7. Proposals include all required fields (provenance, trigger, response)
+8. Proposals are idempotent (no duplicates)
+9. No LLM calls in PROPOSE (Tier 0)
 """
 
 import pytest
@@ -370,3 +376,234 @@ class TestShowPatternsRoute:
         result_data = context.result.get("data", {})
         assert result_data.get("type") == "flywheel_patterns"
         assert "patterns" in result_data
+
+
+# =========================================================================
+# Part D Tests: Flywheel PROPOSE (V-016)
+# =========================================================================
+
+@pytest.fixture(autouse=False)
+def cleanup_proposals(setup_reference_profile):
+    """Clean proposal directory before and after test. Fate-sharing."""
+    from engine.profile import get_profile_path
+
+    proposal_dir = get_profile_path() / "queue" / "flywheel"
+    if proposal_dir.exists():
+        for f in proposal_dir.glob("*.yaml"):
+            f.unlink()
+    yield
+    # Cleanup after
+    if proposal_dir.exists():
+        for f in proposal_dir.glob("*.yaml"):
+            f.unlink()
+
+
+class TestFlywheelPropose:
+    """Flywheel Stage 3: PROPOSE generates skill proposals from candidates."""
+
+    def test_propose_generates_yaml_from_candidates(
+        self, telemetry_dual_sink, mock_llm, cleanup_proposals
+    ):
+        """Run 3+ interactions, propose_skills() creates YAML files."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+        from engine.profile import get_profile_path
+        import yaml
+
+        # Generate candidate pattern (3+ occurrences)
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+
+        # Generate proposals
+        proposals = propose_skills()
+
+        assert len(proposals) >= 1, f"Should generate at least 1 proposal. Got: {proposals}"
+
+        # Verify YAML file exists
+        proposal_dir = get_profile_path() / "queue" / "flywheel"
+        yaml_files = list(proposal_dir.glob("*.yaml"))
+        assert len(yaml_files) >= 1, "At least one YAML file should exist"
+
+        # Verify YAML is valid and has required fields
+        with open(yaml_files[0], "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+
+        assert "skill" in data, "Proposal must have 'skill' key"
+        skill = data["skill"]
+        assert "name" in skill, "skill.name required"
+        assert "description" in skill, "skill.description required"
+        assert "trigger" in skill, "skill.trigger required"
+        assert "pattern_hash" in skill["trigger"], "trigger.pattern_hash required"
+        assert "provenance" in skill, "skill.provenance required"
+        assert "occurrences" in skill["provenance"], "provenance.occurrences required"
+
+    def test_proposal_description_from_routing_config(
+        self, telemetry_dual_sink, mock_llm, cleanup_proposals
+    ):
+        """Proposal description comes from routing.config, not generated."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+        from engine.profile import get_profile_path
+        import yaml
+
+        # Generate candidate
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+
+        propose_skills()
+
+        # Read proposal
+        proposal_dir = get_profile_path() / "queue" / "flywheel"
+        yaml_files = list(proposal_dir.glob("*.yaml"))
+        assert len(yaml_files) >= 1
+
+        with open(yaml_files[0], "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+
+        description = data["skill"]["description"]
+        # Should be the route description from routing.config, not empty
+        assert description, "Description should not be empty"
+        assert description != data["skill"]["name"], \
+            "Description should be from config, not just the intent name"
+
+    def test_proposal_includes_provenance(
+        self, telemetry_dual_sink, mock_llm, cleanup_proposals
+    ):
+        """Proposal includes full provenance metadata."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+        from engine.profile import get_profile_path
+        import yaml
+
+        # Generate candidate
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+
+        propose_skills()
+
+        # Read proposal
+        proposal_dir = get_profile_path() / "queue" / "flywheel"
+        yaml_files = list(proposal_dir.glob("*.yaml"))
+        with open(yaml_files[0], "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+
+        provenance = data["skill"]["provenance"]
+        assert provenance["occurrences"] >= 3, "Should have at least 3 occurrences"
+        assert provenance["first_seen"], "first_seen should be set"
+        assert provenance["last_seen"], "last_seen should be set"
+        assert provenance["proposed_at"], "proposed_at should be set"
+        assert provenance["proposed_by"] == "flywheel_stage_3", \
+            f"proposed_by should be 'flywheel_stage_3', got {provenance['proposed_by']}"
+
+    def test_propose_skips_existing_proposals(
+        self, telemetry_dual_sink, mock_llm, cleanup_proposals
+    ):
+        """Calling propose_skills() twice doesn't create duplicates."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+        from engine.profile import get_profile_path
+
+        # Generate candidate
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+
+        # First call creates proposals
+        proposals1 = propose_skills()
+        assert len(proposals1) >= 1
+
+        # Second call should return empty (all already proposed)
+        proposals2 = propose_skills()
+        assert len(proposals2) == 0, \
+            f"Second call should return empty, got {proposals2}"
+
+        # Verify file count unchanged
+        proposal_dir = get_profile_path() / "queue" / "flywheel"
+        yaml_files = list(proposal_dir.glob("*.yaml"))
+        assert len(yaml_files) == len(proposals1), \
+            "File count should match first call's proposals"
+
+    def test_propose_skips_subthreshold_patterns(
+        self, telemetry_dual_sink, mock_llm, cleanup_proposals
+    ):
+        """2 occurrences (below threshold) doesn't generate proposals."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+
+        # Only 2 occurrences (below default threshold of 3)
+        mock_llm.append("Response 1")
+        mock_llm.append("Response 2")
+        run_pipeline(raw_input="hello", source="test")
+        run_pipeline(raw_input="hi", source="test")
+
+        proposals = propose_skills()
+        assert len(proposals) == 0, \
+            f"2 occurrences should not generate proposals, got {proposals}"
+
+    def test_no_llm_calls_in_propose(
+        self, telemetry_dual_sink, mock_llm, cleanup_proposals
+    ):
+        """propose_skills() is Tier 0 - no LLM calls."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+
+        # Generate candidate
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+
+        # Record LLM queue length before propose
+        llm_queue_before = len(mock_llm)
+
+        # Call propose_skills
+        propose_skills()
+
+        # LLM queue should be unchanged (no calls made)
+        assert len(mock_llm) == llm_queue_before, \
+            "propose_skills() should not consume any LLM responses"
+
+    def test_show_proposals_route_works(
+        self, telemetry_dual_sink, mock_llm, cleanup_proposals
+    ):
+        """show proposals route displays pending proposals."""
+        from engine.pipeline import run_pipeline
+        from engine.flywheel import propose_skills
+
+        # Generate candidate and proposals
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+        propose_skills()
+
+        # Run show proposals
+        context = run_pipeline(raw_input="show proposals", source="test")
+
+        assert context.executed
+        assert context.intent == "show_proposals"
+        result_data = context.result.get("data", {})
+        assert result_data.get("type") == "flywheel_proposals"
+        assert "proposals" in result_data
+        assert len(result_data["proposals"]) >= 1
+
+    def test_propose_skills_route_works(
+        self, telemetry_dual_sink, mock_llm, cleanup_proposals
+    ):
+        """propose skills route generates proposals via pipeline."""
+        from engine.pipeline import run_pipeline
+
+        # Generate candidate
+        for greeting in ["hello", "hi", "hey"]:
+            mock_llm.append(f"Response to {greeting}")
+            run_pipeline(raw_input=greeting, source="test")
+
+        # Run propose skills through pipeline
+        context = run_pipeline(raw_input="propose skills", source="test")
+
+        assert context.executed
+        assert context.intent == "propose_skills"
+        result_data = context.result.get("data", {})
+        assert result_data.get("type") == "flywheel_propose"
+        assert "proposals" in result_data
