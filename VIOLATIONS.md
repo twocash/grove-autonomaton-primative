@@ -292,6 +292,31 @@ The Skill Flywheel is the mechanism behind "authors its own evolution." Without 
 
 ---
 
+## V-014: Hardcoded Tier Assignments Violate Invariant #2
+**Status:** ✅ Resolved
+**Priority:** CRITICAL — engine violates its own spec
+**Files:** `engine/pipeline.py`, `engine/dispatcher.py`, `engine/cognitive_router.py`, `profiles/reference/config/kaizen.yaml`, `profiles/reference/config/routing.config`
+**Invariant:** #2 (Config Over Code)
+
+**The Problem:**
+Six places where code decides tiers instead of config: classification tier, reclassified intent tier, local context tier, skill execution tier, unknown default tier, and Ratchet write guard using tier as proxy for LLM usage.
+
+**The Fix:**
+1. Add `classification_tier` to kaizen.yaml — LLM classification reads it
+2. Add `unknown_default_tier` to routing.config — unknown results read it
+3. RoutingResult tier after LLM classification uses route's configured tier
+4. Skill execution uses `routing_result.tier` not hardcoded 2
+5. Local context and new tiered_response read tier from kaizen option config
+6. Ratchet write guard checks `classification_source == "llm"` not `tier < 2`
+7. New Kaizen option: "Answer with deeper reasoning (Sonnet)" — tier 2 response
+
+**Acceptance Tests:** All 195 tests pass. Grep for `tier=2` in pipeline/dispatcher returns zero.
+
+**Commit:** `V-014-config-driven-tiers`
+**Resolved:** 2026-03-24
+
+---
+
 ## Recommended Sequence
 
 1. ~~**V-005** (tmpclaude cleanup)~~ ✅
@@ -302,14 +327,15 @@ The Skill Flywheel is the mechanism behind "authors its own evolution." Without 
 6. ~~**V-004** (clarification jidoka simplification)~~ ✅ `76b2291`
 7. ~~**V-009 Phase 1** (telemetry-based architecture tests 1-7)~~ ✅ `bcd4132`
 8. ~~**V-013** (Flywheel Stage 2 — pattern_hash + DETECT)~~ ✅
-9. **V-009 Phase 2** (legacy test cleanup — now 234 tests)
-10. **V-002** (keyword bloat — already partially addressed in reference profile)
-11. **V-007** (dispatcher audit — extract coach-specific handlers)
-12. **V-008** (startup ceremony audit — verify reference profile is clean)
-13. **V-003** (Glass consistency — audit after V-011)
-14. **V-009 Phase 3** (Flywheel Stages 3-6 — PROPOSE, APPROVE, EXECUTE, REFINE)
+9. ~~**V-014** (Config-driven tiers — zero hardcoded tier assignments)~~ ✅
+10. **V-009 Phase 2** (legacy test cleanup — now 195 tests)
+11. **V-002** (keyword bloat — already partially addressed in reference profile)
+12. **V-007** (dispatcher audit — extract coach-specific handlers)
+13. **V-008** (startup ceremony audit — verify reference profile is clean)
+14. **V-003** (Glass consistency — audit after V-011)
+15. **V-009 Phase 3** (Flywheel Stages 3-6 — PROPOSE, APPROVE, EXECUTE, REFINE)
 
 ---
 
-*Last updated: 2026-03-22 (V-013 complete — 234 tests green, Flywheel DETECT operational)*
+*Last updated: 2026-03-24 (V-014 complete — 195 tests green, zero hardcoded tiers)*
 *Register maintained by: Jim Calhoun / Grove Architecture*

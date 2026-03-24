@@ -30,6 +30,12 @@ kaizen:
   header: "KAIZEN"
   role: "The improvement proposal."
   bar: "━"
+
+  # What tier model classifies intent when operator consents to LLM.
+  # This is the CLASSIFICATION call — not the response generation.
+  # Haiku is correct: classification is cheap work.
+  classification_tier: 1
+
   prompt: |
     The LLM can learn what you mean — the Ratchet
     will cache it so it's free next time.
@@ -38,11 +44,16 @@ kaizen:
       label: "Use the LLM to classify (cached after)"
       capability: llm_classify
     "2":
+      label: "Answer with deeper reasoning (Sonnet)"
+      capability: tiered_response
+      tier: 2
+    "3":
       label: "Answer from what you already know (free)"
       capability: local_context
-    "3":
+      tier: 1
+    "4":
       label: "Show me what you can help with (free)"
       capability: config_menu
-    "4":
+    "5":
       label: "I'll rephrase"
       capability: cancel

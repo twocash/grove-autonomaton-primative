@@ -577,23 +577,33 @@ class InvariantPipeline:
             config=config
         )
 
-        # Dispatch to capability handler
-        capability = options_config.get(choice, {}).get("capability", "cancel")
-        self._dispatch_kaizen_capability(capability)
+        # Dispatch to capability handler with option config
+        option_entry = options_config.get(choice, {})
+        capability = option_entry.get("capability", "cancel")
+        self._dispatch_kaizen_capability(capability, option_config=option_entry)
 
         # ALL paths log approval trace — including cancel
         self._log_approval_trace()
 
-    def _dispatch_kaizen_capability(self, capability: str) -> None:
+    def _dispatch_kaizen_capability(self, capability: str, option_config: dict = None) -> None:
         """Route to the appropriate capability handler."""
+        import inspect
+        if option_config is None:
+            option_config = {}
         handlers = {
             "llm_classify": self._kaizen_llm_classify,
             "local_context": self._kaizen_local_context,
+            "tiered_response": self._kaizen_tiered_response,
             "config_menu": self._kaizen_config_menu,
             "cancel": self._kaizen_cancel,
         }
         handler = handlers.get(capability, self._kaizen_cancel)
-        handler()
+        # Pass option_config to handlers that accept it
+        sig = inspect.signature(handler)
+        if "option_config" in sig.parameters:
+            handler(option_config=option_config)
+        else:
+            handler()
 
     def _apply_routing_result(self, result) -> None:
         """Apply a RoutingResult to the pipeline context."""
@@ -652,8 +662,13 @@ class InvariantPipeline:
             self._kaizen_local_context()
             return
 
+        # Read classification tier from kaizen config (Config Over Code)
+        kaizen_config = self._load_kaizen_config()
+        kaizen_section = kaizen_config.get("kaizen", {})
+        classification_tier = kaizen_section.get("classification_tier", 1)
+
         try:
-            response = call_llm(prompt=prompt, tier=2, intent="llm_intent_classify")
+            response = call_llm(prompt=prompt, tier=classification_tier, intent="llm_intent_classify")
             json_str = response.strip()
             start_idx = json_str.find('{')
             end_idx = json_str.rfind('}')
@@ -675,7 +690,7 @@ class InvariantPipeline:
                     intent=classified_intent,
                     domain=rc.get("domain", "general"),
                     zone=rc.get("zone", "yellow"),
-                    tier=2,  # LLM classification always tier 2 (enables Ratchet cache)
+                    tier=rc.get("tier", 1),  # Route's configured execution tier
                     confidence=confidence,
                     handler=rc.get("handler"),
                     handler_args=rc.get("handler_args", {}),
@@ -719,11 +734,14 @@ class InvariantPipeline:
         else:
             self._kaizen_cancel()
 
-    def _kaizen_local_context(self) -> None:
+    def _kaizen_local_context(self, option_config: dict = None) -> None:
         """Capability: Route to general_chat for local context response.
 
-        Sets context state only. Stage 4 trace emitted by caller.
+        Tier reads from kaizen.yaml option config (Config Over Code).
         """
+        if option_config is None:
+            option_config = {}
+        tier = option_config.get("tier", 1)  # Fallback for crash prevention
         self.context.intent = "general_chat"
         self.context.domain = "system"
         self.context.zone = "green"
@@ -731,7 +749,27 @@ class InvariantPipeline:
         self.context.entities["routing"]["handler_args"] = {}
         self.context.entities["routing"]["intent_type"] = "informational"
         self.context.entities["routing"]["action_required"] = False
-        self.context.entities["routing"]["tier"] = 1
+        self.context.entities["routing"]["tier"] = tier
+        self.context.approved = True
+
+    def _kaizen_tiered_response(self, option_config: dict = None) -> None:
+        """Capability: Route to general_chat at config-specified tier.
+
+        Tier comes from kaizen.yaml option config. This is the pattern-
+        compliant way to offer different compute levels — config declares
+        the tier, engine reads it.
+        """
+        if option_config is None:
+            option_config = {}
+        tier = option_config.get("tier", 2)  # Fallback for crash prevention
+        self.context.intent = "general_chat"
+        self.context.domain = "system"
+        self.context.zone = "green"
+        self.context.entities["routing"]["handler"] = "general_chat"
+        self.context.entities["routing"]["handler_args"] = {}
+        self.context.entities["routing"]["intent_type"] = "informational"
+        self.context.entities["routing"]["action_required"] = False
+        self.context.entities["routing"]["tier"] = tier
         self.context.approved = True
 
     def _kaizen_config_menu(self) -> None:
@@ -872,12 +910,11 @@ class InvariantPipeline:
         from engine.profile import get_config_dir
 
         routing_info = self.context.entities.get("routing", {})
-        tier = routing_info.get("tier", 0)
         llm_metadata = routing_info.get("llm_metadata", {})
 
-        # Only cache LLM classifications that were confirmed by execution
-        if tier < 2:
-            return  # Already Tier 0/1 — no demotion needed
+        # Only cache LLM classifications (the Ratchet stores what the LLM learned)
+        if self.context.classification_source != "llm":
+            return  # Only cache LLM classifications
         if not self.context.approved:
             return
         if not self.context.executed:

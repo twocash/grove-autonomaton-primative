@@ -341,7 +341,7 @@ Please execute the skill based on the above instructions and user request.
             response = call_llm(
                 prompt=execution_prompt,
                 system=system_prompt,
-                tier=2,  # Use Sonnet for skill execution
+                tier=routing_result.tier,  # Tier from routing.config
                 intent=f"skill_execution:{skill_name}"
             )
 

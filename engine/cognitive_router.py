@@ -191,8 +191,9 @@ class CognitiveRouter:
 
     def _unknown_result(self) -> RoutingResult:
         """Return unknown result. Stage 4 handles via Kaizen."""
+        default_tier = self.config.get("router", {}).get("unknown_default_tier", 1)
         return RoutingResult(
-            intent="unknown", domain="general", zone="yellow", tier=1,
+            intent="unknown", domain="general", zone="yellow", tier=default_tier,
             confidence=0.0, classification_source="unknown"
         )
 

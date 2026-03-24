@@ -130,17 +130,19 @@ class TestConfigDrivenRouting:
             "Sub-menu should set a handler from routing.config"
 
 
-    def test_option4_cancels_pipeline(self, telemetry_sink, mock_ux_input):
+    def test_option5_cancels_pipeline(self, telemetry_sink, mock_ux_input):
         """
-        Option 4 (rephrase) cancels the pipeline gracefully.
+        Option 5 (rephrase) cancels the pipeline gracefully.
 
         White paper Part III ("Sovereignty Guardrails"): the system
         "cannot unilaterally grant itself new authority." If the operator
         says rephrase, the pipeline halts.
+
+        V-014: Option numbering shifted when tiered_response was added.
         """
         from engine.pipeline import run_pipeline
 
-        mock_ux_input.append("4")
+        mock_ux_input.append("5")
 
         context = run_pipeline(
             raw_input="completely nonsensical gibberish here",
@@ -148,7 +150,7 @@ class TestConfigDrivenRouting:
         )
 
         assert context.approved is False, \
-            "Option 4 should not approve the pipeline"
+            "Option 5 should not approve the pipeline"
         assert context.result.get("status") == "cancelled", \
             f"Expected status 'cancelled', got '{context.result.get('status')}'"
 
