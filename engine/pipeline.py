@@ -639,11 +639,34 @@ class InvariantPipeline:
         capabilities implemented as _kaizen_{capability} methods.
 
         V-017: Three-beat TPS display with diagnostic context.
+        V-018: Emits kaizen_fired_free_mode when Learning Mode is off.
         """
         from engine.ux import ask_jidoka
+        from engine.profile import get_session_enrichment
 
         # Track that Kaizen fired (for UX tips)
         self.context.events.append("kaizen_fired")
+
+        # V-018: Check if Learning Mode is disabled (Free Mode)
+        # Emit event so tip engine can suggest enabling it
+        enrichment_enabled = get_session_enrichment()
+        if enrichment_enabled is None:
+            # Check config if no session override
+            import yaml
+            from engine.profile import get_config_dir
+            try:
+                config_path = get_config_dir() / "routing.config"
+                if config_path.exists():
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        config = yaml.safe_load(f) or {}
+                    enrichment_enabled = config.get("router", {}).get("enrichment", {}).get("enabled", False)
+                else:
+                    enrichment_enabled = False
+            except Exception:
+                enrichment_enabled = False
+
+        if not enrichment_enabled:
+            self.context.events.append("kaizen_fired_free_mode")
 
         config = self._load_kaizen_config()
         routing_info = self.context.entities.get("routing", {})
@@ -726,11 +749,15 @@ class InvariantPipeline:
             "llm_metadata": result.llm_metadata or {}
         }
 
-    def _kaizen_llm_classify(self) -> None:
+    def _kaizen_llm_classify(self, option_config: dict = None) -> None:
         """Capability: LLM classification with consent.
 
         Calls call_llm() directly — this is Stage 4 infrastructure.
         The router is a pure lookup; LLM calls live here.
+
+        V-018: Reads response_tier from option_config. Classification always
+        uses Haiku (tier 1). The operator's chosen response_tier propagates
+        to the RoutingResult.tier for Stage 5 execution.
         """
         import json
         from engine.cognitive_router import get_router, RoutingResult
@@ -739,12 +766,15 @@ class InvariantPipeline:
         from engine.telemetry import log_event
         from engine.profile import get_config_dir
 
+        if option_config is None:
+            option_config = {}
+
         router = get_router()
         route_descriptions = router.get_route_descriptions()
         valid_intents = list(route_descriptions.keys())
 
         if not valid_intents:
-            self._kaizen_local_context()
+            self._kaizen_local_context(option_config=option_config)
             return
 
         # Build prompt
@@ -764,13 +794,20 @@ class InvariantPipeline:
                     f'Return ONLY valid JSON: {{"intent":"<name>","confidence":<0-1>}}'
                 )
         except Exception:
-            self._kaizen_local_context()
+            self._kaizen_local_context(option_config=option_config)
             return
 
-        # Read classification tier from kaizen config (Config Over Code)
-        kaizen_config = self._load_kaizen_config()
-        kaizen_section = kaizen_config.get("kaizen", {})
-        classification_tier = kaizen_section.get("classification_tier", 1)
+        # V-018: Read classification_tier from option config (per-option),
+        # fallback to kaizen section default, then to 1.
+        classification_tier = option_config.get("classification_tier")
+        if classification_tier is None:
+            kaizen_config = self._load_kaizen_config()
+            kaizen_section = kaizen_config.get("kaizen", {})
+            classification_tier = kaizen_section.get("classification_tier", 1)
+
+        # V-018: Read response_tier from option config — this is what the
+        # operator chose. Use route tier as fallback.
+        response_tier = option_config.get("response_tier")
 
         try:
             response = call_llm(prompt=prompt, tier=classification_tier, intent="llm_intent_classify")
@@ -791,11 +828,13 @@ class InvariantPipeline:
 
             if classified_intent in valid_intents and confidence >= min_conf:
                 rc = router.routes[classified_intent]
+                # V-018: Use operator's response_tier if provided, else route's tier
+                execution_tier = response_tier if response_tier is not None else rc.get("tier", 1)
                 llm_result = RoutingResult(
                     intent=classified_intent,
                     domain=rc.get("domain", "general"),
                     zone=rc.get("zone", "yellow"),
-                    tier=rc.get("tier", 1),  # Route's configured execution tier
+                    tier=execution_tier,
                     confidence=confidence,
                     handler=rc.get("handler"),
                     handler_args=rc.get("handler_args", {}),
@@ -805,6 +844,7 @@ class InvariantPipeline:
                         "source": "llm_classify",
                         "classification_confidence": confidence,
                         "pattern_label": pattern_label,
+                        "response_tier": execution_tier,  # V-018: Track chosen tier
                     },
                     classification_source="llm"
                 )
@@ -833,7 +873,7 @@ class InvariantPipeline:
             options=fallback_options
         )
         if fallback_choice == "1":
-            self._kaizen_local_context()
+            self._kaizen_local_context(option_config=option_config)
         elif fallback_choice == "2":
             self._kaizen_config_menu()
         else:

@@ -78,6 +78,7 @@ class Dispatcher:
             "mcp_formatter": self._handle_mcp_formatter,
             # Core system handlers
             "clear_cache": self._handle_clear_cache,
+            "toggle_learning_mode": self._handle_toggle_learning_mode,  # V-018
         }
 
     def register_handler(self, name: str, handler: Callable) -> None:
@@ -678,6 +679,48 @@ Generate a focused strategic brief (3-5 items, natural language):"""
                 success=False,
                 message=f"Failed to clear cache: {e}",
                 data={"type": "cache_clear", "error": str(e)}
+            )
+
+    def _handle_toggle_learning_mode(
+        self,
+        routing_result: RoutingResult,
+        raw_input: str
+    ) -> DispatchResult:
+        """
+        Toggle Learning Mode (semantic enrichment).
+
+        V-018: Learning Mode enables Haiku-based semantic annotation on
+        keyword matches. This accelerates Flywheel pattern detection at
+        ~$0.0004/turn. Toggle is Yellow Zone — affects session behavior.
+
+        handler_args:
+            enable: True to enable Learning Mode, False to disable (Free Mode)
+        """
+        from engine.profile import set_session_enrichment, get_session_enrichment
+        from engine.llm_client import estimate_turn_cost
+
+        enable = routing_result.handler_args.get("enable", True)
+        set_session_enrichment(enable)
+
+        if enable:
+            cost = estimate_turn_cost(1)
+            return DispatchResult(
+                success=True,
+                message=(
+                    f"Learning Mode enabled.\n"
+                    f"  Semantic enrichment via Haiku (~${cost:.4f}/turn).\n"
+                    f"  Faster Flywheel pattern detection. The system learns as you use it."
+                ),
+                data={"type": "learning_mode", "enabled": True}
+            )
+        else:
+            return DispatchResult(
+                success=True,
+                message=(
+                    "Learning Mode disabled. Back to Free Mode.\n"
+                    "  No per-turn cost. Keyword matching only."
+                ),
+                data={"type": "learning_mode", "enabled": False}
             )
 
     # =========================================================================
