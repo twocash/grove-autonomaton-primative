@@ -25,6 +25,10 @@ PROFILES_DIR = Path(__file__).parent.parent / "profiles"
 _active_profile: Optional[str] = None
 _profile_base_path: Optional[Path] = None
 
+# V-015: Session-scoped enrichment mode (Learning Mode vs Free Mode)
+# Set by startup mode selection, not persisted to disk.
+_session_enrichment_enabled: Optional[bool] = None
+
 
 def set_profile(profile_name: str, repo_root: Optional[Path] = None) -> None:
     """
@@ -115,3 +119,30 @@ def list_available_profiles(repo_root: Optional[Path] = None) -> list[str]:
         return []
 
     return [d.name for d in profiles_dir.iterdir() if d.is_dir()]
+
+
+# =========================================================================
+# V-015: Session Enrichment State
+# =========================================================================
+
+def set_session_enrichment(enabled: bool) -> None:
+    """
+    Set session-scoped enrichment mode (Learning Mode vs Free Mode).
+
+    V-015: This is set by startup mode selection and persists for the session.
+    Not written to disk — the operator controls persistence via routing.config.
+    """
+    global _session_enrichment_enabled
+    _session_enrichment_enabled = enabled
+
+
+def get_session_enrichment() -> Optional[bool]:
+    """
+    Get session-scoped enrichment override.
+
+    Returns:
+        True: Learning Mode (enrichment enabled)
+        False: Free Mode (enrichment disabled)
+        None: No session override — use routing.config default
+    """
+    return _session_enrichment_enabled

@@ -1,0 +1,30 @@
+# startup.yaml
+# OOBE: Out-of-box experience enhancement.
+# Core pattern requires only: routing.config, zones.schema, telemetry.log
+#
+# This file enables the startup mode selection Kaizen — surfacing
+# the compute posture decision before the operator's first input.
+# White paper Part IV, Stage 01: "The system comes to the human;
+# the human never has to remember to come to the system."
+
+startup:
+  mode_selection:
+    enabled: true
+    prompt: "Choose your compute posture before we begin."
+    options:
+      "1":
+        label: "Free Mode — keyword matching only, LLM on-demand with consent"
+        description: "Zero cost for recognized intents. Kaizen fires for unknowns."
+        sets:
+          router.enrichment.enabled: false
+      "2":
+        label: "Learning Mode — keywords + Haiku annotation (~$0.0004/turn)"
+        description: "Richer pattern detection. Flywheel fills faster."
+        sets:
+          router.enrichment.enabled: true
+
+  # TPS framing for startup
+  jidoka:
+    message: "The system has four tiers of intelligence available."
+  andon:
+    message: "Choose your compute posture before we begin."

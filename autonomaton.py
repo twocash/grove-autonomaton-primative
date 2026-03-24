@@ -116,6 +116,87 @@ def _load_profile_handlers():
         module.register(dispatcher)
 
 
+def _run_startup_mode_selection() -> bool:
+    """
+    V-015: Startup Kaizen for compute mode selection.
+
+    Reads startup.yaml from the profile's config directory.
+    If mode_selection.enabled is true, presents mode options via ask_jidoka().
+    Returns True if Learning Mode is selected (enrichment enabled).
+
+    This is UX infrastructure, not a pipeline traversal.
+    White paper Part IV, Stage 01: "The system comes to the human."
+    """
+    import yaml
+    from engine.profile import get_config_dir
+    from engine.ux import ask_jidoka
+    from engine.telemetry import log_event
+
+    startup_path = get_config_dir() / "startup.yaml"
+    if not startup_path.exists():
+        return False  # No startup config — default to Free Mode
+
+    try:
+        with open(startup_path, encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+    except Exception:
+        return False  # Config error — default to Free Mode
+
+    startup = config.get("startup", {})
+    mode_selection = startup.get("mode_selection", {})
+
+    if not mode_selection.get("enabled", False):
+        return False  # Mode selection disabled — default to Free Mode
+
+    # Build options dict for ask_jidoka
+    options_config = mode_selection.get("options", {})
+    options = {k: v.get("label", k) for k, v in options_config.items()}
+
+    if not options:
+        return False  # No options configured
+
+    # TPS framing
+    jidoka_msg = startup.get("jidoka", {}).get("message", "The system has options available.")
+    andon_msg = startup.get("andon", {}).get("message", "Choose before we begin.")
+
+    # Build diagnostic for three-beat display
+    diagnostic = {
+        "summary": jidoka_msg,
+        "confidence": 1.0,
+        "cost": 0.00,
+    }
+
+    c = Colors
+    print()
+    print(f"  {c.CYAN}▰ JIDOKA{c.RESET} {'━' * 50}")
+    print(f"  {jidoka_msg}")
+    print()
+    print(f"  {c.YELLOW}▰ ANDON{c.RESET} {'━' * 51}")
+    print(f"  {andon_msg}")
+    print()
+
+    # Present choice
+    choice = ask_jidoka(
+        context_message=mode_selection.get("prompt", "Choose your mode:"),
+        options=options
+    )
+
+    # Determine if Learning Mode was selected
+    selected = options_config.get(choice, {})
+    sets = selected.get("sets", {})
+    enrichment_enabled = sets.get("router.enrichment.enabled", False)
+
+    # Log the mode selection to telemetry (not a pipeline traversal)
+    log_event(
+        source="startup_mode_selection",
+        raw_transcript=f"Mode selected: {selected.get('label', choice)}",
+        zone_context="green",
+        inferred={"mode": "learning" if enrichment_enabled else "free"}
+    )
+
+    return enrichment_enabled
+
+
 def print_banner(profile: str, dock_info: str, glass_enabled: bool = False):
     """Display startup banner with profile and dock status. Minimal."""
     c = Colors
@@ -296,6 +377,12 @@ def main():
     dock_info = f"Dock: {dock.get_chunk_count()} chunks from {len(dock.list_sources())} sources"
 
     print_banner(profile, dock_info, glass_enabled)
+
+    # V-015: Startup mode selection (before any pipeline traversals)
+    # This sets session-scoped enrichment mode, not persisted to disk.
+    from engine.profile import set_session_enrichment
+    enrichment_enabled = _run_startup_mode_selection()
+    set_session_enrichment(enrichment_enabled)
 
     # Check for structured plan — generate on first boot (Sprint 5)
     # Now routed through the pipeline (purity-audit-v1)

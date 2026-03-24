@@ -258,6 +258,11 @@ class InvariantPipeline:
             }
         }
 
+        # V-015: Learning Mode enrichment (Haiku annotation)
+        # Only runs on keyword matches — not cache hits, not unknowns.
+        # The router is pure lookup; the pipeline handles LLM calls.
+        self._run_enrichment_if_enabled()
+
         # --- End of _run_recognition ---
         # Stage 2 trace: recognition complete
         routing_info = self.context.entities.get("routing", {})
@@ -283,6 +288,106 @@ class InvariantPipeline:
                 "sentiment": routing_info.get("llm_metadata", {}).get("sentiment"),
             }
         )
+
+    def _run_enrichment_if_enabled(self) -> None:
+        """
+        V-015: Learning Mode semantic enrichment.
+
+        When enrichment is enabled (Learning Mode), annotates keyword matches
+        with pattern_label and semantic_category via Haiku call.
+
+        Only runs when:
+        - Session override is True (set_session_enrichment), OR
+        - routing.config → router.enrichment.enabled is true
+        AND:
+        - classification_source == "keyword"
+        - intent != "unknown"
+
+        The router is pure lookup. The pipeline owns LLM calls.
+        """
+        import yaml
+        from engine.profile import get_session_enrichment, get_config_dir
+
+        # Check session override first (set by startup mode selection)
+        session_override = get_session_enrichment()
+        if session_override is not None:
+            enrichment_enabled = session_override
+        else:
+            # Read from routing.config
+            try:
+                config_path = get_config_dir() / "routing.config"
+                if config_path.exists():
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        config = yaml.safe_load(f) or {}
+                    enrichment_enabled = config.get("router", {}).get("enrichment", {}).get("enabled", False)
+                else:
+                    enrichment_enabled = False
+            except Exception:
+                enrichment_enabled = False
+
+        if not enrichment_enabled:
+            return
+
+        # Only enrich keyword matches (not cache hits, not unknowns)
+        if self.context.classification_source != "keyword":
+            return
+        if self.context.intent == "unknown":
+            return
+
+        # Make Haiku call for enrichment
+        try:
+            from engine.llm_client import call_llm
+
+            # Read enrichment tier from config (default: 1 = Haiku)
+            try:
+                config_path = get_config_dir() / "routing.config"
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = yaml.safe_load(f) or {}
+                enrichment_tier = config.get("router", {}).get("enrichment", {}).get("tier", 1)
+            except Exception:
+                enrichment_tier = 1
+
+            prompt = (
+                f'Analyze this input: "{self.context.raw_input}"\n'
+                f'Classified as intent: {self.context.intent}\n\n'
+                f'Return JSON with:\n'
+                f'- pattern_label: A short phrase describing the intent pattern (e.g., "schedule query", "status check")\n'
+                f'- semantic_category: Broader category (e.g., "information", "action", "navigation")\n\n'
+                f'Return ONLY valid JSON: {{"pattern_label":"...","semantic_category":"..."}}'
+            )
+
+            response = call_llm(prompt=prompt, tier=enrichment_tier, intent="enrichment_annotation")
+
+            # Parse response
+            import json
+            json_str = response.strip()
+            start_idx = json_str.find('{')
+            end_idx = json_str.rfind('}')
+            if start_idx != -1 and end_idx != -1:
+                json_str = json_str[start_idx:end_idx + 1]
+            result = json.loads(json_str)
+
+            # Write to routing metadata
+            llm_metadata = self.context.entities.get("routing", {}).get("llm_metadata", {})
+            llm_metadata["enrichment"] = {
+                "pattern_label": result.get("pattern_label", ""),
+                "semantic_category": result.get("semantic_category", ""),
+                "tier": enrichment_tier,
+            }
+            self.context.entities["routing"]["llm_metadata"] = llm_metadata
+
+            # Track enrichment cost
+            try:
+                from engine.llm_client import get_last_call_metadata
+                last_meta = get_last_call_metadata()
+                if last_meta:
+                    llm_metadata["enrichment"]["cost_usd"] = last_meta.get("cost_usd", 0.0)
+            except ImportError:
+                pass
+
+        except Exception:
+            # Enrichment failure is non-fatal — continue without annotation
+            pass
 
     def _run_compilation(self) -> None:
         """

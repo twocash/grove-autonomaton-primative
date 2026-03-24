@@ -36,6 +36,54 @@ class _Colors:
 _c = _Colors
 
 
+# =========================================================================
+# V-015: Template Resolution for Tiered Options
+# =========================================================================
+
+def _resolve_option_template(label: str, tier: int = None) -> str:
+    """
+    Resolve template variables in option labels.
+
+    V-015: Options in kaizen.yaml can include {tier_label} and {tier_cost}
+    placeholders. This function resolves them from models.yaml at display time.
+
+    Args:
+        label: The option label string, possibly containing {tier_label}, {tier_cost}
+        tier: The compute tier (1, 2, 3) from the option config
+
+    Returns:
+        Label with placeholders resolved
+    """
+    if '{tier_label}' not in label and '{tier_cost}' not in label:
+        return label
+
+    if tier is None:
+        return label
+
+    # Tier-to-friendly-name mapping
+    tier_labels = {
+        1: "Haiku",
+        2: "Sonnet",
+        3: "Opus"
+    }
+
+    # Estimated cost per turn (rough estimate: ~500 input + 200 output tokens)
+    # Based on models.yaml pricing per million tokens
+    tier_costs = {
+        1: 0.0004,   # Haiku: ~$0.0004/turn
+        2: 0.0045,   # Sonnet: ~$0.0045/turn
+        3: 0.0225,   # Opus: ~$0.0225/turn
+    }
+
+    tier_label = tier_labels.get(tier, f"Tier {tier}")
+    tier_cost = tier_costs.get(tier, 0.01)
+
+    resolved = label.replace('{tier_label}', tier_label)
+    resolved = resolved.replace('{tier_cost}', f"{tier_cost:.4f}")
+
+    return resolved
+
+
 def ask_jidoka(
     context_message: str,
     options: dict,
@@ -110,10 +158,16 @@ def ask_jidoka(
 
     print(f"\n{context_message}\n")
 
-    # Display options
+    # Display options with V-015 template resolution
     valid_keys = set(options.keys())
+    kaizen_options = config.get("kaizen", {}).get("options", {}) if config else {}
     for key in sorted(options.keys(), key=int):
-        print(f"  {_c.CYAN}[{key}]{_c.RESET} {options[key]}")
+        label = options[key]
+        # V-015: Resolve {tier_label} and {tier_cost} from option config
+        option_entry = kaizen_options.get(key, {})
+        tier = option_entry.get("tier")
+        resolved_label = _resolve_option_template(label, tier)
+        print(f"  {_c.CYAN}[{key}]{_c.RESET} {resolved_label}")
 
     print()
 
