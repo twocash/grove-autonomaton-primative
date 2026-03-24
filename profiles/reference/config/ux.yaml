@@ -32,6 +32,10 @@ tips:
     llm_classification:
       priority: 2
       message: "That used the LLM. Try the exact same phrase again."
+    # V-018: More specific than kaizen_fired — surfaced when Learning Mode is off
+    kaizen_fired_free_mode:
+      priority: 2
+      message: "Type 'enable learning' to let the system learn from your patterns (~$0.0004/turn)."
     kaizen_fired:
       priority: 3
       message: "Jidoka detected uncertainty. Andon stopped the line. Kaizen proposed options. Three TPS roles in one interaction."

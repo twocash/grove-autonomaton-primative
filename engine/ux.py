@@ -40,46 +40,60 @@ _c = _Colors
 # V-015: Template Resolution for Tiered Options
 # =========================================================================
 
-def _resolve_option_template(label: str, tier: int = None) -> str:
+def _resolve_option_template(label: str, tier: int = None,
+                              classification_tier: int = None,
+                              response_tier: int = None) -> str:
     """
     Resolve template variables in option labels.
 
     V-015: Options in kaizen.yaml can include {tier_label} and {tier_cost}
     placeholders. This function resolves them from models.yaml at display time.
 
+    V-018: Added {total_cost} for unified options that include both
+    classification AND response tiers. Config Over Code — reads from llm_client.
+
     Args:
-        label: The option label string, possibly containing {tier_label}, {tier_cost}
-        tier: The compute tier (1, 2, 3) from the option config
+        label: The option label string, possibly containing {tier_label}, {tier_cost}, {total_cost}
+        tier: The compute tier (1, 2, 3) from the option config (legacy single-tier)
+        classification_tier: Tier for LLM classification (V-018 unified options)
+        response_tier: Tier for LLM response (V-018 unified options)
 
     Returns:
         Label with placeholders resolved
     """
-    if '{tier_label}' not in label and '{tier_cost}' not in label:
+    from engine.llm_client import estimate_turn_cost, get_model_label
+
+    has_templates = any(t in label for t in ['{tier_label}', '{tier_cost}', '{total_cost}'])
+    if not has_templates:
         return label
 
-    if tier is None:
-        return label
+    resolved = label
 
-    # Tier-to-friendly-name mapping
-    tier_labels = {
-        1: "Haiku",
-        2: "Sonnet",
-        3: "Opus"
-    }
+    # V-018: Handle {total_cost} for unified classification+response options
+    if '{total_cost}' in resolved:
+        # Use classification_tier and response_tier if provided
+        c_tier = classification_tier if classification_tier is not None else tier
+        r_tier = response_tier if response_tier is not None else tier
 
-    # Estimated cost per turn (rough estimate: ~500 input + 200 output tokens)
-    # Based on models.yaml pricing per million tokens
-    tier_costs = {
-        1: 0.0004,   # Haiku: ~$0.0004/turn
-        2: 0.0045,   # Sonnet: ~$0.0045/turn
-        3: 0.0225,   # Opus: ~$0.0225/turn
-    }
+        if c_tier is not None and r_tier is not None:
+            class_cost = estimate_turn_cost(c_tier)
+            resp_cost = estimate_turn_cost(r_tier)
+            total_cost = class_cost + resp_cost
+            resolved = resolved.replace('{total_cost}', f"{total_cost:.4f}")
+        elif tier is not None:
+            # Fallback: single tier means just that tier's cost
+            total_cost = estimate_turn_cost(tier)
+            resolved = resolved.replace('{total_cost}', f"{total_cost:.4f}")
 
-    tier_label = tier_labels.get(tier, f"Tier {tier}")
-    tier_cost = tier_costs.get(tier, 0.01)
+    # Legacy single-tier placeholders
+    if tier is not None:
+        if '{tier_label}' in resolved:
+            tier_label = get_model_label(tier)
+            resolved = resolved.replace('{tier_label}', tier_label)
 
-    resolved = label.replace('{tier_label}', tier_label)
-    resolved = resolved.replace('{tier_cost}', f"{tier_cost:.4f}")
+        if '{tier_cost}' in resolved:
+            tier_cost = estimate_turn_cost(tier)
+            resolved = resolved.replace('{tier_cost}', f"{tier_cost:.4f}")
 
     return resolved
 
@@ -158,15 +172,21 @@ def ask_jidoka(
 
     print(f"\n{context_message}\n")
 
-    # Display options with V-015 template resolution
+    # Display options with V-015/V-018 template resolution
     valid_keys = set(options.keys())
     kaizen_options = config.get("kaizen", {}).get("options", {}) if config else {}
     for key in sorted(options.keys(), key=int):
         label = options[key]
-        # V-015: Resolve {tier_label} and {tier_cost} from option config
+        # V-015/V-018: Resolve {tier_label}, {tier_cost}, {total_cost} from option config
         option_entry = kaizen_options.get(key, {})
         tier = option_entry.get("tier")
-        resolved_label = _resolve_option_template(label, tier)
+        classification_tier = option_entry.get("classification_tier")
+        response_tier = option_entry.get("response_tier")
+        resolved_label = _resolve_option_template(
+            label, tier,
+            classification_tier=classification_tier,
+            response_tier=response_tier
+        )
         print(f"  {_c.CYAN}[{key}]{_c.RESET} {resolved_label}")
 
     print()

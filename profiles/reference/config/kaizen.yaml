@@ -31,23 +31,32 @@ kaizen:
   role: "The improvement proposal."
   bar: "━"
 
-  # V-015: Tiered LLM options surface compute cost decision to operator.
-  # {tier_label} and {tier_cost} resolve from models.yaml at display time.
+  # V-015/V-018: Tiered LLM options surface compute cost decision to operator.
+  # V-018: Unified "Answer with X" options — classification always uses Haiku,
+  # response uses the chosen tier. {total_cost} = classification + response.
+  # After Kaizen, the response_tier persists through to Stage 5 execution.
   prompt: |
     The LLM can learn what you mean — the Ratchet
     will cache it so it's free next time.
+
+  # Classification tier for all LLM options (Haiku = fast, cheap)
+  classification_tier: 1
+
   options:
     "1":
-      label: "Classify with {tier_label} (~${tier_cost}/turn, cached after)"
+      label: "Answer with Sonnet (~${total_cost}/turn, cached after)"
       capability: llm_classify
-      tier: 2
+      classification_tier: 1
+      response_tier: 2
     "2":
-      label: "Classify with {tier_label} (~${tier_cost}/turn, cached after)"
+      label: "Answer with Opus (~${total_cost}/turn, cached after)"
       capability: llm_classify
-      tier: 3
+      classification_tier: 1
+      response_tier: 3
     "3":
       label: "Answer from what you already know (free)"
       capability: local_context
+      tier: 1
     "4":
       label: "Show me what you can help with (free)"
       capability: config_menu

@@ -118,7 +118,13 @@ def _render_stage_from_event(lines: list, event: dict,
             intent_display = intent
 
         is_cache = method == "cache"
-        cost = "$0.00" if tier < 2 or is_cache else "~$0.003"
+        # V-018: Compute cost from models.yaml (Config Over Code)
+        if tier < 2 or is_cache:
+            cost = "$0.00"
+        else:
+            from engine.llm_client import estimate_turn_cost
+            estimated = estimate_turn_cost(tier)
+            cost = f"~${estimated:.4f}"
         cache_marker = f" {_c.GREEN}✓{_c.RESET}" if is_cache else ""
 
         lines.append(

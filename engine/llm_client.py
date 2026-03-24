@@ -157,6 +157,57 @@ def get_default_max_tokens() -> int:
     return config["default_max_tokens"]
 
 
+def estimate_turn_cost(tier: int, input_tokens: int = 500, output_tokens: int = 200) -> float:
+    """Estimate cost for a single LLM turn at the given tier.
+
+    Uses models.yaml pricing. Default token counts are a conservative
+    estimate for classification/response turns (~500 in, ~200 out).
+
+    Config Over Code: pricing comes from models.yaml, not hardcoded values.
+
+    Args:
+        tier: Compute tier (1=Haiku, 2=Sonnet, 3=Opus)
+        input_tokens: Estimated input tokens (default 500)
+        output_tokens: Estimated output tokens (default 200)
+
+    Returns:
+        Estimated cost in USD
+    """
+    model = get_model_for_tier(tier)
+    return _calculate_cost(model, input_tokens, output_tokens)
+
+
+def get_model_label(tier: int) -> str:
+    """Get human-readable label for a tier's model.
+
+    Extracts friendly name from model ID (e.g., "claude-haiku-4-5" -> "Haiku").
+    Config Over Code: reads from models.yaml tier definitions.
+
+    Args:
+        tier: Compute tier (1, 2, 3)
+
+    Returns:
+        Human-readable model name (e.g., "Haiku", "Sonnet", "Opus")
+    """
+    model = get_model_for_tier(tier)
+
+    # Extract friendly name from model ID
+    model_lower = model.lower()
+    if "haiku" in model_lower:
+        return "Haiku"
+    elif "sonnet" in model_lower:
+        return "Sonnet"
+    elif "opus" in model_lower:
+        return "Opus"
+    else:
+        # Fallback: capitalize first meaningful word
+        parts = model.replace("-", " ").split()
+        for part in parts:
+            if part not in ("claude", "anthropic"):
+                return part.capitalize()
+        return f"Tier {tier}"
+
+
 # Reset config cache (for testing or profile switch)
 def reset_models_config() -> None:
     """Reset the models config cache (call after profile switch)."""
