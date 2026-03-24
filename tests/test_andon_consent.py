@@ -29,14 +29,16 @@ class TestAndonGate:
 
     def test_unknown_input_stops_the_line(self, telemetry_sink, mock_ux_input):
         """
-        Option 2 (local context): system answers from dock without LLM spend.
+        Option 3 (local context): system answers from dock without LLM spend.
 
         White paper Part III ("Digital Jidoka"): "No confident output from
         an uncertain pipeline."
+
+        V-015: Option numbering shifted when tiered LLM options were added.
         """
         from engine.pipeline import run_pipeline
 
-        mock_ux_input.append("2")  # Option 2: answer from local context
+        mock_ux_input.append("3")  # Option 3: answer from local context
 
         context = run_pipeline(
             raw_input="How does this handle regulatory compliance?",
@@ -65,12 +67,14 @@ class TestAndonGate:
 
     def test_unknown_input_routes_to_general_chat(self, telemetry_sink, mock_ux_input):
         """
-        Option 2 (local context) routes to general_chat handler.
+        Option 3 (local context) routes to general_chat handler.
         No LLM classification spend.
+
+        V-015: Option numbering shifted when tiered LLM options were added.
         """
         from engine.pipeline import run_pipeline
 
-        mock_ux_input.append("2")
+        mock_ux_input.append("3")
 
         context = run_pipeline(
             raw_input="What is your architecture?",
@@ -95,16 +99,18 @@ class TestConfigDrivenRouting:
     The sub-menu options come from clarification.yaml, not hardcoded strings.
     """
 
-    def test_option3_shows_config_menu(self, telemetry_sink, mock_ux_input):
+    def test_option4_shows_config_menu(self, telemetry_sink, mock_ux_input):
         """
-        Option 3 → config sub-menu → selection resolves to known intent.
+        Option 4 → config sub-menu → selection resolves to known intent.
 
         Proves the consent architecture is declarative: clarification.yaml
         defines the fallback options, routing.config defines the handlers.
+
+        V-015: Option numbering shifted when tiered LLM options were added.
         """
         from engine.pipeline import run_pipeline
 
-        mock_ux_input.append("3")  # Show what you can help with
+        mock_ux_input.append("4")  # Show what you can help with
         mock_ux_input.append("1")  # First sub-menu option
 
         context = run_pipeline(
@@ -160,10 +166,12 @@ class TestConfigDrivenRouting:
 
         White paper Part III ("Digital Jidoka"): "When any stage of the
         pipeline degrades... the system stops."
+
+        V-015: Option numbering shifted when tiered LLM options were added.
         """
         from engine.pipeline import run_pipeline
 
-        mock_ux_input.append("2")  # Option 2 to continue
+        mock_ux_input.append("3")  # Option 3 (local context) to continue
 
         context = run_pipeline(
             raw_input="something that definitely won't match any keywords",

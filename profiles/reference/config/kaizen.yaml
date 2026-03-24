@@ -31,26 +31,23 @@ kaizen:
   role: "The improvement proposal."
   bar: "━"
 
-  # What tier model classifies intent when operator consents to LLM.
-  # This is the CLASSIFICATION call — not the response generation.
-  # Haiku is correct: classification is cheap work.
-  classification_tier: 1
-
+  # V-015: Tiered LLM options surface compute cost decision to operator.
+  # {tier_label} and {tier_cost} resolve from models.yaml at display time.
   prompt: |
     The LLM can learn what you mean — the Ratchet
     will cache it so it's free next time.
   options:
     "1":
-      label: "Use the LLM to classify (cached after)"
+      label: "Classify with {tier_label} (~${tier_cost}/turn, cached after)"
       capability: llm_classify
-    "2":
-      label: "Answer with deeper reasoning (Sonnet)"
-      capability: tiered_response
       tier: 2
+    "2":
+      label: "Classify with {tier_label} (~${tier_cost}/turn, cached after)"
+      capability: llm_classify
+      tier: 3
     "3":
       label: "Answer from what you already know (free)"
       capability: local_context
-      tier: 1
     "4":
       label: "Show me what you can help with (free)"
       capability: config_menu
