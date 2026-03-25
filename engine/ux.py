@@ -26,40 +26,14 @@ for display style. Frame is pipeline infrastructure, not config.
 """
 
 import sys
-import os
 import json
 
 # Windows UTF-8 support for Unicode box-drawing characters
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
 
-
-# =========================================================================
-# Semantic Color Palette
-# =========================================================================
-# Each color maps to a TPS concept, not a decoration.
-#
-# White Paper Part III §2 (Sovereignty Guardrails):
-#   Green = "Autonomous Routine" → flow, not success
-#   Yellow = "Supervised Proposals" → paused, yielding
-#   Red = "Human-Only Zones" → requires intervention
-#
-# The color IS the governance signal.
-
-class _Colors:
-    """TPS semantic colors — each maps to an architectural concept."""
-    ENABLED = sys.stdout.isatty() and os.environ.get("TERM", "") != "dumb"
-
-    RESET   = "\033[0m" if ENABLED else ""
-    BOLD    = "\033[1m" if ENABLED else ""
-    DIM     = "\033[2m" if ENABLED else ""
-
-    # TPS state colors
-    JIDOKA  = "\033[91m" if ENABLED else ""   # Soft red — quality alert detected
-    ANDON   = "\033[93m" if ENABLED else ""   # Warm amber — line paused, yielding
-    KAIZEN  = "\033[97m" if ENABLED else ""   # Clean white — calm proposal
-    GREEN   = "\033[92m" if ENABLED else ""   # Sage — flow / confirmation echo
-
+# V-024: Unified color constants from theme.py
+from engine.theme import Colors as _Colors
 
 _c = _Colors
 
@@ -152,6 +126,7 @@ def ask_jidoka(
     Returns:
         The key of the selected option (e.g., "1" or "2")
     """
+    # V-024: Whitespace Protocol — single blank line before display block
     print()
 
     # ── Beat 1: JIDOKA ──
@@ -214,6 +189,7 @@ def ask_jidoka(
         print(f"  {_c.DIM}└─{_c.RESET} {kaizen_prompt}")
 
     # ── Options ──
+    # V-024: Whitespace Protocol — single blank line between beats and options
     print()
     valid_keys = set(options.keys())
     for key in sorted(options.keys(), key=int):
@@ -228,6 +204,7 @@ def ask_jidoka(
                 response_tier=opt.get("response_tier")
             )
         print(f"     {_c.BOLD}[{key}]{_c.RESET} {label}")
+    # V-024: Whitespace Protocol — single blank line after options
     print()
 
     # ── Input ──

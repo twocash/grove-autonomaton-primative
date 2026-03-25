@@ -24,29 +24,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 # Profile must be set BEFORE importing engine modules
 from engine.profile import set_profile, list_available_profiles, get_profile
 
-
-# =========================================================================
-# Terminal Colors (ANSI escape codes)
-# =========================================================================
-
-class Colors:
-    """ANSI color codes for terminal output."""
-    # Check if colors are supported
-    ENABLED = sys.stdout.isatty() and os.environ.get("TERM", "") != "dumb"
-
-    # Colors
-    RESET = "\033[0m" if ENABLED else ""
-    BOLD = "\033[1m" if ENABLED else ""
-    DIM = "\033[2m" if ENABLED else ""
-
-    # Zone colors
-    GREEN = "\033[92m" if ENABLED else ""
-    YELLOW = "\033[93m" if ENABLED else ""
-    RED = "\033[91m" if ENABLED else ""
-    CYAN = "\033[96m" if ENABLED else ""
-    WHITE = "\033[97m" if ENABLED else ""
-    BLUE = "\033[94m" if ENABLED else ""
-    MAGENTA = "\033[95m" if ENABLED else ""
+# V-024: Unified color constants from theme.py
+from engine.theme import Colors
 
 
 def zone_color(zone: str) -> str:
@@ -267,11 +246,13 @@ def print_banner(
     Sovereignty starts at boot — the system arrives ready.
     """
     c = Colors
+    # V-024: Whitespace Protocol — single blank line before banner
     print()
-    print(f"{c.CYAN}{'=' * 60}{c.RESET}")
+    # V-024: Banner Redesign — thin lines whisper, equals signs shout
+    print(f"{c.CYAN}{'─' * 60}{c.RESET}")
     print(f"{c.BOLD}{c.WHITE}  THE AUTONOMATON{c.RESET}")
     print(f"{c.DIM}  Profile: {c.CYAN}{profile}{c.RESET}")
-    print(f"{c.CYAN}{'=' * 60}{c.RESET}")
+    print(f"{c.CYAN}{'─' * 60}{c.RESET}")
     print(f"  {c.DIM}{dock_info}{c.RESET}")
     print(f"  {c.DIM}Cortex: {cortex_pending} pending Kaizen item(s){c.RESET}")
     if glass_enabled:
@@ -279,7 +260,7 @@ def print_banner(
     print(f"  {c.DIM}Compute: {c.CYAN}{compute_mode}{c.RESET}")
     if tier_info:
         print(f"  {c.DIM}Tiers: {tier_info}{c.RESET}")
-    print(f"{c.CYAN}{'=' * 60}{c.RESET}")
+    print(f"{c.CYAN}{'─' * 60}{c.RESET}")
 
     # Reference profile intro block
     if profile == "reference":
@@ -288,6 +269,7 @@ def print_banner(
         print(f"  {c.DIM}Every pipeline stage will announce itself as it runs.{c.RESET}")
         print(f"  {c.DIM}Type anything to see the architecture in motion.{c.RESET}")
 
+    # V-024: Whitespace Protocol — single blank line after banner
     print()
 
 
@@ -305,7 +287,8 @@ def display_result(context, verbose: bool) -> None:
 
     # Verbose dock context
     if verbose and context.dock_context:
-        print(f"\n  {c.CYAN}[DOCK CONTEXT]{c.RESET}")
+        # V-024: DOCK CONTEXT uses DIM (infrastructure, not content)
+        print(f"\n  {c.DIM}[DOCK CONTEXT]{c.RESET}")
         dock_text = context.dock_context[0] if context.dock_context else ""
         lines = dock_text.split('\n')
         for line in lines[:5]:
@@ -320,7 +303,8 @@ def display_result(context, verbose: bool) -> None:
         print(f"  {c.DIM}Sources:{c.RESET} {', '.join(data.get('sources', []))}\n")
 
     elif data_type == "queue_status":
-        print(f"\n  {c.MAGENTA}[KAIZEN QUEUE]{c.RESET}")
+        # V-024: KAIZEN QUEUE uses WHITE (Kaizen = calm improvement)
+        print(f"\n  {c.WHITE}[KAIZEN QUEUE]{c.RESET}")
         items = data.get("items", [])
         if items:
             for item in items:
