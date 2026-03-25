@@ -9,23 +9,10 @@ The glass pipeline is enabled via profile.yaml display flags or --glass CLI.
 """
 
 import sys
-import os
 from typing import Optional
 
-
-class _Colors:
-    """ANSI color codes (matches autonomaton.py and ux.py patterns)."""
-    ENABLED = sys.stdout.isatty() and os.environ.get("TERM", "") != "dumb"
-    RESET = "\033[0m" if ENABLED else ""
-    BOLD = "\033[1m" if ENABLED else ""
-    DIM = "\033[2m" if ENABLED else ""
-    GREEN = "\033[92m" if ENABLED else ""
-    YELLOW = "\033[93m" if ENABLED else ""
-    RED = "\033[91m" if ENABLED else ""
-    CYAN = "\033[96m" if ENABLED else ""
-    WHITE = "\033[97m" if ENABLED else ""
-    MAGENTA = "\033[95m" if ENABLED else ""
-
+# V-024: Unified color constants from theme.py
+from engine.theme import Colors as _Colors
 
 _c = _Colors
 
@@ -127,8 +114,9 @@ def _render_stage_from_event(lines: list, event: dict,
             cost = f"~${estimated:.4f}"
         cache_marker = f" {_c.GREEN}✓{_c.RESET}" if is_cache else ""
 
+        # V-024: Stage 2 uses WHITE (same as Kaizen — classification is calm)
         lines.append(
-            f"  {_c.DIM}│{_c.RESET} {_c.CYAN}2{_c.RESET} Recognition "
+            f"  {_c.DIM}│{_c.RESET} {_c.WHITE}2{_c.RESET} Recognition "
             f"{_c.DIM}intent:{_c.RESET}{intent_display} "
             f"{_c.DIM}T{tier}{_c.RESET} {method}{cache_marker} "
             f"{_c.DIM}{cost}{_c.RESET}")
@@ -141,8 +129,9 @@ def _render_stage_from_event(lines: list, event: dict,
         skipped = inf.get("skipped", False)
         chunks = inf.get("dock_chunks", 0)
         comp = "Skipped — conversational" if skipped else f"Dock: {chunks} chunk(s)"
+        # V-024: Stage 3 uses DIM (compilation is background infrastructure)
         lines.append(
-            f"  {_c.DIM}│{_c.RESET} {_c.CYAN}3{_c.RESET} Compilation {comp}")
+            f"  {_c.DIM}│{_c.RESET} {_c.DIM}3{_c.RESET} Compilation {comp}")
 
     elif stage in ("approval", "approval_jidoka", "approval_kaizen"):
         zone = event.get("zone_context", "green")
@@ -157,14 +146,16 @@ def _render_stage_from_event(lines: list, event: dict,
         else:
             # Fallback for older events without label
             app = f"{zone.upper()} auto-approve" if zone == "green" else zone.upper()
+        # V-024: Stage 4 uses zone-color (governance signal)
         lines.append(
-            f"  {_c.DIM}│{_c.RESET} {_c.CYAN}4{_c.RESET} Approval    "
+            f"  {_c.DIM}│{_c.RESET} {zc}4{_c.RESET} Approval    "
             f"{zc}{app}{_c.RESET}")
 
     elif stage == "execution":
         handler = inf.get("handler", "passthrough")
+        # V-024: Stage 5 uses GREEN (flow — execution is forward motion)
         lines.append(
-            f"  {_c.DIM}│{_c.RESET} {_c.CYAN}5{_c.RESET} Execution   "
+            f"  {_c.DIM}│{_c.RESET} {_c.GREEN}5{_c.RESET} Execution   "
             f"{_c.DIM}handler:{_c.RESET}{handler} "
             f"{_c.DIM}[executed]{_c.RESET}")
 
@@ -242,7 +233,8 @@ def display_ratchet_announcement(announcement: str) -> None:
 def display_tip(tip_text: str) -> None:
     """Display a contextual tip line."""
     if tip_text:
-        print(f"\n  {_c.DIM}💡 {tip_text}{_c.RESET}")
+        # V-024: Tip Display — dim prefix, no emoji (emojis compete with semantic colors)
+        print(f"\n  {_c.DIM}▸ {tip_text}{_c.RESET}")
 
 
 # =========================================================================
