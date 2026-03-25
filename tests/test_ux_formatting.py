@@ -66,82 +66,105 @@ class TestConversationalAndon:
 
 
 class TestAndonOutputFormat:
-    """Tests for Andon Gate output formatting."""
+    """Tests for Andon Gate output formatting.
 
-    def test_andon_output_includes_conversational_summary(self):
-        """Assert Andon Gate output shows conversational summary at top."""
-        from engine.ux import format_jidoka_display
+    V-023: format_jidoka_display removed. ask_jidoka handles all formatting
+    internally with three TPS beats: Jidoka (detect) → Andon (stop) → Kaizen (propose).
+    These tests now verify the ask_jidoka signature accepts required parameters.
+    """
 
-        conversational = "I need to schedule a lesson on the calendar. This is a Yellow Zone action."
+    def test_ask_jidoka_accepts_payload_for_transparency(self):
+        """Assert ask_jidoka accepts payload parameter for Red zone transparency.
+
+        White Paper Part III §2: Red zone 'surfaces information and waits.'
+        The payload IS the surfaced information.
+        """
+        from engine.ux import ask_jidoka
+        from unittest.mock import patch
+
         raw_payload = {"intent": "calendar_schedule", "handler": "mcp_calendar"}
 
-        output = format_jidoka_display(conversational, raw_payload)
+        # Mock keystroke to avoid blocking
+        with patch('engine.ux._get_single_keystroke', return_value='1'):
+            # Should not raise - payload is a valid parameter
+            result = ask_jidoka(
+                context_message="Yellow zone action detected.",
+                options={"1": "Approve", "2": "Cancel"},
+                payload=raw_payload
+            )
+        assert result == "1"
 
-        # Conversational summary should appear before raw payload
-        conv_pos = output.find("schedule")
-        raw_pos = output.find("calendar_schedule")
+    def test_ask_jidoka_accepts_diagnostic_for_kaizen(self):
+        """Assert ask_jidoka accepts diagnostic parameter for Kaizen proposals.
 
-        assert conv_pos < raw_pos or "schedule" in output
+        V-023: diagnostic dict triggers full three-beat display.
+        """
+        from engine.ux import ask_jidoka
+        from unittest.mock import patch
 
-    def test_andon_output_includes_raw_payload_section(self):
-        """Assert Andon Gate output includes separated raw payload for transparency."""
-        from engine.ux import format_jidoka_display
+        diagnostic = {"summary": "No match", "confidence": 0.0, "cost": 0.00}
 
-        conversational = "I want to send an email."
-        raw_payload = {"intent": "email_parent", "handler": "mcp_gmail"}
+        with patch('engine.ux._get_single_keystroke', return_value='1'):
+            result = ask_jidoka(
+                context_message="",
+                options={"1": "Sonnet", "2": "Cancel"},
+                diagnostic=diagnostic,
+                kaizen_prompt="How should we route this?"
+            )
+        assert result == "1"
 
-        output = format_jidoka_display(conversational, raw_payload)
+    def test_ask_jidoka_accepts_options_config_for_templates(self):
+        """Assert ask_jidoka accepts options_config for template resolution.
 
-        # Should have some indicator of raw/system payload
-        assert "PAYLOAD" in output.upper() or "SYSTEM" in output.upper() or "RAW" in output.upper() or "email_parent" in output
+        V-018: Options can include {total_cost} templates resolved at display time.
+        """
+        from engine.ux import ask_jidoka
+        from unittest.mock import patch
 
-    def test_andon_output_shows_both_summary_and_technical(self):
-        """Assert both conversational and technical info are present."""
-        from engine.ux import format_jidoka_display
-
-        conversational = "Building a new skill requires Red Zone approval."
-        raw_payload = {
-            "intent": "pit_crew_build",
-            "handler": "pit_crew",
-            "handler_args": {"action": "build"},
-            "skill_name": "weekly-report"
+        options_config = {
+            "1": {"tier": 2, "classification_tier": 1, "response_tier": 2}
         }
 
-        output = format_jidoka_display(conversational, raw_payload)
+        with patch('engine.ux._get_single_keystroke', return_value='1'):
+            result = ask_jidoka(
+                context_message="Test",
+                options={"1": "Option ~${total_cost}"},
+                options_config=options_config
+            )
+        assert result == "1"
 
-        # Should contain conversational explanation
-        assert "skill" in output.lower() or "approval" in output.lower()
-        # Should also contain technical details
-        assert "pit_crew" in output or "weekly-report" in output
 
+class TestConfirmYellowZoneWithContext:
+    """Tests for confirm_yellow_zone_with_context.
 
-class TestConfirmYellowZoneWithTranslation:
-    """Tests for confirm_yellow_zone with conversational translation."""
+    V-023: Now passes payload directly to ask_jidoka for transparency.
+    White Paper Part III §2: 'surfaces information and waits.'
+    """
 
-    def test_confirm_yellow_zone_translates_before_display(self, monkeypatch):
-        """Assert confirm_yellow_zone calls translation before showing prompt."""
+    def test_confirm_yellow_zone_passes_payload_to_ask_jidoka(self, monkeypatch):
+        """Assert confirm_yellow_zone_with_context passes payload for transparency."""
         from engine import ux
         import engine.ux as ux_module
 
-        translation_called = []
+        captured_kwargs = {}
 
-        def mock_translate(payload):
-            translation_called.append(payload)
-            return "This action needs your approval."
-
-        def mock_ask_jidoka(context_message, options):
+        def mock_ask_jidoka(context_message, options, diagnostic=None,
+                           kaizen_prompt=None, payload=None, options_config=None):
+            captured_kwargs['payload'] = payload
+            captured_kwargs['context_message'] = context_message
             return "1"  # Approve
 
-        monkeypatch.setattr(ux_module, "translate_action_for_approval", mock_translate)
         monkeypatch.setattr(ux_module, "ask_jidoka", mock_ask_jidoka)
 
-        # Call confirm_yellow_zone_with_context which should use translation
         result = ux.confirm_yellow_zone_with_context(
             action_description="Send email to parent",
             payload={"intent": "email_parent"}
         )
 
-        assert len(translation_called) > 0
+        # Verify payload was passed through
+        assert captured_kwargs['payload'] == {"intent": "email_parent"}
+        # Verify context message includes action description
+        assert "Send email to parent" in captured_kwargs['context_message']
         assert result is True
 
 

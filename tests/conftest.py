@@ -174,13 +174,14 @@ def mock_ux_input():
     the operator's menu selections to exercise each consent path.
 
     Queue choices in the order they'll be requested:
-        "1" = LLM classify, "2" = local context, "3" = config menu, "4" = cancel
+        "1" = Sonnet, "2" = Opus, "3" = local context, "4" = config menu, "5" = cancel
 
-    V-017: Updated to accept diagnostic and config params for three-beat display.
+    V-023: Updated signature — removed config=, added kaizen_prompt, payload, options_config.
     """
     choices = []
 
-    def _mock_jidoka(context_message, options, diagnostic=None, config=None):
+    def _mock_jidoka(context_message, options, diagnostic=None,
+                     kaizen_prompt=None, payload=None, options_config=None):
         if choices:
             return choices.pop(0)
         return "1"
