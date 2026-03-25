@@ -6,6 +6,7 @@ display:
   glass_pipeline: true         # Show pipeline stage annotations
   glass_level: medium          # minimal | medium | full
   tips: true                   # Show contextual tips after interactions
+  prompt_label: "operator"     # V-016: REPL prompt label (Config Over Code)
 
 startup:
   skip_welcome: true           # No welcome card at startup

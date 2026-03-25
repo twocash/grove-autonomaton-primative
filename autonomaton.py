@@ -116,6 +116,60 @@ def _load_profile_handlers():
         module.register(dispatcher)
 
 
+def _build_tier_display() -> str:
+    """
+    V-016: Build tier display string from models.yaml for banner.
+
+    Reads the tier-to-model mapping and constructs a human-readable string.
+    The watchman reports what's available — no Andon, no prompt.
+    """
+    import yaml
+    from engine.profile import get_config_dir
+
+    short_names = {
+        "claude-haiku-4-5-20251001": "Haiku",
+        "claude-sonnet-4-6": "Sonnet",
+        "claude-opus-4-6": "Opus",
+    }
+
+    models_path = get_config_dir() / "models.yaml"
+    if not models_path.exists():
+        return "T0 cache · T1 Haiku · T2 Sonnet · T3 Opus"  # Fallback
+
+    try:
+        with open(models_path, encoding="utf-8") as f:
+            models = yaml.safe_load(f) or {}
+    except Exception:
+        return "T0 cache · T1 Haiku · T2 Sonnet · T3 Opus"  # Fallback
+
+    tier_map = models.get("tiers", {})
+    if not tier_map:
+        return "T0 cache · T1 Haiku · T2 Sonnet · T3 Opus"  # Fallback
+
+    parts = ["T0 cache"]
+    for tier_num in sorted(tier_map.keys()):
+        model_id = tier_map[tier_num]
+        short = short_names.get(model_id, model_id.split("-")[1].title() if "-" in model_id else model_id)
+        parts.append(f"T{tier_num} {short}")
+
+    return " · ".join(parts)
+
+
+def _get_cortex_pending() -> int:
+    """
+    V-016: Count pending Kaizen items for banner display.
+
+    The watchman reports the queue status — Jidoka awareness,
+    not Andon mechanism.
+    """
+    from engine.profile import get_config_dir
+    queue_dir = get_config_dir() / "queue"
+    if not queue_dir.exists():
+        return 0
+    # Count YAML files in queue directory (Kaizen proposals)
+    return len(list(queue_dir.glob("*.yaml")))
+
+
 def _run_startup_mode_selection() -> bool:
     """
     V-015: Startup Kaizen for compute mode selection.
@@ -197,8 +251,21 @@ def _run_startup_mode_selection() -> bool:
     return enrichment_enabled
 
 
-def print_banner(profile: str, dock_info: str, glass_enabled: bool = False):
-    """Display startup banner with profile and dock status. Minimal."""
+def print_banner(
+    profile: str,
+    dock_info: str,
+    glass_enabled: bool = False,
+    cortex_pending: int = 0,
+    compute_mode: str = "Free Mode (LLM on-demand with consent)",
+    tier_info: str = ""
+):
+    """
+    V-016: Display startup banner with full watchman status report.
+
+    The watchman (Jidoka) reports system readiness: tiers available,
+    dock loaded, Glass active, compute posture. No Andon, no prompt.
+    Sovereignty starts at boot — the system arrives ready.
+    """
     c = Colors
     print()
     print(f"{c.CYAN}{'=' * 60}{c.RESET}")
@@ -206,8 +273,12 @@ def print_banner(profile: str, dock_info: str, glass_enabled: bool = False):
     print(f"{c.DIM}  Profile: {c.CYAN}{profile}{c.RESET}")
     print(f"{c.CYAN}{'=' * 60}{c.RESET}")
     print(f"  {c.DIM}{dock_info}{c.RESET}")
+    print(f"  {c.DIM}Cortex: {cortex_pending} pending Kaizen item(s){c.RESET}")
     if glass_enabled:
         print(f"  {c.MAGENTA}Glass Pipeline: ACTIVE{c.RESET}")
+    print(f"  {c.DIM}Compute: {c.CYAN}{compute_mode}{c.RESET}")
+    if tier_info:
+        print(f"  {c.DIM}Tiers: {tier_info}{c.RESET}")
     print(f"{c.CYAN}{'=' * 60}{c.RESET}")
 
     # Reference profile intro block
@@ -372,11 +443,26 @@ def main():
     verbose = args.verbose
     profile = get_profile()
 
+    # V-016: Prompt label from profile config (Config Over Code)
+    prompt_label = profile_config["display"].get("prompt_label", "operator")
+
     # Initialize the Dock (Layer 1)
     dock = get_dock()
     dock_info = f"Dock: {dock.get_chunk_count()} chunks from {len(dock.list_sources())} sources"
 
-    print_banner(profile, dock_info, glass_enabled)
+    # V-016: Watchman status report — tiers, cortex, compute posture
+    cortex_pending = _get_cortex_pending()
+    tier_info = _build_tier_display()
+    compute_mode = "Free Mode (LLM on-demand with consent)"  # Default for reference profile
+
+    print_banner(
+        profile=profile,
+        dock_info=dock_info,
+        glass_enabled=glass_enabled,
+        cortex_pending=cortex_pending,
+        compute_mode=compute_mode,
+        tier_info=tier_info
+    )
 
     # V-015: Startup mode selection (before any pipeline traversals)
     # This sets session-scoped enrichment mode, not persisted to disk.
@@ -457,8 +543,8 @@ def main():
 
     while True:
         try:
-            # Read user input with colored prompt
-            user_input = input(f"{c.CYAN}autonomaton>{c.RESET} ").strip()
+            # Read user input with colored prompt (V-016: configurable label)
+            user_input = input(f"{c.CYAN}{prompt_label}>{c.RESET} ").strip()
 
             # Handle exit commands (only exception - not routed through pipeline)
             if user_input.lower() in ("exit", "quit"):

@@ -9,7 +9,7 @@
 
 startup:
   mode_selection:
-    enabled: true
+    enabled: false    # V-016: Disabled at boot. Use 'enable learning' command at runtime.
     prompt: "Choose your compute posture before we begin."
     options:
       "1":

@@ -58,12 +58,14 @@ Clean banner. No LLM calls. No prompts. The system waits for the operator.
   Dock: X chunks from 2 sources
   Cortex: 0 pending Kaizen item(s)
   Glass Pipeline: ACTIVE
+  Compute: Free Mode (LLM on-demand with consent)
+  Tiers: T0 cache · T1 Haiku · T2 Sonnet · T3 Opus
 ============================================================
   This is the naked engine. No domain. No context. No skills.
   Every pipeline stage will announce itself as it runs.
   Type anything to see the architecture in motion.
   Ready.
-autonomaton>
+operator>
 ```
 
 **What this proves (Deck Slide 4 — The Pipeline):**
@@ -71,8 +73,14 @@ The pipeline doesn't fire until the operator acts. No eager loading,
 no background LLM calls, no hidden initialization. The system comes
 to the human; the human never has to come to the system.
 
-**FAIL if:** LLM calls during startup. Any prompt before `autonomaton>`.
-Glass rendering before operator input. Dock count is 0.
+**Proof point (V-016):** The watchman (Jidoka) reports system readiness —
+tiers available, dock loaded, Glass active, compute posture. No cord
+pulled. No line running yet. Sovereignty starts at boot: the system
+arrives ready, the operator acts when ready.
+
+**FAIL if:** LLM calls during startup. Any prompt before `operator>`.
+Glass rendering before operator input. Dock count is 0. Andon Gate
+fires before the operator types anything.
 
 ---
 
@@ -636,7 +644,7 @@ After running all tests, verify:
 
 | # | Test | Key Assertion | Pass? |
 |---|------|--------------|-------|
-| — | Startup | No LLM calls before `autonomaton>` | |
+| — | Startup | No LLM calls before `operator>` | |
 | 1 | `hello` | Glass: 5 stages, T1 keyword, GREEN auto-approve | |
 | 2 | Unknown → Option 2 | Slim three-beat display, 4 options, dock-informed answer | |
 | 3a | `1` → Option 1 | Low-confidence rejection, cache NOT poisoned | |

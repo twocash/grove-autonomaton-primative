@@ -1098,7 +1098,7 @@ Generate a focused strategic brief (3-5 items, natural language):"""
                 success=True,
                 message=(
                     f"Skill '{result['skill_name']}' approved.\n"
-                    f"  {result['entries_written']} input(s) deployed to pattern cache.\n"
+                    f"  {result['entries_written']} sample(s) deployed to pattern cache.\n"
                     f"  Resolves at Tier 0 from now on."
                 ),
                 data={"type": "approve_skill", "action": "approved", "result": result}

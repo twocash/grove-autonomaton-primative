@@ -469,7 +469,7 @@ class InvariantPipeline:
                         examples = skill.get("trigger", {}).get("example_inputs", [])
                         self.context.proposed_action = (
                             f"Deploy skill '{name}' to pattern cache "
-                            f"({count} occurrences, {len(examples)} example input(s)). "
+                            f"({count} occurrences, {len(examples)} sample(s)). "
                             f"Resolves at Tier 0 from now on."
                         )
                     else:

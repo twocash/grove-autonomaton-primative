@@ -180,7 +180,8 @@ def load_profile_config() -> dict:
         "display": {
             "glass_pipeline": False,
             "glass_level": "medium",
-            "tips": False
+            "tips": False,
+            "prompt_label": "operator"  # V-016: Default REPL prompt label
         },
         "startup": {
             "skip_welcome": False,
