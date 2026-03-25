@@ -1,65 +1,30 @@
 # kaizen.yaml
-# Three-Beat TPS Display
-# Jidoka (watchman) -> Andon (cord) -> Kaizen (butler)
-
-# Timing: seconds between beats. Each role lands before the next appears.
-timing:
-  beat_delay: 0.8
-
-# Classification quality thresholds live in routing.config
-# (router.classification.min_confidence) — not here.
-# Kaizen governs the improvement RESPONSE. Classification
-# quality is a Cognitive Router concern (Jidoka, not Kaizen).
-
-#
-# V-017: Three visually distinct TPS beats
-# V-017b: Slim single-line headers replace FIGlet walls
-# Each option maps to a capability handler method: _kaizen_{capability}
-
-jidoka:
-  header: "JIDOKA"
-  role: "The watchman detected something."
-  bar: "━"
-
-andon:
-  header: "ANDON"
-  role: "The line is stopped."
-  bar: "━"
+# Kaizen improvement proposal options.
+# Content only — the Andon display frame is pipeline infrastructure.
+# Options rendered inside the Kaizen beat when intent is unknown.
 
 kaizen:
-  header: "KAIZEN"
-  role: "The improvement proposal."
-  bar: "━"
-
-  # V-015/V-018: Tiered LLM options surface compute cost decision to operator.
-  # V-018: Unified "Answer with X" options — classification always uses Haiku,
-  # response uses the chosen tier. {total_cost} = classification + response.
-  # After Kaizen, the response_tier persists through to Stage 5 execution.
-  prompt: |
-    The LLM can learn what you mean — the Ratchet
-    will cache it so it's free next time.
-
-  # Classification tier for all LLM options (Haiku = fast, cheap)
+  prompt: "How should we route this?"
   classification_tier: 1
 
   options:
     "1":
-      label: "Answer with Sonnet (~${total_cost}/turn, cached after)"
+      label: "Sonnet  (fast,  ~${total_cost})"
       capability: llm_classify
       classification_tier: 1
       response_tier: 2
     "2":
-      label: "Answer with Opus (~${total_cost}/turn, cached after)"
+      label: "Opus    (deep,  ~${total_cost})"
       capability: llm_classify
       classification_tier: 1
       response_tier: 3
     "3":
-      label: "Answer from what you already know (free)"
+      label: "Local dock       $0.00"
       capability: local_context
       tier: 1
     "4":
-      label: "Show me what you can help with (free)"
+      label: "Show capabilities"
       capability: config_menu
     "5":
-      label: "I'll rephrase"
+      label: "Let me rephrase"
       capability: cancel

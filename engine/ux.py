@@ -1,43 +1,71 @@
 """
-ux.py - Andon Gate & Jidoka UX
+ux.py - Stage 4 Andon Display
 
-Implements "stop the line" user interaction patterns (Andon)
-in service of the Digital Jidoka quality discipline.
-When ambiguity or approval is required, the system halts
-and surfaces a numbered, single-keystroke prompt.
+Three-beat TPS display grounded in the published specification.
+Every design decision cites the White Paper or TCP/IP Paper.
 
-No silent failures. No graceful degradation.
+ARCHITECTURAL GROUNDING:
+  White Paper Part II: "Jidoka — automation with a human touch.
+    When a machine detects a quality problem, it stops the production
+    line automatically and signals for human intervention."
+  White Paper Part II: "Kaizen — continuous improvement... propose a
+    specific improvement, implement the change, measure the result."
+  TCP/IP Paper §III: "the five-stage pipeline is the thin waist of
+    the cognitive hourglass." ONE rendering path. No legacy fallback.
+
+THREE BEATS — each a distinct TPS moment:
+  Beat 1: JIDOKA  — The discipline DETECTS (quality awareness)
+  Beat 2: ANDON   — The mechanism STOPS (the cord pulls)
+  Beat 3: KAIZEN  — The response PROPOSES (improvement options)
+           Only present when proposing improvement, never for
+           zone consent. (White Paper Part III §2: Red zone —
+           "The system doesn't propose here.")
+
+V-023: Eliminated legacy fallback path. ONE function, no branches
+for display style. Frame is pipeline infrastructure, not config.
 """
 
 import sys
 import os
-import time
+import json
+
+# Windows UTF-8 support for Unicode box-drawing characters
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 
 # =========================================================================
-# Terminal Colors
+# Semantic Color Palette
 # =========================================================================
+# Each color maps to a TPS concept, not a decoration.
+#
+# White Paper Part III §2 (Sovereignty Guardrails):
+#   Green = "Autonomous Routine" → flow, not success
+#   Yellow = "Supervised Proposals" → paused, yielding
+#   Red = "Human-Only Zones" → requires intervention
+#
+# The color IS the governance signal.
 
 class _Colors:
-    """ANSI color codes for terminal output."""
+    """TPS semantic colors — each maps to an architectural concept."""
     ENABLED = sys.stdout.isatty() and os.environ.get("TERM", "") != "dumb"
 
-    RESET = "\033[0m" if ENABLED else ""
-    BOLD = "\033[1m" if ENABLED else ""
-    DIM = "\033[2m" if ENABLED else ""
-    YELLOW = "\033[93m" if ENABLED else ""
-    RED = "\033[91m" if ENABLED else ""
-    GREEN = "\033[92m" if ENABLED else ""
-    CYAN = "\033[96m" if ENABLED else ""
-    WHITE = "\033[97m" if ENABLED else ""
-    MAGENTA = "\033[95m" if ENABLED else ""
+    RESET   = "\033[0m" if ENABLED else ""
+    BOLD    = "\033[1m" if ENABLED else ""
+    DIM     = "\033[2m" if ENABLED else ""
+
+    # TPS state colors
+    JIDOKA  = "\033[91m" if ENABLED else ""   # Soft red — quality alert detected
+    ANDON   = "\033[93m" if ENABLED else ""   # Warm amber — line paused, yielding
+    KAIZEN  = "\033[97m" if ENABLED else ""   # Clean white — calm proposal
+    GREEN   = "\033[92m" if ENABLED else ""   # Sage — flow / confirmation echo
 
 
 _c = _Colors
 
 
 # =========================================================================
-# V-015: Template Resolution for Tiered Options
+# V-015/V-018: Template Resolution for Tiered Options
 # =========================================================================
 
 def _resolve_option_template(label: str, tier: int = None,
@@ -51,15 +79,6 @@ def _resolve_option_template(label: str, tier: int = None,
 
     V-018: Added {total_cost} for unified options that include both
     classification AND response tiers. Config Over Code — reads from llm_client.
-
-    Args:
-        label: The option label string, possibly containing {tier_label}, {tier_cost}, {total_cost}
-        tier: The compute tier (1, 2, 3) from the option config (legacy single-tier)
-        classification_tier: Tier for LLM classification (V-018 unified options)
-        response_tier: Tier for LLM response (V-018 unified options)
-
-    Returns:
-        Label with placeholders resolved
     """
     from engine.llm_client import estimate_turn_cost, get_model_label
 
@@ -71,7 +90,6 @@ def _resolve_option_template(label: str, tier: int = None,
 
     # V-018: Handle {total_cost} for unified classification+response options
     if '{total_cost}' in resolved:
-        # Use classification_tier and response_tier if provided
         c_tier = classification_tier if classification_tier is not None else tier
         r_tier = response_tier if response_tier is not None else tier
 
@@ -81,7 +99,6 @@ def _resolve_option_template(label: str, tier: int = None,
             total_cost = class_cost + resp_cost
             resolved = resolved.replace('{total_cost}', f"{total_cost:.4f}")
         elif tier is not None:
-            # Fallback: single tier means just that tier's cost
             total_cost = estimate_turn_cost(tier)
             resolved = resolved.replace('{total_cost}', f"{total_cost:.4f}")
 
@@ -98,131 +115,151 @@ def _resolve_option_template(label: str, tier: int = None,
     return resolved
 
 
+# =========================================================================
+# Stage 4 Andon Display — THREE BEATS, ONE PATH
+# =========================================================================
+
 def ask_jidoka(
     context_message: str,
     options: dict,
     diagnostic: dict = None,
-    config: dict = None
+    kaizen_prompt: str = None,
+    payload: dict = None,
+    options_config: dict = None,
 ) -> str:
     """
-    Present a Jidoka prompt requiring single-keystroke numeric response.
+    Stage 4 prompt — Three-beat TPS display.
 
-    When diagnostic and config are provided, renders three-beat TPS display.
-    Otherwise, renders legacy single-block display for backward compatibility.
+    ONE function. No legacy fallback. No second code path.
+    (TCP/IP Paper §III: "the five-stage pipeline is the thin
+    waist of the cognitive hourglass.")
+
+    Beat 1: JIDOKA  — detects (White Paper Part II)
+    Beat 2: ANDON   — stops   (White Paper Part II)
+    Beat 3: KAIZEN  — proposes (White Paper Part VI)
+             Only when proposing improvement. Never for
+             zone consent. (Part III §2: Red = "surfaces
+             information and waits")
 
     Args:
         context_message: Explanation of why the system stopped
         options: Dict mapping option numbers (as strings) to descriptions
-                 e.g., {"1": "Approve and continue", "2": "Cancel operation"}
         diagnostic: Optional dict with {summary, confidence, cost} for Jidoka beat
-        config: Optional dict with {jidoka, andon, kaizen} sections for banners
+        kaizen_prompt: Optional string — triggers Kaizen beat (only for improvement)
+        payload: Optional dict — triggers payload display (Red zone transparency)
+        options_config: Optional dict with tier info for template resolution
 
     Returns:
         The key of the selected option (e.g., "1" or "2")
-
-    Behavior:
-        - Prints context message
-        - Lists numbered options
-        - Blocks until valid single-digit response
-        - Rejects any non-matching input and re-prompts
     """
-    # Three-beat TPS display when diagnostic and config with three-beat structure provided
-    # Config must have jidoka/andon/kaizen sections for three-beat display
-    has_three_beat = config and all(k in config for k in ('jidoka', 'andon', 'kaizen'))
-    if diagnostic and has_three_beat:
-        beat_delay = config.get('timing', {}).get('beat_delay', 0.8)
-        bar_char = config.get('jidoka', {}).get('bar', '━')
-        width = 60
-
-        # Beat 1: JIDOKA (cyan) — the watchman reports
-        jidoka = config.get("jidoka", {})
-        header = jidoka.get('header', 'JIDOKA')
-        bar_line = f"  ▰ {header} {bar_char * (width - len(header) - 5)}"
-        print(f"\n{_c.CYAN}{bar_line}{_c.RESET}")
-        print(f"  {_c.CYAN}{jidoka.get('role', '')}{_c.RESET}")
-        print(f"  {diagnostic.get('summary', '')}")
-        conf = diagnostic.get('confidence', 0)
-        cost = diagnostic.get('cost', 0)
-        print(f"  Confidence: {conf:.0%}  |  Cost: ${cost:.2f}")
-        sys.stdout.flush()
-        time.sleep(beat_delay)
-
-        # Beat 2: ANDON (yellow) — the cord pulls
-        andon = config.get("andon", {})
-        header = andon.get('header', 'ANDON')
-        bar_line = f"  ▰ {header} {bar_char * (width - len(header) - 5)}"
-        print(f"\n{_c.YELLOW}{bar_line}{_c.RESET}")
-        print(f"  {_c.YELLOW}{andon.get('role', '')}{_c.RESET}")
-        sys.stdout.flush()
-        time.sleep(beat_delay)
-
-        # Beat 3: KAIZEN (white) — the butler arrives
-        kaizen = config.get("kaizen", {})
-        header = kaizen.get('header', 'KAIZEN')
-        bar_line = f"  ▰ {header} {bar_char * (width - len(header) - 5)}"
-        print(f"\n{_c.WHITE}{bar_line}{_c.RESET}")
-        print(f"  {kaizen.get('role', '')}")
-        print()
-    else:
-        # Legacy display for backward compatibility
-        print()
-        print(f"{_c.YELLOW}{'=' * 60}{_c.RESET}")
-        print(f"{_c.BOLD}{_c.YELLOW}ANDON GATE: Stopping the line for human input{_c.RESET}")
-        print(f"{_c.YELLOW}{'=' * 60}{_c.RESET}")
-
-    print(f"\n{context_message}\n")
-
-    # Display options with V-015/V-018 template resolution
-    valid_keys = set(options.keys())
-    kaizen_options = config.get("kaizen", {}).get("options", {}) if config else {}
-    for key in sorted(options.keys(), key=int):
-        label = options[key]
-        # V-015/V-018: Resolve {tier_label}, {tier_cost}, {total_cost} from option config
-        option_entry = kaizen_options.get(key, {})
-        tier = option_entry.get("tier")
-        classification_tier = option_entry.get("classification_tier")
-        response_tier = option_entry.get("response_tier")
-        resolved_label = _resolve_option_template(
-            label, tier,
-            classification_tier=classification_tier,
-            response_tier=response_tier
-        )
-        print(f"  {_c.CYAN}[{key}]{_c.RESET} {resolved_label}")
-
     print()
 
+    # ── Beat 1: JIDOKA ──
+    # White Paper Part II: "Jidoka transforms a machine from a blind,
+    # repetitive engine into an active partner in quality control —
+    # one that has the authority to stop the world the moment it
+    # needs human intuition."
+    #
+    # The watchman reports WHAT it found. Diagnostic context.
+    print(f"  {_c.JIDOKA}◇ JIDOKA{_c.RESET}")
+    if diagnostic:
+        summary = diagnostic.get("summary", "")
+        conf = diagnostic.get("confidence", 0)
+        cost = diagnostic.get("cost", 0)
+        print(f"  {_c.DIM}└─{_c.RESET} {summary}")
+        print(f"  {_c.DIM}   Confidence: {conf:.0%}  ·  Cost: ${cost:.2f}{_c.RESET}")
+    else:
+        # Zone approval — Jidoka detected a governance boundary
+        # White Paper Part III §2: every action has an explicit risk classification
+        for i, line in enumerate(context_message.strip().split("\n")):
+            prefix = "└─" if i == 0 else "  "
+            print(f"  {_c.DIM}{prefix}{_c.RESET} {line}")
+
+    # ── Beat 2: ANDON ──
+    # White Paper Part II: "signals for human intervention with
+    # the 'andon cord.' The system doesn't hide defects. It
+    # doesn't route around them with fallback paths. It stops,
+    # surfaces the problem with diagnostic context, and waits
+    # for a human decision."
+    #
+    # White Paper Part III §5: "This is Toyoda's 'andon cord', digitized."
+    print(f"  {_c.ANDON}◇ ANDON{_c.RESET}")
+    if diagnostic:
+        print(f"  {_c.DIM}└─ Line stopped. Routing decision required.{_c.RESET}")
+    else:
+        print(f"  {_c.DIM}└─ Line stopped. Approval required.{_c.RESET}")
+
+    # Payload transparency (Red zone)
+    # White Paper Part III §2: Red zone "surfaces information
+    # and waits." The payload IS the surfaced information.
+    if payload:
+        payload_str = json.dumps(payload, indent=2, default=str)
+        print(f"  {_c.DIM}   ┌─ payload ─┐{_c.RESET}")
+        for pl in payload_str.split("\n"):
+            print(f"  {_c.DIM}   │ {pl}{_c.RESET}")
+        print(f"  {_c.DIM}   └───────────┘{_c.RESET}")
+
+    # ── Beat 3: KAIZEN (conditional) ──
+    # White Paper Part II: "Kaizen — continuous improvement.
+    # Not a one-time fix but a systematic discipline: observe
+    # the process, identify waste or failure, propose a specific
+    # improvement."
+    #
+    # CRITICAL: Kaizen ONLY appears when the system is PROPOSING
+    # IMPROVEMENT — not when requesting zone consent.
+    #   Part III §2, Red: "The system doesn't propose here."
+    #   Part III §2, Yellow: Governance consent, not Kaizen.
+    if kaizen_prompt:
+        print(f"  {_c.KAIZEN}◇ KAIZEN{_c.RESET}")
+        print(f"  {_c.DIM}└─{_c.RESET} {kaizen_prompt}")
+
+    # ── Options ──
+    print()
+    valid_keys = set(options.keys())
+    for key in sorted(options.keys(), key=int):
+        label = options[key]
+        # Resolve template variables if options_config provided
+        if options_config and key in options_config:
+            opt = options_config[key]
+            label = _resolve_option_template(
+                label,
+                tier=opt.get("tier"),
+                classification_tier=opt.get("classification_tier"),
+                response_tier=opt.get("response_tier")
+            )
+        print(f"     {_c.BOLD}[{key}]{_c.RESET} {label}")
+    print()
+
+    # ── Input ──
     while True:
         try:
             response = _get_single_keystroke(valid_keys)
             if response in valid_keys:
-                # V-020: Resolve template in selection echo (same as display)
+                # Resolve selection label for echo
                 selected_label = options[response]
-                option_entry = kaizen_options.get(response, {})
-                tier = option_entry.get("tier")
-                classification_tier = option_entry.get("classification_tier")
-                response_tier = option_entry.get("response_tier")
-                resolved_selection = _resolve_option_template(
-                    selected_label, tier,
-                    classification_tier=classification_tier,
-                    response_tier=response_tier
-                )
-                print(f"\n{_c.GREEN}>>{_c.RESET} Selected: {_c.WHITE}{resolved_selection}{_c.RESET}\n")
+                if options_config and response in options_config:
+                    opt = options_config[response]
+                    selected_label = _resolve_option_template(
+                        selected_label,
+                        tier=opt.get("tier"),
+                        classification_tier=opt.get("classification_tier"),
+                        response_tier=opt.get("response_tier")
+                    )
+                print(f"\n  {_c.GREEN}▸{_c.RESET} {_c.BOLD}{selected_label}{_c.RESET}\n")
                 return response
         except KeyboardInterrupt:
-            print(f"\n\n{_c.YELLOW}Operation cancelled by user.{_c.RESET}")
+            print(f"\n\n{_c.ANDON}Operation cancelled by user.{_c.RESET}")
             sys.exit(0)
 
 
+# =========================================================================
+# Single-Keystroke Input
+# =========================================================================
+
 def _get_single_keystroke(valid_keys: set) -> str:
-    """
-    Get a single keystroke from the user.
+    """Get a single keystroke from the user."""
+    prompt = f"     Choice [{'/'.join(sorted(valid_keys))}]: "
 
-    Strictly enforces single-character numeric input.
-    Falls back to line-based input if terminal doesn't support raw mode.
-    """
-    prompt = f"Enter choice [{'/'.join(sorted(valid_keys))}]: "
-
-    # Try platform-specific single-key input
     if sys.platform == "win32":
         return _get_keystroke_windows(prompt, valid_keys)
     else:
@@ -238,10 +275,10 @@ def _get_keystroke_windows(prompt: str, valid_keys: set) -> str:
             if msvcrt.kbhit():
                 char = msvcrt.getwch()
                 if char in valid_keys:
-                    print(char)  # Echo the character
+                    print(char)
                     return char
                 else:
-                    print(f"\n  Invalid input '{char}'. Please enter a valid option.")
+                    print(f"\n     Invalid. Enter {'/'.join(sorted(valid_keys))}.")
                     print(prompt, end="", flush=True)
     except ImportError:
         return _get_keystroke_fallback(prompt, valid_keys)
@@ -261,16 +298,15 @@ def _get_keystroke_unix(prompt: str, valid_keys: set) -> str:
             while True:
                 char = sys.stdin.read(1)
                 if char in valid_keys:
-                    print(char)  # Echo the character
+                    print(char)
                     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
                     return char
                 elif char == "\x03":  # Ctrl+C
                     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
                     raise KeyboardInterrupt
                 else:
-                    # Restore terminal, print error, set raw again
                     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                    print(f"\n  Invalid input. Please enter a valid option.")
+                    print(f"\n     Invalid. Enter {'/'.join(sorted(valid_keys))}.")
                     print(prompt, end="", flush=True)
                     tty.setraw(fd)
         finally:
@@ -285,20 +321,24 @@ def _get_keystroke_fallback(prompt: str, valid_keys: set) -> str:
         response = input(prompt).strip()
         if len(response) == 1 and response in valid_keys:
             return response
-        print(f"  Invalid input. Please enter exactly one of: {', '.join(sorted(valid_keys))}")
+        print(f"     Invalid. Enter {'/'.join(sorted(valid_keys))}.")
 
+
+# =========================================================================
+# Convenience Wrappers — Zone Approval (Two-Beat, No Kaizen)
+# =========================================================================
 
 def confirm_yellow_zone(action_description: str) -> bool:
     """
-    Convenience wrapper for Yellow Zone approval.
-
-    Returns True if user approves, False if cancelled.
+    Yellow Zone approval — two-beat display.
+    Jidoka detects zone boundary. Andon stops. Operator consents.
+    No Kaizen — this is governance consent, not improvement.
     """
     result = ask_jidoka(
-        context_message=f"{_c.YELLOW}YELLOW ZONE ACTION REQUIRES APPROVAL:{_c.RESET}\n{action_description}",
+        context_message=f"Yellow zone action detected.\n{action_description}",
         options={
             "1": "Approve and execute",
-            "2": "Cancel operation"
+            "2": "Cancel"
         }
     )
     return result == "1"
@@ -306,31 +346,61 @@ def confirm_yellow_zone(action_description: str) -> bool:
 
 def confirm_red_zone(action_description: str) -> bool:
     """
-    Convenience wrapper for Red Zone approval.
-
-    Returns True if user approves, False if cancelled.
+    Red Zone approval — two-beat display.
+    Jidoka detects zone boundary. Andon stops. Operator consents.
+    No Kaizen — White Paper Part III §2: "The system doesn't propose here."
     """
     result = ask_jidoka(
-        context_message=f"{_c.RED}{_c.BOLD}RED ZONE ACTION REQUIRES EXPLICIT APPROVAL:{_c.RESET}\n{action_description}",
+        context_message=f"Red zone action detected.\n{action_description}",
         options={
             "1": "Approve and execute",
-            "2": "Cancel operation"
+            "2": "Cancel"
         }
+    )
+    return result == "1"
+
+
+def confirm_yellow_zone_with_context(action_description: str, payload: dict) -> bool:
+    """
+    Yellow Zone approval with payload transparency.
+    """
+    result = ask_jidoka(
+        context_message=f"Yellow zone action detected.\n{action_description}",
+        options={
+            "1": "Approve and execute",
+            "2": "Cancel"
+        },
+        payload=payload
+    )
+    return result == "1"
+
+
+def confirm_red_zone_with_context(action_description: str, payload: dict) -> bool:
+    """
+    Red Zone approval with payload transparency.
+    White Paper Part III §2: "surfaces information and waits."
+    """
+    result = ask_jidoka(
+        context_message=f"Red zone action detected.\n{action_description}",
+        options={
+            "1": "Approve and execute",
+            "2": "Cancel"
+        },
+        payload=payload
     )
     return result == "1"
 
 
 def resolve_entity_ambiguity(entity_type: str, candidates: list[str]) -> str:
     """
-    Convenience wrapper for entity resolution.
-
-    Returns the selected entity string.
+    Entity resolution — two-beat display.
+    Jidoka detected multiple matches. Andon stops. Operator selects.
     """
     options = {str(i + 1): candidate for i, candidate in enumerate(candidates)}
     options[str(len(candidates) + 1)] = "None of these / Cancel"
 
     result = ask_jidoka(
-        context_message=f"{_c.CYAN}AMBIGUOUS {entity_type.upper()} REFERENCE:{_c.RESET}\nMultiple matches found. Please select:",
+        context_message=f"Multiple matches found for {entity_type.upper()}.",
         options=options
     )
 
@@ -347,26 +417,14 @@ def resolve_entity_ambiguity(entity_type: str, candidates: list[str]) -> str:
 def translate_action_for_approval(payload: dict) -> str:
     """
     Translate a raw action payload into conversational language.
-
     Uses Tier 1 (Haiku) LLM for low latency.
-    Persona from config/persona.yaml explains what the system wants to do.
-
-    Implements Invariant #2: Config Over Code - persona loaded from YAML.
-
-    Args:
-        payload: Raw action payload with intent, handler, handler_args, etc.
-
-    Returns:
-        Conversational explanation string
     """
-    import json
     from engine.llm_client import call_llm
     from engine.config_loader import get_persona
 
     persona = get_persona()
     payload_str = json.dumps(payload, indent=2, default=str)
 
-    # Build system prompt from persona config with Jidoka-specific context
     task_context = """The system has halted to ask the boss for approval.
 Read this technical payload and explain to the boss in 1-2 conversational sentences
 what the system wants to do and why it needs permission.
@@ -384,101 +442,6 @@ Explain this action in conversational language:"""
         translation = call_llm(prompt=prompt, system=system_prompt, tier=1)
         return translation.strip()
     except Exception:
-        # Graceful fallback: return a basic description
         intent = payload.get("intent", "unknown action")
         handler = payload.get("handler", "")
         return f"The system wants to perform: {intent}" + (f" (via {handler})" if handler else "")
-
-
-def format_jidoka_display(conversational: str, raw_payload: dict) -> str:
-    """
-    Format the Jidoka display with conversational summary at top,
-    raw payload underneath for transparency.
-
-    Args:
-        conversational: The conversational explanation from translate_action_for_approval
-        raw_payload: The raw technical payload dict
-
-    Returns:
-        Formatted string for display
-    """
-    import json
-    from engine.config_loader import get_persona
-
-    persona = get_persona()
-    payload_str = json.dumps(raw_payload, indent=2, default=str)
-
-    output_lines = [
-        "",
-        f"{_c.BOLD}{persona.name}:{_c.RESET}",
-        f"  {conversational}",
-        "",
-        f"{_c.DIM}─── RAW SYSTEM PAYLOAD ───{_c.RESET}",
-        f"{_c.DIM}{payload_str}{_c.RESET}",
-        f"{_c.DIM}──────────────────────────{_c.RESET}",
-        ""
-    ]
-
-    return "\n".join(output_lines)
-
-
-def confirm_yellow_zone_with_context(action_description: str, payload: dict) -> bool:
-    """
-    Yellow Zone approval with conversational translation.
-
-    Translates the payload to conversational language before showing
-    the approval prompt. Shows both conversational summary and raw payload.
-
-    Args:
-        action_description: Brief description of the action
-        payload: Raw action payload for translation
-
-    Returns:
-        True if user approves, False if cancelled
-    """
-    # Get conversational translation
-    conversational = translate_action_for_approval(payload)
-
-    # Format the display
-    display = format_jidoka_display(conversational, payload)
-
-    # Show with Jidoka prompt
-    result = ask_jidoka(
-        context_message=f"{_c.YELLOW}YELLOW ZONE ACTION REQUIRES APPROVAL:{_c.RESET}\n{display}",
-        options={
-            "1": "Approve and execute",
-            "2": "Cancel operation"
-        }
-    )
-    return result == "1"
-
-
-def confirm_red_zone_with_context(action_description: str, payload: dict) -> bool:
-    """
-    Red Zone approval with conversational translation.
-
-    Translates the payload to conversational language before showing
-    the approval prompt. Shows both conversational summary and raw payload.
-
-    Args:
-        action_description: Brief description of the action
-        payload: Raw action payload for translation
-
-    Returns:
-        True if user approves, False if cancelled
-    """
-    # Get conversational translation
-    conversational = translate_action_for_approval(payload)
-
-    # Format the display
-    display = format_jidoka_display(conversational, payload)
-
-    # Show with Jidoka prompt
-    result = ask_jidoka(
-        context_message=f"{_c.RED}{_c.BOLD}RED ZONE ACTION REQUIRES EXPLICIT APPROVAL:{_c.RESET}\n{display}",
-        options={
-            "1": "Approve and execute",
-            "2": "Cancel operation"
-        }
-    )
-    return result == "1"

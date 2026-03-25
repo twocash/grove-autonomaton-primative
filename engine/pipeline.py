@@ -737,11 +737,14 @@ class InvariantPipeline:
         # Build options dict for ask_jidoka: key -> label
         options = {k: v.get("label", k) for k, v in options_config.items()}
 
+        # V-023: Pass kaizen_prompt (triggers Kaizen beat) and options_config (for template resolution)
+        # Frame is pipeline infrastructure, not config-driven. Remove config= parameter.
         choice = ask_jidoka(
-            context_message=prompt,
+            context_message="",  # Diagnostic provides Jidoka content
             options=options,
             diagnostic=diagnostic,
-            config=config
+            kaizen_prompt="How should we route this?",
+            options_config=options_config
         )
 
         # Dispatch to capability handler with option config
