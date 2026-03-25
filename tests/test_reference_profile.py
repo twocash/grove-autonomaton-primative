@@ -305,7 +305,8 @@ class TestTipsEngine:
         tip = engine.evaluate(tip_data)
 
         assert tip is not None
-        assert "LLM" in tip
+        # V-020: Message changed to emphasize consent and the Ratchet
+        assert "fraction of a cent" in tip or "permission" in tip
 
     def test_no_tips_file(self):
         """Missing tips.yaml produces no errors, no tips."""

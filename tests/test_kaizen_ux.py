@@ -198,7 +198,8 @@ class TestLearningModeTip:
         assert "kaizen_fired_free_mode" in events
 
         tip = events["kaizen_fired_free_mode"]
-        assert "enable learning" in tip.get("message", "").lower()
+        # V-020: Message now points to Flywheel instead of Learning Mode
+        assert "show patterns" in tip.get("message", "").lower()
 
 
 class TestToggleLearningModeHandler:

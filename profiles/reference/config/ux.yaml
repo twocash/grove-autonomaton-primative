@@ -12,33 +12,41 @@
 
 # --- THE RATCHET Announcement ---
 # Fires when Stage 2 resolves from pattern cache (Tier 0).
-# Makes the economic benefit visible to the operator.
+# V-020: Visual weight comparable to Kaizen three-beat display.
+# The Ratchet is the architectural counterpart to Kaizen —
+# Kaizen shows the system stopping, the Ratchet shows it learning.
 ratchet_announcement:
   enabled: true
   template: |
-    THE RATCHET: Classified by LLM last time → cache this time.
-       Tier {tier}, ${cost}. The system got cheaper because you used it.
 
-# --- Tips (Demo Scaffolding) ---
-# Educational guidance displayed after each interaction.
-# One tip per interaction, highest priority wins.
-# The reference profile is a self-guided architecture demo.
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    THE RATCHET
+    Classified by LLM last time → cached this time.
+    Tier {tier}, ${cost}. The system got cheaper because you used it.
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# --- Tips (OOBE Teaching Sequence) ---
+# Each tip fires once per session, highest priority wins.
+# The priority chain IS the teaching sequence — each tip
+# scaffolds the operator toward the next architectural insight.
+#
+# V-020 Sequence: keyword_match → llm_classification → ratchet_cache_hit
+#                 → kaizen_fired → kaizen_fired_free_mode
 tips:
   enabled: true
   events:
-    ratchet_cache_hit:
+    keyword_match:
       priority: 1
-      message: "Type 'show cache' to see what the Ratchet stored."
+      message: "Try something the system won't recognize to see what happens."
     llm_classification:
       priority: 2
-      message: "That used the LLM. Try the exact same phrase again."
-    # V-018: More specific than kaizen_fired — surfaced when Learning Mode is off
-    kaizen_fired_free_mode:
-      priority: 2
-      message: "Type 'enable learning' to let the system learn from your patterns (~$0.0004/turn)."
-    kaizen_fired:
+      message: "That cost a fraction of a cent — with your permission. Try the exact same phrase again."
+    ratchet_cache_hit:
       priority: 3
-      message: "Jidoka detected uncertainty. Andon stopped the line. Kaizen proposed options. Three TPS roles in one interaction."
-    keyword_match:
+      message: "Type 'show cache' to see what the Ratchet stored. It's a file you can read."
+    kaizen_fired:
       priority: 4
-      message: "Try something the system won't recognize to see what happens."
+      message: "Three TPS roles just fired: Jidoka detected uncertainty. Andon stopped the line. Kaizen proposed options."
+    kaizen_fired_free_mode:
+      priority: 5
+      message: "Type 'show patterns' to see what the Flywheel has detected from your session."

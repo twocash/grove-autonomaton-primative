@@ -195,7 +195,18 @@ def ask_jidoka(
         try:
             response = _get_single_keystroke(valid_keys)
             if response in valid_keys:
-                print(f"\n{_c.GREEN}>>{_c.RESET} Selected: {_c.WHITE}{options[response]}{_c.RESET}\n")
+                # V-020: Resolve template in selection echo (same as display)
+                selected_label = options[response]
+                option_entry = kaizen_options.get(response, {})
+                tier = option_entry.get("tier")
+                classification_tier = option_entry.get("classification_tier")
+                response_tier = option_entry.get("response_tier")
+                resolved_selection = _resolve_option_template(
+                    selected_label, tier,
+                    classification_tier=classification_tier,
+                    response_tier=response_tier
+                )
+                print(f"\n{_c.GREEN}>>{_c.RESET} Selected: {_c.WHITE}{resolved_selection}{_c.RESET}\n")
                 return response
         except KeyboardInterrupt:
             print(f"\n\n{_c.YELLOW}Operation cancelled by user.{_c.RESET}")
